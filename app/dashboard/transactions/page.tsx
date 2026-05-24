@@ -1,0 +1,1 @@
+export default function Page() { return <div className="brand-card"> <h1 className="brand-heading text-2xl mb-4">Transactions</h1> <p className="text-brandAccent/60 italic">Payment and sales tracking.</p> </div> }

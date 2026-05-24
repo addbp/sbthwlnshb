@@ -1,0 +1,717 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap");
+@import "tailwindcss";
+
+/* ============================================================
+   globals.css — Sabbath Wellness · Midnight Gold / Light Theme
+   Tailwind CSS v4  |  Next.js 15
+   Root background: #F9F4EB (warm spa beige)
+   ============================================================ */
+
+/* ── Tailwind v4 design tokens ──────────────────────────────── */
+@theme {
+  --color-spa-bg: #F9F4EB;
+  /* bg-spa-bg  — root page background     */
+  --color-black: #1A1A1A;
+  /* bg-black   — deep charcoal            */
+  --color-gold: #C58F3B;
+  /* bg-gold    — Sabbath Gold             */
+  --color-gold-light: #D4A84E;
+  /* bg-gold-light                          */
+  --color-gold-dim: #A07530;
+  /* bg-gold-dim                            */
+  --color-beige: #F3E9E0;
+  /* bg-beige                               */
+  --color-beige-muted: #EAD9CA;
+  /* bg-beige-muted                         */
+  --color-surface-1: #222222;
+  /* bg-surface-1 — dark card (dashboard)   */
+  --color-surface-2: #2A2A2A;
+  /* bg-surface-2                           */
+  --color-surface-3: #333333;
+  /* bg-surface-3                           */
+  --color-success: #3D7A4A;
+  --color-danger: #8B3A3A;
+  --color-info: #2A6A8A;
+
+  --font-family-display: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-family-body: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* ── CSS custom properties (used in inline styles & plain CSS) ─ */
+:root {
+  /* Brand palette */
+  --color-bg: #F9F4EB;
+  /* ← LIGHT SPA BEIGE (was #1A1A1A)   */
+  --color-gold: #C58F3B;
+  --color-gold-light: #D4A84E;
+  --color-gold-dim: #A07530;
+  --color-gold-subtle: rgba(197, 143, 59, 0.12);
+  --color-gold-rule: rgba(197, 143, 59, 0.25);
+  --color-gold-rule-strong: rgba(197, 143, 59, 0.55);
+  --color-beige: #F3E9E0;
+  --color-beige-muted: #EAD9CA;
+
+  /* Dark surfaces — still used by dashboard sidebar, login, cards */
+  --color-surface-1: #222222;
+  --color-surface-2: #2A2A2A;
+  --color-surface-3: #333333;
+
+  /* Text on LIGHT backgrounds (landing, booking, waiver) */
+  --color-text-primary: #1A1A1A;
+  /* ← dark charcoal on light bg        */
+  --color-text-sub: rgba(26, 26, 26, 0.58);
+  --color-text-muted: rgba(26, 26, 26, 0.38);
+  --color-text-gold: #C58F3B;
+
+  /* Text on DARK backgrounds (dashboard, login) — for inline-style use */
+  --color-text-on-dark: #F3E9E0;
+  --color-text-on-dark-sub: rgba(243, 233, 224, 0.52);
+  --color-text-on-dark-dim: rgba(243, 233, 224, 0.30);
+
+  /* Text on beige card surfaces */
+  --color-text-on-beige: #1A1A1A;
+  --color-text-on-beige-2: #4A3F35;
+
+  /* Borders */
+  --color-border: rgba(26, 26, 26, 0.10);
+  /* on light bg  */
+  --color-border-strong: rgba(26, 26, 26, 0.20);
+  --color-border-gold: rgba(197, 143, 59, 0.28);
+  --color-border-gold-strong: rgba(197, 143, 59, 0.55);
+
+  /* Typography */
+  --font-display: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* Shadows — softer on light backgrounds */
+  --shadow-xs: 0 1px 3px rgba(0, 0, 0, 0.07);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.09);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.11);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.13);
+  --shadow-xl: 0 16px 52px rgba(0, 0, 0, 0.16);
+  --shadow-gold: 0 0 0 2px #C58F3B, 0 4px 18px rgba(197, 143, 59, 0.22);
+
+  /* Motion */
+  --ease-luxury: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur-base: 260ms;
+  --dur-slow: 420ms;
+
+  /* Layout */
+  --sidebar-width: 280px;
+  --header-height: 72px;
+  --tap-target-min: 48px;
+  --page-max: 672px;
+}
+
+/* ── BASE LAYER ─────────────────────────────────────────────── */
+@layer base {
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 19px;
+    /* bumped from 18px — iPad readability for all ages */
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-body);
+    font-size: 1rem;
+    line-height: 1.65;
+    /* Light spa background — pages override per-section with inline styles */
+    background-color: #F9F4EB;
+    background-image: none;
+    color: #1A1A1A;
+    /* Deep charcoal — high contrast on light bg   */
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    line-height: 1.15;
+    color: #1A1A1A;
+    letter-spacing: 0.01em;
+    margin: 0;
+  }
+
+  p {
+    color: var(--color-text-sub);
+    line-height: 1.75;
+  }
+
+  a {
+    color: var(--color-gold);
+    text-decoration: none;
+    transition: color var(--dur-fast) var(--ease-luxury);
+  }
+
+  a:hover {
+    color: var(--color-gold-light);
+  }
+
+  a:focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  select {
+    min-height: 48px;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: 1rem;
+  }
+
+  input,
+  textarea {
+    font-family: var(--font-body);
+    font-size: 1rem;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  img,
+  svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Subtle scrollbar — warm toned on light backgrounds */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #F9F4EB;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(197, 143, 59, 0.30);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(197, 143, 59, 0.50);
+  }
+
+  @media (max-width: 639px) {
+    html {
+      font-size: 17px;
+    }
+  }
+}
+
+/* ── BUTTONS ────────────────────────────────────────────────── */
+/* Primary: gold fill */
+.btn-gold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.5rem;
+  min-height: 48px;
+  background-color: #C58F3B;
+  color: #1A1A1A;
+  border: 1px solid #C58F3B;
+  border-radius: 1.25rem;
+  font-family: var(--font-body);
+  font-size: 0.833rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color var(--dur-base) var(--ease-luxury),
+    box-shadow var(--dur-base) var(--ease-luxury),
+    transform var(--dur-fast) var(--ease-luxury);
+}
+
+.btn-gold:hover {
+  background-color: #D4A84E;
+  box-shadow: 0 4px 18px rgba(197, 143, 59, 0.35);
+}
+
+.btn-gold:active {
+  transform: scale(0.97);
+}
+
+/* Ghost: gold border on light bg */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.5rem;
+  min-height: 48px;
+  background-color: transparent;
+  color: #C58F3B;
+  border: 1px solid rgba(197, 143, 59, 0.45);
+  border-radius: 1.25rem;
+  font-family: var(--font-body);
+  font-size: 0.833rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-base) var(--ease-luxury),
+    border-color var(--dur-base) var(--ease-luxury);
+}
+
+.btn-ghost:hover {
+  background-color: rgba(197, 143, 59, 0.10);
+  border-color: #C58F3B;
+}
+
+/* Dark: charcoal fill — used in booking/waiver submit */
+.btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0 1.5rem;
+  min-height: 48px;
+  background-color: #1A1A1A;
+  color: #F3E9E0;
+  border: 1px solid rgba(197, 143, 59, 0.35);
+  border-radius: 1rem;
+  font-family: var(--font-body);
+  font-size: 0.833rem;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-base) var(--ease-luxury),
+    border-color var(--dur-base) var(--ease-luxury),
+    color var(--dur-fast) var(--ease-luxury);
+}
+
+.btn-dark:hover {
+  background-color: #2A2A2A;
+  border-color: rgba(197, 143, 59, 0.65);
+}
+
+/* ── CARD SYSTEM ─────────────────────────────────────────────── */
+
+/* White card — for light-bg pages (booking, waiver form groups) */
+.card-light {
+  background-color: #FFFFFF;
+  background-image: none;
+  border: 1px solid rgba(26, 26, 26, 0.09);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  transition: box-shadow var(--dur-base) var(--ease-luxury),
+    border-color var(--dur-base) var(--ease-luxury);
+}
+
+.card-light:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgba(197, 143, 59, 0.25);
+}
+
+/* Dark card — for dashboard dark surfaces */
+.card {
+  background-color: #222222;
+  background-image: none;
+  border: 1px solid rgba(197, 143, 59, 0.18);
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  padding: 1.5rem;
+  transition: box-shadow var(--dur-base) var(--ease-luxury),
+    border-color var(--dur-base) var(--ease-luxury);
+}
+
+.card:hover {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.36);
+  border-color: rgba(197, 143, 59, 0.40);
+}
+
+/* ── KPI TILES (dashboard) ──────────────────────────────────── */
+.kpi-tile {
+  position: relative;
+  overflow: hidden;
+  background-color: #FFFFFF;
+  background-image: none;
+  border: 1px solid rgba(26, 26, 26, 0.09);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-md);
+  padding: 2rem 2.5rem;
+  color: #1A1A1A;
+  transition: transform var(--dur-base) var(--ease-luxury),
+    box-shadow var(--dur-base) var(--ease-luxury);
+}
+
+.kpi-tile::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: #C58F3B;
+  border-radius: 1.5rem 1.5rem 0 0;
+}
+
+.kpi-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
+.kpi-tile--dark {
+  background-color: #1A1A1A;
+  border-color: rgba(197, 143, 59, 0.20);
+  color: #F3E9E0;
+}
+
+.kpi-tile--gold {
+  background-color: #C58F3B;
+  background-image: none;
+  border-color: #A07530;
+  color: #1A1A1A;
+}
+
+.kpi-tile--gold::before {
+  background-color: rgba(255, 255, 255, 0.30);
+}
+
+.kpi-tile__label {
+  font-family: var(--font-body);
+  font-size: 0.694rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7A6E65;
+  margin-bottom: 0.75rem;
+}
+
+.kpi-tile--dark .kpi-tile__label {
+  color: rgba(243, 233, 224, 0.50);
+}
+
+.kpi-tile--gold .kpi-tile__label {
+  color: rgba(26, 26, 26, 0.65);
+}
+
+.kpi-tile__value {
+  font-family: var(--font-body);
+  /* Inter — simpler, cleaner for numbers on iPad */
+  font-size: clamp(1.9rem, 3.2vw, 2.6rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #1A1A1A;
+  margin-bottom: 0.5rem;
+}
+
+.kpi-tile--dark .kpi-tile__value {
+  color: #F3E9E0;
+}
+
+.kpi-tile--gold .kpi-tile__value {
+  color: #1A1A1A;
+}
+
+.kpi-tile__subvalue {
+  font-family: var(--font-body);
+  font-size: 0.833rem;
+  color: #9A8E85;
+}
+
+.kpi-tile--dark .kpi-tile__subvalue {
+  color: rgba(243, 233, 224, 0.38);
+}
+
+.kpi-tile--gold .kpi-tile__subvalue {
+  color: rgba(26, 26, 26, 0.60);
+}
+
+.kpi-tile__delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+}
+
+.kpi-tile__delta--up {
+  background: rgba(61, 122, 74, 0.12);
+  color: #3D7A4A;
+}
+
+.kpi-tile__delta--down {
+  background: rgba(139, 58, 58, 0.12);
+  color: #8B3A3A;
+}
+
+/* ── FORM INPUTS (dark bg — dashboard / login) ──────────────── */
+.input,
+.textarea,
+.select {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  background-color: #2A2A2A;
+  background-image: none;
+  border: 1px solid rgba(197, 143, 59, 0.18);
+  border-radius: 1rem;
+  color: #F3E9E0;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color var(--dur-fast) var(--ease-luxury),
+    box-shadow var(--dur-fast) var(--ease-luxury);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: rgba(243, 233, 224, 0.28);
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: #C58F3B;
+  box-shadow: 0 0 0 3px rgba(197, 143, 59, 0.18);
+}
+
+/* ── BADGES ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 9999px;
+  font-family: var(--font-body);
+  font-size: 0.694rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.badge-gold {
+  background-color: rgba(197, 143, 59, 0.12);
+  color: #C58F3B;
+  border-color: rgba(197, 143, 59, 0.30);
+}
+
+.badge-success {
+  background-color: rgba(61, 122, 74, 0.12);
+  color: #3D7A4A;
+}
+
+.badge-danger {
+  background-color: rgba(139, 58, 58, 0.12);
+  color: #8B3A3A;
+}
+
+.badge-info {
+  background-color: rgba(42, 106, 138, 0.11);
+  color: #2A6A8A;
+}
+
+/* ── TABLE-LUXURY (dashboard) ───────────────────────────────── */
+.table-luxury {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 1rem;
+}
+
+.table-luxury thead th {
+  padding: 0.9rem 1.1rem;
+  text-align: left;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: 0.694rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #C58F3B;
+  background-color: #F8F4EE;
+  border-bottom: 1px solid rgba(26, 26, 26, 0.09);
+}
+
+.table-luxury tbody td {
+  padding: 0.9rem 1.1rem;
+  color: #4A4A4A;
+  border-bottom: 1px solid rgba(26, 26, 26, 0.06);
+  vertical-align: middle;
+}
+
+.table-luxury tbody tr {
+  transition: background-color var(--dur-fast) var(--ease-luxury);
+}
+
+.table-luxury tbody tr:hover {
+  background-color: rgba(197, 143, 59, 0.05);
+}
+
+.table-luxury tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── SIDEBAR NAV (dashboard) ─────────────────────────────────── */
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  min-height: 50px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: rgba(243, 233, 224, 0.50);
+  font-size: 14px;
+  font-weight: 400;
+  font-family: var(--font-body);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.nav-item:hover,
+.nav-item--active {
+  background-color: rgba(197, 143, 59, 0.12);
+  color: #F3E9E0;
+}
+
+.nav-item--active::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  border-radius: 9999px;
+  background-color: #C58F3B;
+}
+
+/* ── UTILITIES ───────────────────────────────────────────────── */
+.section-label {
+  font-family: var(--font-body);
+  font-size: 0.694rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #C58F3B;
+}
+
+.divider {
+  border: none;
+  height: 1px;
+  background-color: rgba(26, 26, 26, 0.10);
+  margin: 1.5rem 0;
+}
+
+/* ── ANIMATIONS ──────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% center;
+  }
+
+  to {
+    background-position: 200% center;
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp var(--dur-slow) var(--ease-luxury) both;
+}
+
+.animate-fade-down {
+  animation: fadeDown var(--dur-slow) var(--ease-luxury) both;
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--dur-slow) var(--ease-luxury) both;
+}
+
+.skeleton {
+  background-image: linear-gradient(90deg, #EDE8E0 0%, #E4DDD4 50%, #EDE8E0 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+  border-radius: 0.625rem;
+}
+
+/* ── PRINT ───────────────────────────────────────────────────── */
+@media print {
+  body {
+    background: #fff !important;
+    color: #1A1A1A !important;
+  }
+
+  .card,
+  .kpi-tile {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+}
