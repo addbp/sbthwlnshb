@@ -194,7 +194,7 @@ export default function BookingsPage() {
 
   const [selectedDate, setSelectedDate] = useState(todayISO())
   const [statusFilter, setStatusFilter] = useState('all')
-  const [bookings, setBookings] = useState<Booking[]>([])
+  const [bookings_import, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<Booking | null>(null)
@@ -204,7 +204,7 @@ export default function BookingsPage() {
     setLoading(true); setError(null)
     try {
       const { data, error: dbErr } = await supabase
-        .from('bookings')
+        .from('bookings_import')
         .select('*') // CRITICAL FIX: select everything to prevent missing column errors
         .gte('created_at', `${date}T00:00:00.000Z`)
         .lte('created_at', `${date}T23:59:59.999Z`)
@@ -227,7 +227,7 @@ export default function BookingsPage() {
   }
 
   const filterDef = FILTER_TABS.find(t => t.key === statusFilter) ?? FILTER_TABS[0]
-  const filtered = bookings
+  const filtered = bookings_import
     .filter(b => filterDef.match.includes(b.status))
     .filter(b => {
       if (!search.trim()) return true
@@ -238,7 +238,7 @@ export default function BookingsPage() {
         || b.client_mobile.includes(q)
     })
 
-  const totalRevenue = bookings.filter(b => b.status === 'completed').reduce((a, b) => a + b.amount, 0)
+  const totalRevenue = bookings_import.filter(b => b.status === 'completed').reduce((a, b) => a + b.amount, 0)
 
   const isToday = selectedDate === todayISO()
 
@@ -282,10 +282,10 @@ export default function BookingsPage() {
         {/* ── Summary strip ───────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(160px,100%),1fr))', gap: 12 }}>
           {[
-            { label: 'Total Bookings', value: String(bookings.length), sub: selectedDate === todayISO() ? 'Today' : 'On this date' },
-            { label: 'Completed', value: String(bookings.filter(b => b.status === 'completed').length), sub: `${fmt(totalRevenue)} collected` },
-            { label: 'Active Now', value: String(bookings.filter(b => b.status === 'in_progress' || b.status === 'confirmed').length), sub: 'In session or confirmed' },
-            { label: 'Upcoming', value: String(bookings.filter(b => b.status === 'upcoming').length), sub: 'Scheduled ahead' },
+            { label: 'Total Bookings', value: String(bookings_import.length), sub: selectedDate === todayISO() ? 'Today' : 'On this date' },
+            { label: 'Completed', value: String(bookings_import.filter(b => b.status === 'completed').length), sub: `${fmt(totalRevenue)} collected` },
+            { label: 'Active Now', value: String(bookings_import.filter(b => b.status === 'in_progress' || b.status === 'confirmed').length), sub: 'In session or confirmed' },
+            { label: 'Upcoming', value: String(bookings_import.filter(b => b.status === 'upcoming').length), sub: 'Scheduled ahead' },
           ].map(t => (
             <div key={t.label} style={{ backgroundColor: '#FFFFFF', backgroundImage: 'none', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '16px 18px', position: 'relative', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2, backgroundColor: '#C58F3B', opacity: 0.40, borderRadius: '0 0 2px 2px' }} />
@@ -363,14 +363,14 @@ export default function BookingsPage() {
                   })}
                   {filtered.length === 0 && (
                     <tr><td colSpan={7} style={{ padding: '44px 16px', textAlign: 'center', color: '#9A8E85', fontStyle: 'italic' }}>
-                      {bookings.length === 0 ? 'No bookings found for this date.' : 'No bookings match the current filter.'}
+                      {bookings_import.length === 0 ? 'No bookings found for this date.' : 'No bookings match the current filter.'}
                     </td></tr>
                   )}
                 </tbody>
               </table>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px', backgroundColor: '#F8F4EE', borderTop: '1px solid rgba(26,26,26,0.07)', flexWrap: 'wrap', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#9A8E85' }}>Showing {filtered.length} of {bookings.length} bookings</span>
+              <span style={{ fontSize: 12, color: '#9A8E85' }}>Showing {filtered.length} of {bookings_import.length} bookings</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A1A' }}>Revenue: <strong style={{ color: '#C58F3B' }}>{fmt(totalRevenue)}</strong></span>
             </div>
           </div>
