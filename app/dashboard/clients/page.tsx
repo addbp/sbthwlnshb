@@ -1,1151 +1,528 @@
 'use client'
 
-// app/dashboard/clients/page.tsx  —  Phase 4 Clients
-// · Full client list from Supabase bookings (deduplicated by mobile)
-// · Fixed: `client_mobile` crash via select('*')
-// · Fixed: Session Cookie bug via createBrowserClient
+// app/dashboard/reports/page.tsx — Real Analytics
+// Fetches all records from bookings_import and computes:
+//   · Revenue over time (last 30 days)
+//   · Top services by revenue and count
+//   · Category breakdown
+//   · Customer type (New vs Returning)
+//   · Therapist performance
+//   · Payment method breakdown
+// Uses received_payment for all revenue. Dates parsed from "1-May-25" text format.
 
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-import { type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
+
+// ─────────────────────────────────────────────────────────────
+// DATE HELPERS
+// ─────────────────────────────────────────────────────────────
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTHS_MAP: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }
+
+function parseImportDate(raw: string): Date | null {
+  const m = String(raw ?? '').trim().match(/^(\d{1,2})[-\/]([A-Za-z]{3,})[-\/](\d{2,4})$/)
+  if (!m) return null
+  const day = parseInt(m[1], 10)
+  const mon = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]
+  if (mon === undefined) return null
+  const yr = parseInt(m[3], 10)
+  const year = yr < 100 ? 2000 + yr : yr
+  const d = new Date(year, mon, day)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function isoOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function nDaysAgo(n: number): Date {
+  const d = new Date(); d.setDate(d.getDate() - n); return d
+}
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
-interface ClientSummary {
-  mobile: string
-  name: string
-  email: string
-  visitCount: number
-  totalSpend: number
-  lastVisit: string
-  topService: string
-  topTherapist: string
-}
-
-interface VisitRecord {
-  id: string
-  service_name: string
-  therapist_name: string
-  amount: number
-  status: string
-  created_at: string
-  appt_date: string
-  appt_time: string
+interface Row {
+  date: string
+  client_name: string
+  service: string
+  therapist: string
+  received_payment: number
+  net_sales: number
+  service_amount: number
+  category: string
+  customer_type: string
   payment_method: string
 }
 
-// ─────────────────────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────────────────────
-const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
+interface Stat { name: string; revenue: number; count: number }
 
-function fmtDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString('en-PH', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return iso
-  }
+interface Analytics {
+  totalRevenue: number
+  totalNetSales: number
+  sessionCount: number
+  avgValue: number
+  newClients: number
+  returningClients: number
+  topService: string
+  serviceStats: Stat[]
+  categoryStats: Stat[]
+  therapistStats: (Stat & { avgValue: number })[]
+  paymentStats: Stat[]
+  dailyStats: { label: string; iso: string; revenue: number; count: number }[]  // last 30 days
+  monthlyStats: { label: string; revenue: number; count: number }[]
 }
 
 // ─────────────────────────────────────────────────────────────
-// HELPERS
+// COMPUTE ANALYTICS from raw rows
 // ─────────────────────────────────────────────────────────────
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase() || '?'
-}
+function compute(rows: Row[], periodDays: number): Analytics {
+  const cutoff = nDaysAgo(periodDays)
+  const cutoffISO = isoOf(cutoff)
 
-const AVATAR_COLORS = [
-  '#3D7A4A',
-  '#2A6A8A',
-  '#A07530',
-  '#6A3D7A',
-  '#7A3D40',
-  '#3D5A7A',
-  '#6E7A3D',
-  '#7A4E3D',
-]
+  // Filter to period
+  const inPeriod = rows.filter(r => {
+    const d = parseImportDate(r.date)
+    if (!d) return false
+    return isoOf(d) >= cutoffISO
+  })
 
-function avatarColor(name: string) {
-  return AVATAR_COLORS[((name.charCodeAt(0) ?? 65) - 65) % AVATAR_COLORS.length]
-}
-
-function mapVisit(row: Record<string, unknown>): VisitRecord {
-  let apptTime = '--:--'
-  let apptDate = ''
-
-  try {
-    if (row.appointment_time) {
-      apptTime = String(row.appointment_time).slice(0, 5)
-    } else if (row.created_at) {
-      const d = new Date(String(row.created_at))
-
-      if (!isNaN(d.getTime())) {
-        apptTime = d.toLocaleTimeString('en-PH', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })
-      }
+  // Aggregation helpers
+  function groupBy<K extends keyof Row>(arr: Row[], key: K): Record<string, Row[]> {
+    const m: Record<string, Row[]> = {}
+    for (const r of arr) {
+      const k = String(r[key] ?? 'Unknown') || 'Unknown'
+        ; (m[k] ?? (m[k] = [])).push(r)
     }
-
-    apptDate = row.appointment_date
-      ? String(row.appointment_date)
-      : new Date(String(row.created_at)).toISOString().split('T')[0]
-  } catch {
-    // silent
+    return m
   }
+
+  function toStat(groups: Record<string, Row[]>): Stat[] {
+    return Object.entries(groups)
+      .map(([name, rows]) => ({
+        name,
+        revenue: rows.reduce((a, r) => a + (r.received_payment ?? 0), 0),
+        count: rows.length,
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+  }
+
+  const totalRevenue = inPeriod.reduce((a, r) => a + (r.received_payment ?? 0), 0)
+  const totalNetSales = inPeriod.reduce((a, r) => a + (r.net_sales ?? 0), 0)
+  const sessionCount = inPeriod.length
+  const avgValue = sessionCount > 0 ? totalRevenue / sessionCount : 0
+  const newCount = inPeriod.filter(r => r.customer_type?.toLowerCase().includes('new')).length
+  const returningCount = sessionCount - newCount
+  const serviceStats = toStat(groupBy(inPeriod, 'service')).slice(0, 8)
+  const categoryStats = toStat(groupBy(inPeriod, 'category'))
+  const paymentStats = toStat(groupBy(inPeriod, 'payment_method'))
+
+  const therapistGroups = groupBy(inPeriod, 'therapist')
+  const therapistStats = Object.entries(therapistGroups)
+    .map(([name, rows]) => {
+      const rev = rows.reduce((a, r) => a + (r.received_payment ?? 0), 0)
+      return { name, revenue: rev, count: rows.length, avgValue: rows.length > 0 ? rev / rows.length : 0 }
+    })
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+
+  // Daily stats — last 30 days
+  const dailyMap: Record<string, { revenue: number; count: number }> = {}
+  for (let i = periodDays - 1; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i)
+    dailyMap[isoOf(d)] = { revenue: 0, count: 0 }
+  }
+  for (const r of inPeriod) {
+    const d = parseImportDate(r.date)
+    if (!d) continue
+    const iso = isoOf(d)
+    if (dailyMap[iso]) {
+      dailyMap[iso].revenue += r.received_payment ?? 0
+      dailyMap[iso].count++
+    }
+  }
+  const dailyStats = Object.entries(dailyMap).map(([iso, v]) => ({
+    iso,
+    label: new Date(iso + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }),
+    ...v,
+  }))
+
+  // Monthly stats — all time
+  const monthlyMap: Record<string, { revenue: number; count: number }> = {}
+  for (const r of rows) {
+    const d = parseImportDate(r.date)
+    if (!d) continue
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const lbl = `${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`
+    if (!monthlyMap[key]) monthlyMap[key] = { revenue: 0, count: 0 }
+    monthlyMap[key].revenue += r.received_payment ?? 0
+    monthlyMap[key].count++
+  }
+  const monthlyStats = Object.entries(monthlyMap)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, v]) => {
+      const parts = key.split('-')
+      return { label: `${MONTH_ABBR[parseInt(parts[1], 10) - 1]} ${parts[0]}`, ...v }
+    })
+    .slice(-12)   // last 12 months
 
   return {
-    id: String(row.id ?? ''),
-    service_name: String(row.service_name ?? row.service ?? 'Service'),
-    therapist_name: String(row.therapist_name ?? row.therapist ?? 'Staff'),
-    amount: Number(row.amount ?? 0),
-    status: String(row.status ?? 'unknown'),
-    created_at: String(row.created_at ?? ''),
-    appt_date: apptDate,
-    appt_time: apptTime,
-    payment_method: String(row.payment_method ?? '—'),
+    totalRevenue, totalNetSales, sessionCount, avgValue,
+    newClients: newCount, returningClients: returningCount,
+    topService: serviceStats[0]?.name ?? '—',
+    serviceStats, categoryStats, therapistStats, paymentStats,
+    dailyStats, monthlyStats,
   }
 }
 
-function aggregateClients(rows: Record<string, unknown>[]): ClientSummary[] {
-  const map: Record<string, { rows: Record<string, unknown>[] }> = {}
-
-  for (const row of rows) {
-    // Flexible mapping to grab whatever column the mobile number is actually in
-    const mobile =
-      String(row.client_mobile ?? row.mobile ?? '').trim() ||
-      String(row.client_name ?? 'unknown')
-
-    if (!map[mobile]) map[mobile] = { rows: [] }
-
-    map[mobile].rows.push(row)
-  }
-
-  return Object.entries(map)
-    .map(([mobile, { rows: r }]) => {
-      const latestRow = r.sort((a, b) =>
-        String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))
-      )[0]
-
-      const totalSpend = r.reduce(
-        (sum, x) => sum + (x.status === 'completed' ? Number(x.amount ?? 0) : 0),
-        0
-      )
-
-      const therapistCounts: Record<string, number> = {}
-
-      for (const x of r) {
-        const t = String(x.therapist_name ?? x.therapist ?? '')
-
-        if (t) therapistCounts[t] = (therapistCounts[t] ?? 0) + 1
-      }
-
-      const topTherapist =
-        Object.entries(therapistCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
-
-      const serviceCounts: Record<string, number> = {}
-
-      for (const x of r) {
-        const s = String(x.service_name ?? x.service ?? '')
-
-        if (s) serviceCounts[s] = (serviceCounts[s] ?? 0) + 1
-      }
-
-      const topService =
-        Object.entries(serviceCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
-
-      let lastVisit = ''
-
-      try {
-        lastVisit = new Date(String(latestRow.created_at ?? '')).toISOString().split('T')[0]
-      } catch {
-        // silent
-      }
-
-      return {
-        mobile,
-        name: String(latestRow.client_name ?? latestRow.client ?? 'Guest'),
-        email: String(latestRow.client_email ?? latestRow.email ?? ''),
-        visitCount: r.length,
-        totalSpend,
-        lastVisit,
-        topService,
-        topTherapist,
-      }
-    })
-    .sort((a, b) => b.visitCount - a.visitCount)
-}
+// ─────────────────────────────────────────────────────────────
+// FORMATTERS
+// ─────────────────────────────────────────────────────────────
+const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
+const fmtK = (n: number) => n >= 1000 ? `₱${(n / 1000).toFixed(1)}k` : fmt(n)
 
 // ─────────────────────────────────────────────────────────────
-// SKELETON
+// INLINE SVG BAR CHART
 // ─────────────────────────────────────────────────────────────
-function Shim({
-  w = '100%',
-  h = 14,
-  r = 6,
+function BarChart({
+  data,
+  height = 100,
+  color = '#C58F3B',
+  showLabels = true,
 }: {
-  w?: string | number
-  h?: number
-  r?: number
+  data: { label: string; value: number }[]
+  height?: number
+  color?: string
+  showLabels?: boolean
 }) {
+  const max = Math.max(...data.map(d => d.value), 1)
+  const bw = 100 / data.length
+  const barH = height - (showLabels ? 20 : 4)
+
   return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: r,
-        background: 'linear-gradient(90deg,#EDE8E0 0%,#E0D8CE 50%,#EDE8E0 100%)',
-        backgroundSize: '200% 100%',
-        animation: 'shimmer 1.6s linear infinite',
-      }}
-    />
-  )
-}
-
-function ListSkeleton() {
-  return (
-    <>
-      <style>{`@keyframes shimmer{from{background-position:-200% center}to{background-position:200% center}}`}</style>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div
-            key={i}
-            style={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid rgba(26,26,26,0.09)',
-              borderRadius: 14,
-              padding: '18px 20px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-            }}
-          >
-            <Shim w={48} h={48} r={24} />
-
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Shim w="60%" h={16} />
-              <Shim w="40%" h={12} />
+    <div style={{ position: 'relative', width: '100%', height: height + 4 }}>
+      <svg viewBox={`0 0 ${data.length * 20} ${height}`} preserveAspectRatio="none"
+        style={{ width: '100%', height: height, display: 'block' }}>
+        {data.map((d, i) => {
+          const h = Math.round((d.value / max) * barH)
+          const x = i * 20 + 1
+          const y = barH - h
+          return (
+            <g key={i}>
+              {/* Background */}
+              <rect x={x} y={0} width={18} height={barH} fill="rgba(197,143,59,0.08)" rx={2} />
+              {/* Bar */}
+              <rect x={x} y={y} width={18} height={h} fill={d.value > 0 ? color : 'transparent'} rx={2}>
+                <title>{d.label}: {fmtK(d.value)}</title>
+              </rect>
+            </g>
+          )
+        })}
+      </svg>
+      {showLabels && (
+        <div style={{ display: 'flex', width: '100%', marginTop: 3 }}>
+          {data.map((d, i) => (
+            <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: 'rgba(26,26,26,0.38)', fontFamily: "'Inter',system-ui,sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 1px' }}>
+              {d.label}
             </div>
-
-            <Shim w={80} h={12} />
-          </div>
-        ))}
-      </div>
-    </>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────
-// CLIENT HISTORY PANEL  (full cross-branch history)
+// HORIZONTAL BAR (for service / category rankings)
 // ─────────────────────────────────────────────────────────────
-function ClientHistoryPanel({
-  client,
-  onClose,
-}: {
-  client: ClientSummary
-  onClose: () => void
-}) {
-  const supabaseRef = useRef<SupabaseClient | null>(null)
-
-  if (!supabaseRef.current) {
-    supabaseRef.current = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-
-  const supabase = supabaseRef.current
-
-  const [visits, setVisits] = useState<VisitRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const { data, error: dbErr } = await supabase
-          .from('bookings')
-          .select('*') // CRITICAL: Use * to prevent column errors
-          .or(`client_mobile.eq.${client.mobile},mobile.eq.${client.mobile}`)
-          .order('created_at', { ascending: false })
-          .limit(50)
-
-        if (dbErr) throw new Error(dbErr.message)
-
-        setVisits((data ?? []).map(mapVisit))
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load history.')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    load()
-  }, [client.mobile, supabase])
-
-  const ac = avatarColor(client.name)
-
-  const STATUS_COLOR: Record<string, string> = {
-    completed: '#3D7A4A',
-    in_progress: '#2A6A8A',
-    confirmed: '#A07530',
-    upcoming: '#7A6A50',
-    cancelled: '#8B3A3A',
-  }
-
+function HBar({ label, value, max, sub, rank }: { label: string; value: number; max: number; sub?: string; rank?: number }) {
+  const pct = max > 0 ? (value / max) * 100 : 0
   return (
-    <>
-      <style>{`@keyframes slideIn{from{opacity:0;transform:translateX(32px)}to{opacity:1;transform:none}}`}</style>
-
-      <div
-        onClick={(e) => {
-          if (e.target === e.currentTarget) onClose()
-        }}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 50,
-          backgroundColor: 'rgba(10,8,6,0.45)',
-          backdropFilter: 'blur(5px)',
-          display: 'flex',
-          justifyContent: 'flex-end',
-        }}
-        role="dialog"
-        aria-modal="true"
-      >
-        <div
-          style={{
-            width: '100%',
-            maxWidth: 460,
-            backgroundColor: '#F9F4EB',
-            backgroundImage: 'none',
-            height: '100%',
-            overflowY: 'auto',
-            boxShadow: '-24px 0 60px rgba(0,0,0,0.20)',
-            animation: 'slideIn 280ms cubic-bezier(0.22,1,0.36,1)',
-            fontFamily: "'Inter',system-ui,sans-serif",
-          }}
-        >
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              backgroundColor: '#F9F4EB',
-              borderBottom: '1px solid rgba(26,26,26,0.10)',
-              padding: '20px 24px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 16,
-              zIndex: 1,
-            }}
-          >
-            <div
-              style={{
-                width: 50,
-                height: 50,
-                borderRadius: '50%',
-                backgroundColor: ac,
-                color: '#FFFFFF',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: "'Cormorant Garamond',Georgia,serif",
-                fontSize: 20,
-                fontWeight: 400,
-                flexShrink: 0,
-              }}
-            >
-              {initials(client.name)}
-            </div>
-
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <h3
-                style={{
-                  fontFamily: "'Cormorant Garamond',Georgia,serif",
-                  fontSize: 22,
-                  fontWeight: 400,
-                  color: '#1A1A1A',
-                  margin: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {client.name}
-              </h3>
-
-              <p style={{ fontSize: 12, color: 'rgba(26,26,26,0.45)', margin: 0 }}>
-                {client.mobile}
-              </p>
-            </div>
-
-            <button
-              onClick={onClose}
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                border: '1px solid rgba(26,26,26,0.14)',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'rgba(26,26,26,0.40)',
-                flexShrink: 0,
-              }}
-              aria-label="Close"
-            >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path
-                  d="M1.5 1.5l10 10M11.5 1.5l-10 10"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {[
-                { label: 'Total Visits', value: String(client.visitCount) },
-                { label: 'Total Spend', value: fmt(client.totalSpend) },
-                { label: 'Preferred Service', value: client.topService, small: true },
-                { label: 'Fave Therapist', value: client.topTherapist, small: true },
-                { label: 'Last Visit', value: fmtDate(client.lastVisit), small: true },
-                { label: 'Email', value: client.email || '—', small: true },
-              ].map((s) => (
-                <div
-                  key={s.label}
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    backgroundImage: 'none',
-                    border: '1px solid rgba(26,26,26,0.09)',
-                    borderRadius: 12,
-                    padding: '12px 14px',
-                  }}
-                >
-                  <p
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      color: 'rgba(26,26,26,0.40)',
-                      margin: '0 0 4px',
-                    }}
-                  >
-                    {s.label}
-                  </p>
-
-                  <p
-                    style={{
-                      fontSize: s.small ? 13 : 18,
-                      fontWeight: s.small ? 500 : 700,
-                      color: '#1A1A1A',
-                      margin: 0,
-                      lineHeight: 1.3,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {s.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div
-              style={{
-                padding: '10px 14px',
-                backgroundColor: 'rgba(197,143,59,0.08)',
-                border: '1px solid rgba(197,143,59,0.22)',
-                borderRadius: 10,
-                fontSize: 12,
-                color: 'rgba(26,26,26,0.55)',
-                lineHeight: 1.55,
-              }}
-            >
-              <strong style={{ color: '#C58F3B' }}>Cross-branch history</strong> — showing all
-              visits regardless of which branch was booked.
-            </div>
-
-            <div>
-              <p
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.14em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(197,143,59,0.65)',
-                  margin: '0 0 12px',
-                }}
-              >
-                Visit History
-              </p>
-
-              {loading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {[1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      style={{
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: 12,
-                        padding: '14px 16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                      }}
-                    >
-                      <Shim w="60%" h={14} />
-                      <Shim w="40%" h={11} />
-                    </div>
-                  ))}
-                </div>
-              ) : error ? (
-                <div
-                  style={{
-                    padding: '12px 14px',
-                    backgroundColor: 'rgba(139,58,58,0.09)',
-                    border: '1px solid rgba(139,58,58,0.25)',
-                    borderRadius: 10,
-                    color: '#8B3A3A',
-                    fontSize: 13,
-                  }}
-                >
-                  {error}
-                </div>
-              ) : visits.length === 0 ? (
-                <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.38)', fontStyle: 'italic' }}>
-                  No booking history found for this client.
-                </p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {visits.map((v) => (
-                    <div
-                      key={v.id}
-                      style={{
-                        backgroundColor: '#FFFFFF',
-                        backgroundImage: 'none',
-                        border: '1px solid rgba(26,26,26,0.09)',
-                        borderRadius: 12,
-                        padding: '14px 16px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          gap: 10,
-                          marginBottom: 6,
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 600,
-                            color: '#1A1A1A',
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          {v.service_name}
-                        </span>
-
-                        <span
-                          style={{
-                            fontSize: 15,
-                            fontWeight: 700,
-                            color: '#1A1A1A',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {fmt(v.amount)}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.45)' }}>
-                          {v.therapist_name}
-                        </span>
-
-                        <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.28)' }}>·</span>
-
-                        <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.45)' }}>
-                          {fmtDate(v.appt_date || v.created_at)}{' '}
-                          {v.appt_time !== '--:--' ? `at ${v.appt_time}` : ''}
-                        </span>
-
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            letterSpacing: '0.10em',
-                            textTransform: 'uppercase',
-                            color: STATUS_COLOR[v.status] ?? '#7A6A50',
-                            padding: '2px 8px',
-                            borderRadius: 99,
-                            backgroundColor: `${STATUS_COLOR[v.status] ?? '#7A6A50'}18`,
-                            border: `1px solid ${STATUS_COLOR[v.status] ?? '#7A6A50'}44`,
-                          }}
-                        >
-                          {v.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 5, flexWrap: 'wrap', gap: 4 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {rank !== undefined && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(26,26,26,0.25)', fontFamily: "'Inter',system-ui,sans-serif", minWidth: 16 }}>#{rank}</span>
+          )}
+          <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1A1A', fontFamily: "'Inter',system-ui,sans-serif" }}>{label}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A1A', fontFamily: "'Inter',system-ui,sans-serif" }}>{fmt(value)}</span>
+          {sub && <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.40)', fontFamily: "'Inter',system-ui,sans-serif" }}>{sub}</span>}
         </div>
       </div>
-    </>
+      <div style={{ height: 7, borderRadius: 99, backgroundColor: 'rgba(197,143,59,0.12)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', borderRadius: 99, backgroundColor: '#C58F3B', width: `${pct}%`, transition: 'width 700ms cubic-bezier(0.22,1,0.36,1)' }} />
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// SECTION CARD
+// ─────────────────────────────────────────────────────────────
+function Card({ title, children, sub }: { title: string; children: React.ReactNode; sub?: string }) {
+  return (
+    <div style={{ backgroundColor: '#FFFFFF', backgroundImage: 'none', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, padding: '22px 22px', boxShadow: '0 3px 12px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, paddingBottom: 12, borderBottom: '1px solid rgba(197,143,59,0.13)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 18, height: 2, backgroundColor: '#C58F3B', display: 'inline-block', flexShrink: 0, borderRadius: 2 }} />
+          <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 19, fontWeight: 400, color: '#1A1A1A', margin: 0 }}>{title}</h3>
+        </div>
+        {sub && <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.38)', fontFamily: "'Inter',system-ui,sans-serif", fontStyle: 'italic', flexShrink: 0 }}>{sub}</span>}
+      </div>
+      {children}
+    </div>
   )
 }
 
 // ─────────────────────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────────────────────
-export default function ClientsPage() {
-  const supabaseRef = useRef<SupabaseClient | null>(null)
+export default function ReportsPage() {
+  const supabase = useRef(createClient()).current
 
-  if (!supabaseRef.current) {
-    supabaseRef.current = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-
-  const supabase = supabaseRef.current
-
-  const [clients, setClients] = useState<ClientSummary[]>([])
+  const [allRows, setAllRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<ClientSummary | null>(null)
+  const [period, setPeriod] = useState(30)   // days: 7 | 30 | 90 | 365
 
-  const loadClients = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-
+  const loadAll = useCallback(async () => {
+    setLoading(true); setError(null)
     try {
-      // Fetch all bookings to compile the client list. Using * to avoid column mismatches.
       const { data, error: dbErr } = await supabase
-        .from('bookings')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(1000)
+        .from('bookings_import')
+        .select('date, client_name, service, therapist, received_payment, net_sales, service_amount, category, customer_type, payment_method')
+        .order('date', { ascending: false })   // text sort — good enough for recent-first display
 
       if (dbErr) throw new Error(dbErr.message)
-
-      setClients(aggregateClients(data ?? []))
+      setAllRows((data ?? []) as Row[])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load clients.')
+      setError(err instanceof Error ? err.message : 'Failed to load analytics.')
     } finally {
       setLoading(false)
     }
   }, [supabase])
 
-  useEffect(() => {
-    loadClients()
-  }, [loadClients])
+  useEffect(() => { loadAll() }, [loadAll])
 
-  const filtered = clients.filter((c) => {
-    if (!search.trim()) return true
+  const a = compute(allRows, period)
 
-    const q = search.toLowerCase()
-
-    return (
-      c.name.toLowerCase().includes(q) ||
-      c.mobile.includes(q) ||
-      c.email.toLowerCase().includes(q)
-    )
-  })
-
-  const totalClients = clients.length
-  const totalSpendAll = clients.reduce((a, c) => a + c.totalSpend, 0)
-  const returningCount = clients.filter((c) => c.visitCount > 1).length
+  // Shimmer skeleton
+  const Shim = ({ w = '100%', h = 14, r = 6 }: { w?: string | number; h?: number; r?: number }) => (
+    <div style={{ width: w, height: h, borderRadius: r, background: 'linear-gradient(90deg,#EDE8E0 0%,#E0D8CE 50%,#EDE8E0 100%)', backgroundSize: '200% 100%', animation: 'shimmer 1.6s linear infinite' }} />
+  )
 
   return (
     <>
-      {selected && <ClientHistoryPanel client={selected} onClose={() => setSelected(null)} />}
+      <style>{`@keyframes shimmer{from{background-position:-200% center}to{background-position:200% center}}`}</style>
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 28,
-          fontFamily: "'Inter',system-ui,sans-serif",
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-end',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 28, fontFamily: "'Inter',system-ui,sans-serif" }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <p
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.18em',
-                textTransform: 'uppercase',
-                color: '#C58F3B',
-                margin: '0 0 5px',
-              }}
-            >
-              Guest Management
-            </p>
-
-            <h2
-              style={{
-                fontFamily: "'Cormorant Garamond',Georgia,serif",
-                fontSize: 'clamp(1.8rem,3vw,2.4rem)',
-                fontWeight: 300,
-                color: '#1A1A1A',
-                margin: 0,
-                lineHeight: 1.1,
-              }}
-            >
-              Clients
-            </h2>
-
-            <p
-              style={{
-                color: 'rgba(26,26,26,0.40)',
-                fontSize: 13,
-                margin: '4px 0 0',
-              }}
-            >
-              Cross-branch visibility — client history follows them regardless of which location
-              they visit.
-            </p>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Analytics</p>
+            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Reports</h2>
           </div>
-
-          <button
-            onClick={loadClients}
-            style={{
-              padding: '0 16px',
-              height: 40,
-              border: '1px solid rgba(197,143,59,0.45)',
-              borderRadius: 10,
-              backgroundColor: 'transparent',
-              color: '#C58F3B',
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}
-          >
-            Refresh
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.38)', fontFamily: "'Inter',system-ui,sans-serif", marginRight: 4 }}>Period:</span>
+            {[
+              { label: '7 days', v: 7 },
+              { label: '30 days', v: 30 },
+              { label: '90 days', v: 90 },
+              { label: 'All year', v: 365 },
+            ].map(opt => (
+              <button key={opt.v} onClick={() => setPeriod(opt.v)} style={{ padding: '0 14px', height: 34, borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', border: '1px solid', transition: 'all 150ms ease', fontFamily: "'Inter',system-ui,sans-serif", backgroundColor: period === opt.v ? '#1A1A1A' : 'transparent', borderColor: period === opt.v ? '#1A1A1A' : 'rgba(26,26,26,0.16)', color: period === opt.v ? '#C58F3B' : 'rgba(26,26,26,0.42)' }}>
+                {opt.label}
+              </button>
+            ))}
+            <button onClick={loadAll} style={{ padding: '0 16px', height: 34, border: '1px solid rgba(197,143,59,0.40)', borderRadius: 8, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', cursor: 'pointer', fontFamily: "'Inter',system-ui,sans-serif" }}>
+              Refresh
+            </button>
+          </div>
         </div>
 
-        {!loading && !error && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill,minmax(min(160px,100%),1fr))',
-              gap: 12,
-            }}
-          >
-            {[
-              { label: 'Total Clients', value: String(totalClients), sub: 'All branches combined' },
-              { label: 'Returning', value: String(returningCount), sub: '2 or more visits' },
-              {
-                label: 'New Clients',
-                value: String(totalClients - returningCount),
-                sub: 'First-time visitors',
-              },
-              { label: 'Lifetime Value', value: fmt(totalSpendAll), sub: 'Across all visits' },
-            ].map((t) => (
-              <div
-                key={t.label}
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  backgroundImage: 'none',
-                  border: '1px solid rgba(26,26,26,0.09)',
-                  borderRadius: 14,
-                  padding: '16px 18px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 14,
-                    right: 14,
-                    height: 2,
-                    backgroundColor: '#C58F3B',
-                    opacity: 0.4,
-                    borderRadius: '0 0 2px 2px',
-                  }}
-                />
-
-                <p
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: '0.12em',
-                    textTransform: 'uppercase',
-                    color: '#7A6E65',
-                    margin: '0 0 6px',
-                  }}
-                >
-                  {t.label}
-                </p>
-
-                <p
-                  style={{
-                    fontSize: 26,
-                    fontWeight: 700,
-                    color: '#1A1A1A',
-                    margin: '0 0 2px',
-                    lineHeight: 1,
-                  }}
-                >
-                  {t.value}
-                </p>
-
-                <p style={{ fontSize: 11, color: '#9A8E85', margin: 0 }}>{t.sub}</p>
-              </div>
-            ))}
+        {error && (
+          <div style={{ padding: '14px 18px', backgroundColor: 'rgba(139,58,58,0.09)', border: '1px solid rgba(139,58,58,0.28)', borderRadius: 12, color: '#8B3A3A', fontSize: 14 }}>
+            {error} <button onClick={loadAll} style={{ marginLeft: 12, padding: '4px 12px', borderRadius: 7, backgroundColor: 'rgba(139,58,58,0.14)', border: '1px solid rgba(139,58,58,0.28)', color: '#8B3A3A', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Retry</button>
           </div>
         )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              style={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'rgba(26,26,26,0.35)',
-                pointerEvents: 'none',
-              }}
-            >
-              <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" />
-              <path
-                d="M12 12l2.5 2.5"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, mobile, or email…"
-              style={{
-                width: '100%',
-                height: 44,
-                paddingLeft: 40,
-                paddingRight: 16,
-                border: '1px solid rgba(26,26,26,0.14)',
-                borderRadius: 10,
-                fontSize: 14,
-                color: '#1A1A1A',
-                backgroundColor: '#FFFFFF',
-                fontFamily: "'Inter',system-ui,sans-serif",
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
-            />
-          </div>
-
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              style={{
-                padding: '0 14px',
-                height: 44,
-                borderRadius: 10,
-                border: '1px solid rgba(26,26,26,0.14)',
-                backgroundColor: 'transparent',
-                color: 'rgba(26,26,26,0.50)',
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
 
         {loading ? (
-          <ListSkeleton />
-        ) : error ? (
-          <div
-            style={{
-              padding: '16px 20px',
-              backgroundColor: 'rgba(139,58,58,0.09)',
-              border: '1px solid rgba(139,58,58,0.28)',
-              borderRadius: 12,
-              color: '#8B3A3A',
-              fontSize: 14,
-            }}
-          >
-            {error}
-
-            <button
-              onClick={loadClients}
-              style={{
-                marginLeft: 12,
-                padding: '4px 12px',
-                borderRadius: 7,
-                backgroundColor: 'rgba(139,58,58,0.14)',
-                border: '1px solid rgba(139,58,58,0.28)',
-                color: '#8B3A3A',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <p
-              style={{
-                fontFamily: "'Cormorant Garamond',Georgia,serif",
-                fontSize: 22,
-                fontWeight: 400,
-                color: '#1A1A1A',
-                margin: '0 0 8px',
-              }}
-            >
-              {clients.length === 0 ? 'No clients yet' : 'No results found'}
-            </p>
-
-            <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.40)', margin: 0 }}>
-              {clients.length === 0
-                ? 'Clients will appear here once bookings are made.'
-                : `No clients matching "${search}".`}
-            </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(190px,100%),1fr))', gap: 14 }}>
+              {[1, 2, 3, 4].map(i => <div key={i} style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, padding: 22, display: 'flex', flexDirection: 'column', gap: 12 }}><Shim w={80} h={10} /><Shim w="70%" h={32} /><Shim w={120} h={10} /></div>)}
+            </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {filtered.map((c) => {
-              const ac = avatarColor(c.name)
-
-              return (
-                <div
-                  key={c.mobile}
-                  onClick={() => setSelected(c)}
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    backgroundImage: 'none',
-                    border: '1px solid rgba(26,26,26,0.09)',
-                    borderRadius: 14,
-                    padding: '16px 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    cursor: 'pointer',
-                    transition: 'all 200ms ease',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                  }}
-                  onMouseEnter={(e) => {
-                    const el = e.currentTarget as HTMLElement
-                    el.style.borderColor = 'rgba(197,143,59,0.30)'
-                    el.style.boxShadow = '0 6px 22px rgba(0,0,0,0.08)'
-                    el.style.transform = 'translateY(-1px)'
-                  }}
-                  onMouseLeave={(e) => {
-                    const el = e.currentTarget as HTMLElement
-                    el.style.borderColor = 'rgba(26,26,26,0.09)'
-                    el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)'
-                    el.style.transform = ''
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '50%',
-                      backgroundColor: ac,
-                      color: '#FFFFFF',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontFamily: "'Cormorant Garamond',Georgia,serif",
-                      fontSize: 20,
-                      fontWeight: 400,
-                      flexShrink: 0,
-                      boxShadow: `0 0 0 3px ${ac}28`,
-                    }}
-                  >
-                    {initials(c.name)}
+          <>
+            {/* ── KPI Strip ───────────────────────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(180px,100%),1fr))', gap: 14 }}>
+              {[
+                { label: 'Total Revenue', value: fmt(a.totalRevenue), sub: `Last ${period} days`, dark: true },
+                { label: 'Net Sales', value: fmt(a.totalNetSales), sub: 'After deductions', dark: false },
+                { label: 'Sessions', value: String(a.sessionCount), sub: `${fmt(Math.round(a.avgValue))} avg`, dark: false },
+                { label: 'New Clients', value: String(a.newClients), sub: `${a.returningClients} returning`, dark: false },
+                { label: 'Top Service', value: a.topService, sub: a.serviceStats[0] ? `${fmt(a.serviceStats[0].revenue)}` : '', dark: false, small: true },
+              ].map(t => {
+                const bg = t.dark ? '#1A1A1A' : '#FFFFFF'
+                const vCol = t.dark ? '#F3E9E0' : '#1A1A1A'
+                const lCol = t.dark ? 'rgba(243,233,224,0.50)' : '#7A6E65'
+                const sCol = t.dark ? 'rgba(243,233,224,0.38)' : '#9A8E85'
+                const bdr = t.dark ? 'rgba(197,143,59,0.20)' : 'rgba(26,26,26,0.09)'
+                return (
+                  <div key={t.label} style={{ position: 'relative', overflow: 'hidden', backgroundColor: bg, backgroundImage: 'none', border: `1px solid ${bdr}`, borderRadius: 16, padding: '18px 20px', boxShadow: t.dark ? '0 6px 20px rgba(0,0,0,0.18)' : '0 2px 10px rgba(0,0,0,0.06)' }}>
+                    {!t.dark && <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2, backgroundColor: '#C58F3B', opacity: 0.40, borderRadius: '0 0 2px 2px' }} />}
+                    <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: lCol, margin: '0 0 9px' }}>{t.label}</p>
+                    <p style={{ fontSize: t.small ? '1rem' : 'clamp(1.4rem,2.4vw,1.9rem)', fontWeight: 700, lineHeight: 1, color: vCol, margin: '0 0 5px' }}>{t.value}</p>
+                    <p style={{ fontSize: 11, color: sCol, margin: 0 }}>{t.sub}</p>
                   </div>
+                )
+              })}
+            </div>
 
-                  <div style={{ flex: 1, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                        marginBottom: 4,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: '#1A1A1A',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {c.name}
-                      </span>
+            {/* ── Revenue Over Time + Monthly ──────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(340px,100%),1fr))', gap: 16 }}>
+              <Card title={`Daily Revenue — Last ${period} Days`} sub={`${fmt(a.totalRevenue)} total`}>
+                <BarChart
+                  data={a.dailyStats.map(d => ({ label: d.label, value: d.revenue }))}
+                  height={110}
+                  showLabels={period <= 30}
+                />
+                {period > 30 && (
+                  <p style={{ fontSize: 11, color: 'rgba(26,26,26,0.38)', margin: 0, textAlign: 'center', fontStyle: 'italic' }}>
+                    Labels hidden for {period}-day view — hover bars for values
+                  </p>
+                )}
+              </Card>
 
-                      {c.visitCount > 1 && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            letterSpacing: '0.10em',
-                            textTransform: 'uppercase',
-                            padding: '2px 8px',
-                            borderRadius: 99,
-                            backgroundColor: 'rgba(197,143,59,0.12)',
-                            color: '#C58F3B',
-                            border: '1px solid rgba(197,143,59,0.30)',
-                            flexShrink: 0,
-                          }}
-                        >
-                          Returning
-                        </span>
-                      )}
-                    </div>
+              <Card title="Monthly Revenue — All Time" sub={`${a.monthlyStats.length} months`}>
+                <BarChart
+                  data={a.monthlyStats.map(d => ({ label: d.label, value: d.revenue }))}
+                  height={110}
+                />
+              </Card>
+            </div>
 
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.45)' }}>
-                        {c.mobile}
-                      </span>
-
-                      {c.email && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: 'rgba(26,26,26,0.35)',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: 200,
-                          }}
-                        >
-                          {c.email}
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ marginTop: 5, fontSize: 12, color: 'rgba(26,26,26,0.40)' }}>
-                      Fave:{' '}
-                      <span style={{ color: 'rgba(26,26,26,0.60)', fontWeight: 500 }}>
-                        {c.topService}
-                      </span>
-
-                      {c.topTherapist !== '—' && (
-                        <>
-                          {' '}
-                          &middot;{' '}
-                          <span style={{ color: 'rgba(26,26,26,0.60)', fontWeight: 500 }}>
-                            {c.topTherapist}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1A1A1A' }}>
-                      {fmt(c.totalSpend)}
-                    </div>
-
-                    <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', marginTop: 2 }}>
-                      {c.visitCount} visit{c.visitCount !== 1 ? 's' : ''}
-                    </div>
-
-                    {c.lastVisit && (
-                      <div style={{ fontSize: 11, color: 'rgba(26,26,26,0.30)', marginTop: 2 }}>
-                        {fmtDate(c.lastVisit)}
-                      </div>
-                    )}
-                  </div>
-
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    style={{ flexShrink: 0, color: 'rgba(26,26,26,0.25)' }}
-                  >
-                    <path
-                      d="M6 3l5 5-5 5"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+            {/* ── Top Services + Categories ────────────────────── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(340px,100%),1fr))', gap: 16 }}>
+              <Card title="Top Services by Revenue" sub={`Last ${period} days`}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {a.serviceStats.length === 0 && (
+                    <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.38)', fontStyle: 'italic', margin: 0 }}>No data for this period.</p>
+                  )}
+                  {a.serviceStats.map((s, i) => (
+                    <HBar
+                      key={s.name}
+                      label={s.name}
+                      value={s.revenue}
+                      max={a.serviceStats[0]?.revenue ?? 1}
+                      sub={`${s.count} session${s.count !== 1 ? 's' : ''}`}
+                      rank={i + 1}
                     />
-                  </svg>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
-        )}
+              </Card>
 
-        {!loading && !error && filtered.length > 0 && (
-          <p
-            style={{
-              fontSize: 12,
-              color: 'rgba(26,26,26,0.35)',
-              textAlign: 'center',
-              margin: 0,
-            }}
-          >
-            Showing {filtered.length} of {clients.length} clients
-          </p>
+              <Card title="Category Breakdown" sub={`${a.categoryStats.length} categories`}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {a.categoryStats.length === 0 && (
+                    <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.38)', fontStyle: 'italic', margin: 0 }}>No data for this period.</p>
+                  )}
+                  {a.categoryStats.map(s => (
+                    <HBar
+                      key={s.name}
+                      label={s.name}
+                      value={s.revenue}
+                      max={a.categoryStats[0]?.revenue ?? 1}
+                      sub={`${s.count} sessions`}
+                    />
+                  ))}
+                </div>
+                {/* Customer type pie-style summary */}
+                <div style={{ display: 'flex', gap: 10, paddingTop: 8, borderTop: '1px solid rgba(26,26,26,0.07)' }}>
+                  {[
+                    { label: 'New Clients', n: a.newClients, color: '#3D7A4A' },
+                    { label: 'Returning Clients', n: a.returningClients, color: '#C58F3B' },
+                  ].map(t => {
+                    const pct = a.sessionCount > 0 ? Math.round((t.n / a.sessionCount) * 100) : 0
+                    return (
+                      <div key={t.label} style={{ flex: 1, padding: '10px 14px', backgroundColor: t.color + '14', border: `1px solid ${t.color}44`, borderRadius: 10, textAlign: 'center' }}>
+                        <p style={{ fontSize: 22, fontWeight: 700, color: t.color, margin: '0 0 2px', fontFamily: "'Inter',system-ui,sans-serif" }}>{t.n}</p>
+                        <p style={{ fontSize: 11, color: t.color, margin: '0 0 2px', fontWeight: 600, fontFamily: "'Inter',system-ui,sans-serif", letterSpacing: '0.05em' }}>{t.label}</p>
+                        <p style={{ fontSize: 10, color: 'rgba(26,26,26,0.38)', margin: 0, fontFamily: "'Inter',system-ui,sans-serif" }}>{pct}% of sessions</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            </div>
+
+            {/* ── Therapist Performance ────────────────────────── */}
+            <Card title="Therapist Performance" sub={`Top ${a.therapistStats.length} · Last ${period} days`}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
+                      {['Therapist', 'Sessions', 'Total Revenue', 'Avg per Session', '% of Revenue'].map(h => (
+                        <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', backgroundColor: '#F8F4EE', whiteSpace: 'nowrap', fontFamily: "'Inter',system-ui,sans-serif" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {a.therapistStats.map((t, i) => (
+                      <tr key={t.name} style={{ borderBottom: i < a.therapistStats.length - 1 ? '1px solid rgba(26,26,26,0.06)' : 'none', transition: 'background 120ms ease' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(197,143,59,0.04)')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <td style={{ padding: '11px 14px', fontWeight: 600, color: '#1A1A1A', fontFamily: "'Inter',system-ui,sans-serif" }}>{t.name}</td>
+                        <td style={{ padding: '11px 14px', color: 'rgba(26,26,26,0.60)', fontFamily: "'Inter',system-ui,sans-serif" }}>{t.count}</td>
+                        <td style={{ padding: '11px 14px', fontWeight: 700, color: '#1A1A1A', fontFamily: "'Inter',system-ui,sans-serif" }}>{fmt(t.revenue)}</td>
+                        <td style={{ padding: '11px 14px', color: 'rgba(26,26,26,0.60)', fontFamily: "'Inter',system-ui,sans-serif" }}>{fmt(Math.round(t.avgValue))}</td>
+                        <td style={{ padding: '11px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ flex: 1, height: 6, borderRadius: 99, backgroundColor: 'rgba(197,143,59,0.12)', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', borderRadius: 99, backgroundColor: '#C58F3B', width: `${a.totalRevenue > 0 ? Math.round((t.revenue / a.totalRevenue) * 100) : 0}%` }} />
+                            </div>
+                            <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.50)', minWidth: 30, fontFamily: "'Inter',system-ui,sans-serif" }}>
+                              {a.totalRevenue > 0 ? Math.round((t.revenue / a.totalRevenue) * 100) : 0}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {a.therapistStats.length === 0 && (
+                      <tr><td colSpan={5} style={{ padding: '32px 14px', textAlign: 'center', color: '#9A8E85', fontStyle: 'italic', fontFamily: "'Inter',system-ui,sans-serif" }}>No data for this period.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+
+            {/* ── Payment Methods ──────────────────────────────── */}
+            <Card title="Payment Methods" sub={`Last ${period} days`}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(180px,100%),1fr))', gap: 10 }}>
+                {a.paymentStats.map(p => (
+                  <div key={p.name} style={{ padding: '14px 16px', backgroundColor: 'rgba(197,143,59,0.06)', border: '1px solid rgba(197,143,59,0.18)', borderRadius: 12 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 6px', fontFamily: "'Inter',system-ui,sans-serif" }}>{p.name || 'Unknown'}</p>
+                    <p style={{ fontSize: 18, fontWeight: 700, color: '#1A1A1A', margin: '0 0 2px', fontFamily: "'Inter',system-ui,sans-serif" }}>{fmt(p.revenue)}</p>
+                    <p style={{ fontSize: 12, color: 'rgba(26,26,26,0.45)', margin: 0, fontFamily: "'Inter',system-ui,sans-serif" }}>{p.count} transaction{p.count !== 1 ? 's' : ''}</p>
+                  </div>
+                ))}
+                {a.paymentStats.length === 0 && (
+                  <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.38)', fontStyle: 'italic', margin: 0, gridColumn: '1/-1' }}>No payment data for this period.</p>
+                )}
+              </div>
+            </Card>
+
+            {/* Data note */}
+            <p style={{ fontSize: 11, color: 'rgba(26,26,26,0.30)', textAlign: 'center', margin: 0, fontStyle: 'italic', fontFamily: "'Inter',system-ui,sans-serif" }}>
+              {allRows.length.toLocaleString()} total records · Revenue uses <code style={{ fontSize: 10, backgroundColor: 'rgba(26,26,26,0.07)', padding: '1px 5px', borderRadius: 4 }}>received_payment</code> column · Dates parsed from text format "D-Mon-YY"
+            </p>
+          </>
         )}
       </div>
     </>

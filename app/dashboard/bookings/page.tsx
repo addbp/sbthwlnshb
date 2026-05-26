@@ -1,97 +1,98 @@
 'use client'
 
-// app/dashboard/bookings/page.tsx  —  Phase 4 Bookings List
-// · Fixed Supabase column mismatch by using select('*')
-// · Fixed session cookie bug via createBrowserClient
+// app/dashboard/bookings/page.tsx — Bookings List
+// bookings_import schema:
+//   date (TEXT "1-May-25") · client_name · service · therapist
+//   received_payment · net_sales · service_amount
+//   category · customer_type · payment_method
 
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { createBrowserClient } from '@supabase/ssr'
-import { type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase/client'
+
+// ─────────────────────────────────────────────────────────────
+// DATE HELPERS
+// ─────────────────────────────────────────────────────────────
+const MONTHS_MAP: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+}
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "1-May-25" → Date */
+function parseImportDate(raw: string): Date | null {
+  const m = String(raw ?? '').trim().match(/^(\d{1,2})[-\/]([A-Za-z]{3,})[-\/](\d{2,4})$/)
+  if (!m) return null
+  const day = parseInt(m[1], 10)
+  const mon = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]
+  if (mon === undefined) return null
+  const yr = parseInt(m[3], 10)
+  const year = yr < 100 ? 2000 + yr : yr
+  const d = new Date(year, mon, day)
+  return isNaN(d.getTime()) ? null : d
+}
+
+/** "2025-05-26" (ISO from <input type=date>) → "26-May-25" (import text format) */
+function isoToImportDate(iso: string): string {
+  if (!iso) return ''
+  const d = new Date(iso + 'T12:00:00')   // noon avoids UTC edge cases
+  if (isNaN(d.getTime())) return iso
+  return `${d.getDate()}-${MONTH_ABBR[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`
+}
+
+/** "26-May-25" → "2025-05-26" (for <input type=date value> ) */
+function importDateToISO(raw: string): string {
+  const d = parseImportDate(raw)
+  if (!d) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function todayISO(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function fmtDate(raw: string): string {
+  const d = parseImportDate(raw)
+  if (!d) return raw || '—'
+  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
 // ─────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────
-type BookingStatus = 'completed' | 'in_progress' | 'confirmed' | 'upcoming' | 'cancelled'
-
 interface Booking {
-  id: string
-  client_name: string
-  client_mobile: string
-  service_name: string
-  therapist_name: string
-  amount: number
-  status: BookingStatus
-  payment_method: string
-  created_at: string
-  appt_time: string   // formatted HH:MM
-  appt_date: string   // YYYY-MM-DD
+  _key: string
+  date: string    // raw "1-May-25"
+  client: string    // client_name
+  service: string
+  therapist: string
+  revenue: number    // received_payment
+  netSales: number
+  serviceAmt: number
+  category: string
+  customerType: string
+  payMethod: string
 }
 
 // ─────────────────────────────────────────────────────────────
-// CONSTANTS
+// MAP raw row → Booking
 // ─────────────────────────────────────────────────────────────
-const STATUS_CFG: Record<BookingStatus, { label: string; color: string; bg: string; border: string }> = {
-  completed: { label: 'Completed', color: '#3D7A4A', bg: 'rgba(61,122,74,0.12)', border: 'rgba(61,122,74,0.28)' },
-  in_progress: { label: 'In Progress', color: '#2A6A8A', bg: 'rgba(42,106,138,0.13)', border: 'rgba(42,106,138,0.30)' },
-  confirmed: { label: 'Confirmed', color: '#A07530', bg: 'rgba(197,143,59,0.14)', border: 'rgba(197,143,59,0.35)' },
-  upcoming: { label: 'Upcoming', color: '#7A6A50', bg: 'rgba(122,106,80,0.10)', border: 'rgba(122,106,80,0.25)' },
-  cancelled: { label: 'Cancelled', color: '#8B3A3A', bg: 'rgba(139,58,58,0.12)', border: 'rgba(139,58,58,0.28)' },
-}
-
-const VALID_STATUSES = Object.keys(STATUS_CFG) as BookingStatus[]
-
-const FILTER_TABS = [
-  { key: 'all', label: 'All', match: VALID_STATUSES },
-  { key: 'active', label: 'Active', match: ['in_progress', 'confirmed'] as BookingStatus[] },
-  { key: 'completed', label: 'Completed', match: ['completed'] as BookingStatus[] },
-  { key: 'upcoming', label: 'Upcoming', match: ['upcoming'] as BookingStatus[] },
-  { key: 'cancelled', label: 'Cancelled', match: ['cancelled'] as BookingStatus[] },
-]
-
-const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
-
-function todayISO() { return new Date().toISOString().split('T')[0] }
-
-// ─────────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────────
-function mapBooking(row: Record<string, unknown>): Booking {
-  const rawAmount = Number(row.amount)
-  const rawStatus = String(row.status ?? '')
-  const status = VALID_STATUSES.includes(rawStatus as BookingStatus) ? (rawStatus as BookingStatus) : 'upcoming'
-
-  let apptTime = '--:--'
-  try {
-    if (row.appointment_time) {
-      apptTime = String(row.appointment_time).slice(0, 5)
-    } else if (row.created_at) {
-      const d = new Date(String(row.created_at))
-      if (!isNaN(d.getTime())) apptTime = d.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit', hour12: false })
-    }
-  } catch { /* silent */ }
-
-  let apptDate = ''
-  try {
-    apptDate = row.appointment_date
-      ? String(row.appointment_date)
-      : new Date(String(row.created_at)).toISOString().split('T')[0]
-  } catch { /* silent */ }
-
+function mapRow(row: Record<string, unknown>, idx: number): Booking {
   return {
-    id: String(row.id ?? ''),
-    client_name: String(row.client_name ?? row.client ?? 'Guest'),
-    // Flexible fallback: checks client_mobile, then mobile, then empty
-    client_mobile: String(row.client_mobile ?? row.mobile ?? '—'),
-    service_name: String(row.service_name ?? row.service ?? 'Service'),
-    therapist_name: String(row.therapist_name ?? row.therapist ?? 'Staff'),
-    amount: isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0,
-    status,
-    payment_method: String(row.payment_method ?? '—'),
-    created_at: String(row.created_at ?? ''),
-    appt_time: apptTime,
-    appt_date: apptDate,
+    _key: `${row.client_name}-${row.date}-${idx}`,
+    date: String(row.date ?? ''),
+    client: String(row.client_name ?? 'Guest'),
+    service: String(row.service ?? '—'),
+    therapist: String(row.therapist ?? '—'),
+    revenue: Number(row.received_payment ?? 0),
+    netSales: Number(row.net_sales ?? 0),
+    serviceAmt: Number(row.service_amount ?? 0),
+    category: String(row.category ?? '—'),
+    customerType: String(row.customer_type ?? '—'),
+    payMethod: String(row.payment_method ?? '—'),
   }
 }
 
@@ -106,13 +107,13 @@ function TableSkeleton() {
   return (
     <>
       <style>{`@keyframes shimmer{from{background-position:-200% center}to{background-position:200% center}}`}</style>
-      <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.06)' }}>
+      <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ backgroundColor: '#F8F4EE', padding: '12px 18px', display: 'flex', gap: 20, borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
-          {[60, 160, 120, 120, 80, 90].map((w, i) => <Shim key={i} w={w} h={10} />)}
+          {[80, 160, 120, 120, 80, 90, 80].map((w, i) => <Shim key={i} w={w} h={10} />)}
         </div>
-        {[1, 2, 3, 4, 5, 6].map(i => (
-          <div key={i} style={{ padding: '16px 18px', display: 'flex', gap: 20, alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-            {[60, 160, 120, 120, 80, 90].map((w, j) => <Shim key={j} w={w} h={14} />)}
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} style={{ padding: '15px 18px', display: 'flex', gap: 20, alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+            {[80, 160, 120, 120, 80, 90, 80].map((w, j) => <Shim key={j} w={w} h={13} />)}
           </div>
         ))}
       </div>
@@ -121,54 +122,45 @@ function TableSkeleton() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// BOOKING DETAIL PANEL
+// BOOKING DETAIL MODAL
 // ─────────────────────────────────────────────────────────────
-function BookingDetail({ booking, onClose }: { booking: Booking; onClose: () => void }) {
-  const st = STATUS_CFG[booking.status]
+function BookingDetail({ b, onClose }: { b: Booking; onClose: () => void }) {
   return (
     <>
-      <style>{`
-        @keyframes slideIn{from{opacity:0;transform:translateY(14px) scale(0.98)}to{opacity:1;transform:none}}
-        .bk-panel{animation:slideIn 260ms cubic-bezier(0.22,1,0.36,1) both;}
-      `}</style>
-      <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 50, backgroundColor: 'rgba(10,8,6,0.48)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px' }} role="dialog" aria-modal="true">
-        <div className="bk-panel" style={{ width: '100%', maxWidth: 420, backgroundColor: '#F9F4EB', backgroundImage: 'none', borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.26)', fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <style>{`@keyframes mIn{from{opacity:0;transform:translateY(14px) scale(0.98)}to{opacity:1;transform:none}} .bkdet{animation:mIn 260ms cubic-bezier(0.22,1,0.36,1) both;}`}</style>
+      <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 50, backgroundColor: 'rgba(10,8,6,0.48)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px' }}>
+        <div className="bkdet" style={{ width: '100%', maxWidth: 400, backgroundColor: '#F9F4EB', backgroundImage: 'none', borderRadius: 18, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.26)', fontFamily: "'Inter',system-ui,sans-serif" }}>
           <div style={{ height: 3, backgroundColor: '#C58F3B' }} />
-          <div style={{ padding: '22px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ padding: '22px 24px 26px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 4px' }}>Booking Detail</p>
-                <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 22, fontWeight: 400, color: '#1A1A1A', margin: 0 }}>{booking.client_name}</h3>
+                <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 22, fontWeight: 400, color: '#1A1A1A', margin: 0 }}>{b.client}</h3>
               </div>
               <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: '50%', border: '1px solid rgba(26,26,26,0.14)', backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(26,26,26,0.40)' }} aria-label="Close">
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M1.5 1.5l10 10M11.5 1.5l-10 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
               </button>
             </div>
-
             {[
-              ['Service', booking.service_name],
-              ['Therapist', booking.therapist_name],
-              ['Date', booking.appt_date || '—'],
-              ['Time', booking.appt_time],
-              ['Mobile', booking.client_mobile],
-              ['Payment', booking.payment_method],
+              ['Date', fmtDate(b.date)],
+              ['Service', b.service],
+              ['Therapist', b.therapist],
+              ['Category', b.category],
+              ['Customer Type', b.customerType],
+              ['Payment Method', b.payMethod],
+              ['Service Amount', fmt(b.serviceAmt)],
+              ['Net Sales', fmt(b.netSales)],
             ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, paddingBottom: 12, borderBottom: '1px solid rgba(26,26,26,0.07)' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(26,26,26,0.40)' }}>{label}</span>
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, paddingBottom: 11, borderBottom: '1px solid rgba(26,26,26,0.07)' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(26,26,26,0.40)' }}>{label}</span>
                 <span style={{ fontSize: 14, fontWeight: 500, color: '#1A1A1A', textAlign: 'right' }}>{value}</span>
               </div>
             ))}
-
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 99, fontSize: 11, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', backgroundColor: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                {st.label}
-              </span>
-              <span style={{ fontFamily: "'Inter',system-ui,sans-serif", fontSize: 22, fontWeight: 700, color: '#1A1A1A' }}>{fmt(booking.amount)}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: 'rgba(26,26,26,0.40)' }}>Revenue</span>
+              <span style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A' }}>{fmt(b.revenue)}</span>
             </div>
-
-            <button onClick={onClose} style={{ width: '100%', height: 44, backgroundColor: '#1A1A1A', color: '#C58F3B', border: '1px solid rgba(197,143,59,0.35)', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', cursor: 'pointer' }}>
-              Close
-            </button>
+            <button onClick={onClose} style={{ width: '100%', height: 44, backgroundColor: '#1A1A1A', color: '#C58F3B', border: '1px solid rgba(197,143,59,0.35)', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', cursor: 'pointer' }}>Close</button>
           </div>
         </div>
       </div>
@@ -180,40 +172,32 @@ function BookingDetail({ booking, onClose }: { booking: Booking; onClose: () => 
 // PAGE
 // ─────────────────────────────────────────────────────────────
 export default function BookingsPage() {
-  const supabaseRef = useRef<SupabaseClient | null>(null)
+  const supabase = useRef(createClient()).current
 
-  if (!supabaseRef.current) {
-    // CRITICAL: Uses correct browser client for session stability
-    supabaseRef.current = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-
-  const supabase = supabaseRef.current
-
+  // Date picker value is ISO "YYYY-MM-DD"; we convert to "D-Mon-YY" for the query
   const [selectedDate, setSelectedDate] = useState(todayISO())
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [bookings_import, setBookings] = useState<Booking[]>([])
+  const [catFilter, setCatFilter] = useState('all')
+  const [bookings, setBookings] = useState<Booking[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<Booking | null>(null)
   const [search, setSearch] = useState('')
 
-  const loadBookings = useCallback(async (date: string) => {
+  const loadBookings = useCallback(async (isoDate: string) => {
     setLoading(true); setError(null)
     try {
+      const importDateStr = isoToImportDate(isoDate)   // "2025-05-26" → "26-May-25"
+
       const { data, error: dbErr } = await supabase
         .from('bookings_import')
-        .select('*') // CRITICAL FIX: select everything to prevent missing column errors
-        .gte('created_at', `${date}T00:00:00.000Z`)
-        .lte('created_at', `${date}T23:59:59.999Z`)
-        .order('created_at', { ascending: false })
+        .select('date, client_name, service, therapist, received_payment, net_sales, service_amount, category, customer_type, payment_method')
+        .eq('date', importDateStr)     // exact text match on the date column
+        .order('client_name', { ascending: true })
 
       if (dbErr) throw new Error(dbErr.message)
-      setBookings((data ?? []).map(mapBooking))
+      setBookings((data ?? []).map(mapRow))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load bookings.')
+      setError(err instanceof Error ? err.message : 'Failed to load.')
     } finally {
       setLoading(false)
     }
@@ -221,102 +205,104 @@ export default function BookingsPage() {
 
   useEffect(() => { loadBookings(selectedDate) }, [selectedDate, loadBookings])
 
-  function handleDateChange(val: string) {
-    setSelectedDate(val)
-    setStatusFilter('all')
+  const isToday = selectedDate === todayISO()
+
+  function prevDay() {
+    const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() - 1)
+    setSelectedDate(importDateToISO(isoToImportDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)) || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+  }
+  function nextDay() {
+    if (isToday) return
+    const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() + 1)
+    const newISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    if (newISO <= todayISO()) setSelectedDate(newISO)
   }
 
-  const filterDef = FILTER_TABS.find(t => t.key === statusFilter) ?? FILTER_TABS[0]
-  const filtered = bookings_import
-    .filter(b => filterDef.match.includes(b.status))
+  const categories = Array.from(new Set(bookings.map(b => b.category).filter(Boolean)))
+
+  const filtered = bookings
+    .filter(b => catFilter === 'all' || b.category === catFilter)
     .filter(b => {
       if (!search.trim()) return true
       const q = search.toLowerCase()
-      return b.client_name.toLowerCase().includes(q)
-        || b.service_name.toLowerCase().includes(q)
-        || b.therapist_name.toLowerCase().includes(q)
-        || b.client_mobile.includes(q)
+      return b.client.toLowerCase().includes(q)
+        || b.service.toLowerCase().includes(q)
+        || b.therapist.toLowerCase().includes(q)
+        || b.category.toLowerCase().includes(q)
     })
 
-  const totalRevenue = bookings_import.filter(b => b.status === 'completed').reduce((a, b) => a + b.amount, 0)
-
-  const isToday = selectedDate === todayISO()
+  const totalRevenue = bookings.reduce((a, b) => a + b.revenue, 0)
 
   return (
     <>
-      {detail && <BookingDetail booking={detail} onClose={() => setDetail(null)} />}
+      <style>{`@keyframes shimmer{from{background-position:-200% center}to{background-position:200% center}}`}</style>
+      {detail && <BookingDetail b={detail} onClose={() => setDetail(null)} />}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 28, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
-        {/* ── Header ─────────────────────────────────────── */}
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Reservations</p>
-            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 300, color: '#1A1A1A', margin: 0, lineHeight: 1.1 }}>
-              Bookings
-            </h2>
+            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.8rem,3vw,2.4rem)', fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Bookings</h2>
           </div>
 
-          {/* Date navigation */}
+          {/* Date navigation — converts between ISO (input) ↔ import format (query) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toISOString().split('T')[0]) }}
-              style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(26,26,26,0.16)', backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(26,26,26,0.50)' }}>
+            <button onClick={prevDay} style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(26,26,26,0.16)', backgroundColor: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(26,26,26,0.50)' }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
-            <input type="date" value={selectedDate} onChange={e => handleDateChange(e.target.value)} max={todayISO()}
+            <input type="date" value={selectedDate} max={todayISO()}
+              onChange={e => setSelectedDate(e.target.value)}
               style={{ height: 36, padding: '0 12px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, fontWeight: 600, color: '#1A1A1A', backgroundColor: '#FFFFFF', fontFamily: "'Inter',system-ui,sans-serif", cursor: 'pointer', outline: 'none' }}
             />
-            <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); if (d.toISOString().split('T')[0] <= todayISO()) setSelectedDate(d.toISOString().split('T')[0]) }}
-              disabled={isToday}
+            <button onClick={nextDay} disabled={isToday}
               style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(26,26,26,0.16)', backgroundColor: 'transparent', cursor: isToday ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isToday ? 'rgba(26,26,26,0.20)' : 'rgba(26,26,26,0.50)', opacity: isToday ? 0.4 : 1 }}>
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2l5 5-5 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </button>
             {!isToday && (
-              <button onClick={() => setSelectedDate(todayISO())} style={{ padding: '0 14px', height: 36, borderRadius: 8, border: '1px solid rgba(197,143,59,0.40)', backgroundColor: 'transparent', color: '#C58F3B', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
-                Today
-              </button>
+              <button onClick={() => setSelectedDate(todayISO())} style={{ padding: '0 14px', height: 36, borderRadius: 8, border: '1px solid rgba(197,143,59,0.40)', backgroundColor: 'transparent', color: '#C58F3B', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>Today</button>
             )}
           </div>
         </div>
 
-        {/* ── Summary strip ───────────────────────────────── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(160px,100%),1fr))', gap: 12 }}>
-          {[
-            { label: 'Total Bookings', value: String(bookings_import.length), sub: selectedDate === todayISO() ? 'Today' : 'On this date' },
-            { label: 'Completed', value: String(bookings_import.filter(b => b.status === 'completed').length), sub: `${fmt(totalRevenue)} collected` },
-            { label: 'Active Now', value: String(bookings_import.filter(b => b.status === 'in_progress' || b.status === 'confirmed').length), sub: 'In session or confirmed' },
-            { label: 'Upcoming', value: String(bookings_import.filter(b => b.status === 'upcoming').length), sub: 'Scheduled ahead' },
-          ].map(t => (
-            <div key={t.label} style={{ backgroundColor: '#FFFFFF', backgroundImage: 'none', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '16px 18px', position: 'relative', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2, backgroundColor: '#C58F3B', opacity: 0.40, borderRadius: '0 0 2px 2px' }} />
-              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 6px' }}>{t.label}</p>
-              <p style={{ fontFamily: "'Inter',system-ui,sans-serif", fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: '0 0 2px', lineHeight: 1 }}>{t.value}</p>
-              <p style={{ fontSize: 11, color: '#9A8E85', margin: 0 }}>{t.sub}</p>
-            </div>
-          ))}
-        </div>
+        {/* Summary strip */}
+        {!loading && !error && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(160px,100%),1fr))', gap: 12 }}>
+            {[
+              { label: 'Total Bookings', value: String(bookings.length), sub: isoToImportDate(selectedDate) },
+              { label: 'Revenue', value: fmt(totalRevenue), sub: 'Received payments' },
+              { label: 'Net Sales', value: fmt(bookings.reduce((a, b) => a + b.netSales, 0)), sub: 'After deductions' },
+              { label: 'New Clients', value: String(bookings.filter(b => b.customerType.toLowerCase().includes('new')).length), sub: 'vs returning' },
+            ].map(t => (
+              <div key={t.label} style={{ backgroundColor: '#FFFFFF', backgroundImage: 'none', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '15px 17px', position: 'relative', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <div style={{ position: 'absolute', top: 0, left: 14, right: 14, height: 2, backgroundColor: '#C58F3B', opacity: 0.40, borderRadius: '0 0 2px 2px' }} />
+                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 6px' }}>{t.label}</p>
+                <p style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A', margin: '0 0 2px', lineHeight: 1 }}>{t.value}</p>
+                <p style={{ fontSize: 11, color: '#9A8E85', margin: 0 }}>{t.sub}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* ── Filters + search ────────────────────────────── */}
+        {/* Category filter + search */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {FILTER_TABS.map(tab => (
-              <button key={tab.key} onClick={() => setStatusFilter(tab.key)} style={{ padding: '0 14px', height: 32, borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', border: '1px solid', transition: 'all 150ms ease', fontFamily: "'Inter',system-ui,sans-serif", backgroundColor: statusFilter === tab.key ? '#1A1A1A' : 'transparent', borderColor: statusFilter === tab.key ? '#1A1A1A' : 'rgba(26,26,26,0.16)', color: statusFilter === tab.key ? '#C58F3B' : 'rgba(26,26,26,0.42)' }}>
-                {tab.label}
+            {['all', ...categories].map(cat => (
+              <button key={cat} onClick={() => setCatFilter(cat)} style={{ padding: '0 14px', height: 32, borderRadius: 8, cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', border: '1px solid', transition: 'all 150ms ease', fontFamily: "'Inter',system-ui,sans-serif", backgroundColor: catFilter === cat ? '#1A1A1A' : 'transparent', borderColor: catFilter === cat ? '#1A1A1A' : 'rgba(26,26,26,0.16)', color: catFilter === cat ? '#C58F3B' : 'rgba(26,26,26,0.42)' }}>
+                {cat === 'all' ? 'All Categories' : cat}
               </button>
             ))}
           </div>
-          <input
-            type="search" value={search} onChange={e => setSearch(e.target.value)}
+          <input type="search" value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search client, service, therapist…"
-            style={{ height: 36, padding: '0 14px', border: '1px solid rgba(26,26,26,0.14)', borderRadius: 8, fontSize: 13, color: '#1A1A1A', backgroundColor: '#FFFFFF', fontFamily: "'Inter',system-ui,sans-serif", outline: 'none', minWidth: 240 }}
+            style={{ height: 36, padding: '0 14px', border: '1px solid rgba(26,26,26,0.14)', borderRadius: 8, fontSize: 13, color: '#1A1A1A', backgroundColor: '#FFFFFF', fontFamily: "'Inter',system-ui,sans-serif", outline: 'none', minWidth: 220 }}
           />
         </div>
 
-        {/* ── Table ───────────────────────────────────────── */}
-        {loading ? (
-          <TableSkeleton />
-        ) : error ? (
-          <div style={{ padding: '20px', backgroundColor: 'rgba(139,58,58,0.09)', border: '1px solid rgba(139,58,58,0.28)', borderRadius: 12, color: '#8B3A3A', fontSize: 14 }}>
+        {/* Table */}
+        {loading ? <TableSkeleton /> : error ? (
+          <div style={{ padding: '14px 18px', backgroundColor: 'rgba(139,58,58,0.09)', border: '1px solid rgba(139,58,58,0.28)', borderRadius: 12, color: '#8B3A3A', fontSize: 14 }}>
             {error} <button onClick={() => loadBookings(selectedDate)} style={{ marginLeft: 12, padding: '4px 12px', borderRadius: 7, backgroundColor: 'rgba(139,58,58,0.14)', border: '1px solid rgba(139,58,58,0.28)', color: '#8B3A3A', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Retry</button>
           </div>
         ) : (
@@ -325,52 +311,42 @@ export default function BookingsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
-                    {['Time', 'Client', 'Service', 'Therapist', 'Amount', 'Status', ''].map((h, i) => (
+                    {['Client', 'Service', 'Therapist', 'Category', 'Type', 'Revenue', 'Payment', ''].map((h, i) => (
                       <th key={i} style={{ padding: '11px 16px', textAlign: 'left', fontFamily: "'Inter',system-ui,sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', backgroundColor: '#F8F4EE', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((b, i) => {
-                    const st = STATUS_CFG[b.status]
-                    return (
-                      <tr key={b.id}
-                        style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(26,26,26,0.06)' : 'none', cursor: 'pointer', transition: 'background 130ms ease' }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(197,143,59,0.04)')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                        onClick={() => setDetail(b)}
-                      >
-                        <td style={{ padding: '13px 16px', fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap' }}>{b.appt_time}</td>
-                        <td style={{ padding: '13px 16px', color: '#2A2A2A' }}>
-                          <div style={{ fontWeight: 600 }}>{b.client_name}</div>
-                          <div style={{ fontSize: 11, color: 'rgba(26,26,26,0.40)', marginTop: 2 }}>{b.client_mobile}</div>
-                        </td>
-                        <td style={{ padding: '13px 16px', color: '#2A2A2A', maxWidth: 200 }}>
-                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.service_name}</div>
-                        </td>
-                        <td style={{ padding: '13px 16px', color: '#4A4A4A', whiteSpace: 'nowrap' }}>{b.therapist_name}</td>
-                        <td style={{ padding: '13px 16px', fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap', fontSize: 15 }}>{fmt(b.amount)}</td>
-                        <td style={{ padding: '13px 16px' }}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', backgroundColor: st.bg, color: st.color, border: `1px solid ${st.border}`, whiteSpace: 'nowrap' }}>
-                            {st.label}
-                          </span>
-                        </td>
-                        <td style={{ padding: '13px 16px' }}>
-                          <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.35)', whiteSpace: 'nowrap' }}>View →</span>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {filtered.map((b, i) => (
+                    <tr key={b._key} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(26,26,26,0.06)' : 'none', cursor: 'pointer', transition: 'background 120ms ease' }}
+                      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(197,143,59,0.04)')}
+                      onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      onClick={() => setDetail(b)}
+                    >
+                      <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1A1A1A' }}>{b.client}</td>
+                      <td style={{ padding: '12px 16px', color: '#2A2A2A', maxWidth: 180 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.service}</div>
+                      </td>
+                      <td style={{ padding: '12px 16px', color: '#4A4A4A', whiteSpace: 'nowrap' }}>{b.therapist}</td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <span style={{ padding: '2px 9px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', backgroundColor: 'rgba(197,143,59,0.10)', color: '#A07530', border: '1px solid rgba(197,143,59,0.28)', whiteSpace: 'nowrap' }}>{b.category || '—'}</span>
+                      </td>
+                      <td style={{ padding: '12px 16px', color: 'rgba(26,26,26,0.55)', fontSize: 12, whiteSpace: 'nowrap' }}>{b.customerType || '—'}</td>
+                      <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap', fontSize: 15 }}>{fmt(b.revenue)}</td>
+                      <td style={{ padding: '12px 16px', color: 'rgba(26,26,26,0.50)', fontSize: 12, whiteSpace: 'nowrap' }}>{b.payMethod || '—'}</td>
+                      <td style={{ padding: '12px 16px' }}><span style={{ fontSize: 12, color: 'rgba(26,26,26,0.30)' }}>View →</span></td>
+                    </tr>
+                  ))}
                   {filtered.length === 0 && (
-                    <tr><td colSpan={7} style={{ padding: '44px 16px', textAlign: 'center', color: '#9A8E85', fontStyle: 'italic' }}>
-                      {bookings_import.length === 0 ? 'No bookings found for this date.' : 'No bookings match the current filter.'}
+                    <tr><td colSpan={8} style={{ padding: '40px 16px', textAlign: 'center', color: '#9A8E85', fontStyle: 'italic' }}>
+                      {bookings.length === 0 ? `No bookings found for ${isoToImportDate(selectedDate)}.` : 'No bookings match this filter.'}
                     </td></tr>
                   )}
                 </tbody>
               </table>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 20px', backgroundColor: '#F8F4EE', borderTop: '1px solid rgba(26,26,26,0.07)', flexWrap: 'wrap', gap: 8 }}>
-              <span style={{ fontSize: 12, color: '#9A8E85' }}>Showing {filtered.length} of {bookings_import.length} bookings</span>
+              <span style={{ fontSize: 12, color: '#9A8E85' }}>{filtered.length} of {bookings.length} bookings</span>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A1A' }}>Revenue: <strong style={{ color: '#C58F3B' }}>{fmt(totalRevenue)}</strong></span>
             </div>
           </div>
