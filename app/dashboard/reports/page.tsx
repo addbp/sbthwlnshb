@@ -4,38 +4,51 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// --- BULLETPROOF DATE PARSER ---
+// ─── INDESTRUCTIBLE DATE PARSER ───
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function parseImportDate(raw: string | null | undefined): Date | null {
     if (!raw) return null;
-    const clean = String(raw).trim().replace(/,/g, '');
+    const clean = String(raw).trim().replace(/,/g, '').replace(/\s+/g, ' ');
     if (!clean) return null;
 
-    const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
-    if (dashMatch) {
-        let year = dashMatch[3];
-        if (year.length === 2) year = '20' + year;
-        const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
-        if (!isNaN(d.getTime())) return d;
+    const MONTHS: Record<string, number> = {
+        jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+        may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
+        oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+    };
+
+    let year = 0, month = 0, day = 1, matched = false;
+
+    const match1 = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+    if (match1) {
+        day = parseInt(match1[1], 10); month = MONTHS[match1[2].toLowerCase()] ?? 0; year = parseInt(match1[3], 10); matched = true;
+    }
+    if (!matched) {
+        const match2 = clean.match(/^([A-Za-z]{3,})[-\s/]+(\d{1,2})[-\s/]+(\d{2,4})$/);
+        if (match2) {
+            month = MONTHS[match2[1].toLowerCase()] ?? 0; day = parseInt(match2[2], 10); year = parseInt(match2[3], 10); matched = true;
+        }
+    }
+    if (!matched) {
+        const match3 = clean.match(/^(\d{4})[-\s/]+(\d{1,2})[-\s/]+(\d{1,2})$/);
+        if (match3) {
+            year = parseInt(match3[1], 10); month = parseInt(match3[2], 10) - 1; day = parseInt(match3[3], 10); matched = true;
+        }
     }
 
-    const wordMatch = clean.match(/^([A-Za-z]{3,})\s+(\d{1,2})\s+(\d{2,4})$/);
-    if (wordMatch) {
-        let year = wordMatch[3];
-        if (year.length === 2) year = '20' + year;
-        const d = new Date(`${wordMatch[1]} ${wordMatch[2]}, ${year}`);
-        if (!isNaN(d.getTime())) return d;
+    if (matched) {
+        if (year < 100) year += 2000;
+        return new Date(year, month, day, 12, 0, 0);
     }
 
     const d = new Date(clean);
-    if (!isNaN(d.getTime())) return d;
+    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
     return null;
 }
 
-// Fetch
-async function fetchHistory(supabase: any) {
-    let from = 0; const PAGE = 1000; const all = [];
+async function fetchHistory(supabase: ReturnType<typeof createClient>) {
+    let from = 0; const PAGE = 1000; const all: any[] = [];
     for (; ;) {
         const { data } = await supabase.from('bookings_import').select('date,received_payment').range(from, from + PAGE - 1)
         if (!data || data.length === 0) break
@@ -90,6 +103,7 @@ export default function ReportsPage() {
                     <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Analytics</p>
                     <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Reports</h2>
                 </div>
+                <button onClick={loadAll} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>Refresh</button>
             </div>
 
             {loading ? (

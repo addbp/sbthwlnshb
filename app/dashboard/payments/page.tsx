@@ -4,40 +4,51 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// --- BULLETPROOF DATE PARSER ---
+// ─── INDESTRUCTIBLE DATE PARSER ───
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
-  const clean = String(raw).trim().replace(/,/g, '');
+  const clean = String(raw).trim().replace(/,/g, '').replace(/\s+/g, ' ');
   if (!clean) return null;
 
-  const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
-  if (dashMatch) {
-    let year = dashMatch[3];
-    if (year.length === 2) year = '20' + year;
-    const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
-    if (!isNaN(d.getTime())) return d;
+  const MONTHS: Record<string, number> = {
+    jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+    may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
+    oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
+  };
+
+  let year = 0, month = 0, day = 1, matched = false;
+
+  const match1 = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+  if (match1) {
+    day = parseInt(match1[1], 10); month = MONTHS[match1[2].toLowerCase()] ?? 0; year = parseInt(match1[3], 10); matched = true;
+  }
+  if (!matched) {
+    const match2 = clean.match(/^([A-Za-z]{3,})[-\s/]+(\d{1,2})[-\s/]+(\d{2,4})$/);
+    if (match2) {
+      month = MONTHS[match2[1].toLowerCase()] ?? 0; day = parseInt(match2[2], 10); year = parseInt(match2[3], 10); matched = true;
+    }
+  }
+  if (!matched) {
+    const match3 = clean.match(/^(\d{4})[-\s/]+(\d{1,2})[-\s/]+(\d{1,2})$/);
+    if (match3) {
+      year = parseInt(match3[1], 10); month = parseInt(match3[2], 10) - 1; day = parseInt(match3[3], 10); matched = true;
+    }
   }
 
-  const wordMatch = clean.match(/^([A-Za-z]{3,})\s+(\d{1,2})\s+(\d{2,4})$/);
-  if (wordMatch) {
-    let year = wordMatch[3];
-    if (year.length === 2) year = '20' + year;
-    const d = new Date(`${wordMatch[1]} ${wordMatch[2]}, ${year}`);
-    if (!isNaN(d.getTime())) return d;
+  if (matched) {
+    if (year < 100) year += 2000;
+    return new Date(year, month, day, 12, 0, 0);
   }
 
-  const defaultDate = new Date(clean);
-  if (!isNaN(defaultDate.getTime())) return defaultDate;
+  const d = new Date(clean);
+  if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   return null;
 }
 
-function fmtDate(raw: string): string {
+function fmtDateShort(raw: string): string {
   const d = parseImportDate(raw)
-  return d ? d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : raw || '—'
+  return d ? d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : String(raw)
 }
-
-const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
-const fmtK = (n: number) => n >= 1_000_000 ? `₱${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `₱${(n / 1000).toFixed(1)}k` : fmt(n)
 
 interface TxRow {
   _key: string; date: string; client: string; service: string; therapist: string;
@@ -102,7 +113,7 @@ export default function PaymentsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(175px,100%),1fr))', gap: 12 }}>
             <div style={{ backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.20)', borderRadius: 14, padding: '18px', boxShadow: '0 5px 18px rgba(0,0,0,0.16)' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(243,233,224,0.50)', margin: '0 0 8px' }}>Total Received</p>
-              <p style={{ fontSize: 'clamp(1.3rem,2.2vw,1.7rem)', fontWeight: 700, color: '#F3E9E0', margin: 0 }}>{fmtK(totalReceived)}</p>
+              <p style={{ fontSize: 'clamp(1.3rem,2.2vw,1.7rem)', fontWeight: 700, color: '#F3E9E0', margin: 0 }}>₱{totalReceived.toLocaleString()}</p>
             </div>
             <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '18px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total Transactions</p>
@@ -121,17 +132,18 @@ export default function PaymentsPage() {
                 <tbody>
                   {allTx.slice(0, 1000).map((t) => (
                     <tr key={t._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                      <td style={{ padding: '11px 13px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDate(t.date)}</td>
+                      <td style={{ padding: '11px 13px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDateShort(t.date)}</td>
                       <td style={{ padding: '11px 13px', fontWeight: 600, color: '#1A1A1A' }}>{t.client}</td>
                       <td style={{ padding: '11px 13px', color: '#2A2A2A' }}>{t.service}</td>
-                      <td style={{ padding: '11px 13px', color: '#666' }}>{fmt(t.amount)}</td>
-                      <td style={{ padding: '11px 13px', fontWeight: 700, color: '#1A1A1A' }}>{fmt(t.received)}</td>
+                      <td style={{ padding: '11px 13px', color: '#666' }}>₱{t.amount.toLocaleString()}</td>
+                      <td style={{ padding: '11px 13px', fontWeight: 700, color: '#1A1A1A' }}>₱{t.received.toLocaleString()}</td>
                       <td style={{ padding: '11px 13px', color: '#666' }}>
                         <span style={{ padding: '4px 8px', borderRadius: 4, backgroundColor: '#f5f5f5', fontSize: 11 }}>{t.method}</span>
                       </td>
                       <td style={{ padding: '11px 13px', color: '#C58F3B', fontWeight: 600, fontSize: 12 }}>{t.customerType || 'Standard'}</td>
                     </tr>
                   ))}
+                  {allTx.length === 0 && <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No payments found.</td></tr>}
                 </tbody>
               </table>
             </div>
