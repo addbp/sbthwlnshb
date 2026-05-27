@@ -12,43 +12,44 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─────────────────────────────────────────────────────────────
-// DATE HELPERS
+// DATE HELPERS  — real format in bookings_import.date: "May 1, 2025"
 // ─────────────────────────────────────────────────────────────
-const MONTHS_MAP: Record<string, number> = {
-  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+const MONTH_FULL: Record<string, number> = {
+  january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+  july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
 }
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const FULL_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
 
-/** "1-May-25" → Date */
+/** Parses "May 1, 2025" → Date. Returns null on failure. */
 function parseImportDate(raw: string): Date | null {
-  const m = String(raw ?? '').trim().match(/^(\d{1,2})[-\/]([A-Za-z]{3,})[-\/](\d{2,4})$/)
+  if (!raw) return null
+  const m = String(raw).trim().match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/)
   if (!m) return null
-  const day = parseInt(m[1], 10)
-  const mon = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]
+  const mon = MONTH_FULL[m[1].toLowerCase()]
   if (mon === undefined) return null
-  const yr = parseInt(m[3], 10)
-  const year = yr < 100 ? 2000 + yr : yr
-  const d = new Date(year, mon, day)
+  const d = new Date(parseInt(m[3], 10), mon, parseInt(m[2], 10))
   return isNaN(d.getTime()) ? null : d
 }
 
-/** "2025-05-26" (ISO from <input type=date>) → "26-May-25" (import text format) */
+/** "2025-05-01" (ISO from <input type=date>) → "May 1, 2025" for .eq() queries */
 function isoToImportDate(iso: string): string {
   if (!iso) return ''
-  const d = new Date(iso + 'T12:00:00')   // noon avoids UTC edge cases
+  const d = new Date(iso + 'T12:00:00')
   if (isNaN(d.getTime())) return iso
-  return `${d.getDate()}-${MONTH_ABBR[d.getMonth()]}-${String(d.getFullYear()).slice(-2)}`
-}
-
-/** "26-May-25" → "2025-05-26" (for <input type=date value> ) */
-function importDateToISO(raw: string): string {
-  const d = parseImportDate(raw)
-  if (!d) return ''
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${FULL_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
 }
 
 function todayISO(): string {
   const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function stepDay(isoDate: string, delta: number): string {
+  const d = new Date(isoDate + 'T12:00:00')
+  d.setDate(d.getDate() + delta)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
@@ -207,15 +208,11 @@ export default function BookingsPage() {
 
   const isToday = selectedDate === todayISO()
 
-  function prevDay() {
-    const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() - 1)
-    setSelectedDate(importDateToISO(isoToImportDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)) || `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
-  }
+  function prevDay() { setSelectedDate(stepDay(selectedDate, -1)) }
   function nextDay() {
     if (isToday) return
-    const d = new Date(selectedDate + 'T12:00:00'); d.setDate(d.getDate() + 1)
-    const newISO = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    if (newISO <= todayISO()) setSelectedDate(newISO)
+    const next = stepDay(selectedDate, 1)
+    if (next <= todayISO()) setSelectedDate(next)
   }
 
   const categories = Array.from(new Set(bookings.map(b => b.category).filter(Boolean)))

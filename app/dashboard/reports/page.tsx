@@ -16,16 +16,21 @@ import { createClient } from '@/lib/supabase/client'
 // DATE HELPERS
 // ─────────────────────────────────────────────────────────────
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const MONTHS_MAP: Record<string, number> = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 }
+
+// Full month names used by bookings_import.date  e.g. "May 1, 2025"
+const MONTH_FULL: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+}
 
 function parseImportDate(raw: string): Date | null {
-    const m = String(raw ?? '').trim().match(/^(\d{1,2})[-\/]([A-Za-z]{3,})[-\/](\d{2,4})$/)
+    if (!raw) return null
+    // "May 1, 2025"  or  "January 15, 2025"
+    const m = String(raw).trim().match(/^([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})$/)
     if (!m) return null
-    const day = parseInt(m[1], 10)
-    const mon = MONTHS_MAP[m[2].slice(0, 3).toLowerCase()]
+    const mon = MONTH_FULL[m[1].toLowerCase()]
     if (mon === undefined) return null
-    const yr = parseInt(m[3], 10)
-    const d = new Date(yr < 100 ? 2000 + yr : yr, mon, day)
+    const d = new Date(parseInt(m[3], 10), mon, parseInt(m[2], 10))
     return isNaN(d.getTime()) ? null : d
 }
 
