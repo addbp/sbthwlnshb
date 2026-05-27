@@ -4,24 +4,30 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─────────────────────────────────────────────────────────────
-// UNIVERSAL DATE PARSER 
-// ─────────────────────────────────────────────────────────────
-const MONTH_ABBR = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+// --- BULLETPROOF DATE PARSER ---
+function parseImportDate(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const clean = String(raw).trim().replace(/,/g, '');
+  if (!clean) return null;
 
-function parseImportDate(dateStr: string | null | undefined): Date | null {
-  if (!dateStr) return null;
-  const cleanStr = String(dateStr).trim().replace(/,/g, '');
-  if (!cleanStr) return null;
-  let d = new Date(cleanStr);
-  if (!isNaN(d.getTime())) return d;
-  const dashMatch = cleanStr.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+  const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
   if (dashMatch) {
     let year = dashMatch[3];
     if (year.length === 2) year = '20' + year;
-    d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
+    const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
     if (!isNaN(d.getTime())) return d;
   }
+
+  const wordMatch = clean.match(/^([A-Za-z]{3,})\s+(\d{1,2})\s+(\d{2,4})$/);
+  if (wordMatch) {
+    let year = wordMatch[3];
+    if (year.length === 2) year = '20' + year;
+    const d = new Date(`${wordMatch[1]} ${wordMatch[2]}, ${year}`);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const defaultDate = new Date(clean);
+  if (!isNaN(defaultDate.getTime())) return defaultDate;
   return null;
 }
 
@@ -30,47 +36,12 @@ function fmtDate(raw: string): string {
   return d ? d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : raw || '—'
 }
 
-function getYearMonth(raw: string): { year: number; month: number } | null {
-  const d = parseImportDate(raw)
-  return d ? { year: d.getFullYear(), month: d.getMonth() } : null
-}
-
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 const fmtK = (n: number) => n >= 1_000_000 ? `₱${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `₱${(n / 1000).toFixed(1)}k` : fmt(n)
 
 interface TxRow {
   _key: string; date: string; client: string; service: string; therapist: string;
-  amount: number; received: number; method: string; category: string;
-}
-
-async function fetchAllTransactions(supabase: ReturnType<typeof createClient>): Promise<TxRow[]> {
-  const COLS = 'date,client_name,service,therapist,service_amount,received_payment,payment_method,category'
-  const PAGE = 1000
-  const all: TxRow[] = []
-  let from = 0
-
-  for (; ;) {
-    const { data, error } = await supabase.from('bookings_import').select(COLS).range(from, from + PAGE - 1)
-    if (error || !data || data.length === 0) break
-    data.forEach((r, i) => {
-      all.push({
-        _key: `${r.client_name}-${r.date}-${from + i}`,
-        date: String(r.date ?? ''), client: String(r.client_name ?? 'Guest'),
-        service: String(r.service ?? '—'), therapist: String(r.therapist ?? '—'),
-        amount: Number(r.service_amount ?? 0), received: Number(r.received_payment ?? 0),
-        method: String(r.payment_method ?? '—'), category: String(r.category ?? '—'),
-      })
-    })
-    if (data.length < PAGE) break
-    from += PAGE
-  }
-
-  all.sort((a, b) => {
-    const da = parseImportDate(a.date)?.getTime() ?? 0
-    const db = parseImportDate(b.date)?.getTime() ?? 0
-    return db - da
-  })
-  return all
+  amount: number; received: number; method: string; customerType: string;
 }
 
 export default function PaymentsPage() {
@@ -80,8 +51,33 @@ export default function PaymentsPage() {
 
   const loadData = useCallback(async () => {
     setLoading(true)
-    const rows = await fetchAllTransactions(supabase)
-    setAllTx(rows)
+    const PAGE = 1000
+    const all: TxRow[] = []
+    let from = 0
+
+    for (; ;) {
+      const { data, error } = await supabase.from('bookings_import').select('date,client_name,service,therapist,service_amount,received_payment,payment_method,customer_type').range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      data.forEach((r, i) => {
+        all.push({
+          _key: `${r.client_name}-${i}-${from}`,
+          date: String(r.date ?? ''), client: String(r.client_name ?? 'Guest'),
+          service: String(r.service ?? '—'), therapist: String(r.therapist ?? '—'),
+          amount: Number(r.service_amount ?? 0), received: Number(r.received_payment ?? 0),
+          method: String(r.payment_method ?? '—'), customerType: String(r.customer_type ?? 'Standard'),
+        })
+      })
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+
+    all.sort((a, b) => {
+      const da = parseImportDate(a.date)?.getTime() ?? 0
+      const db = parseImportDate(b.date)?.getTime() ?? 0
+      return db - da
+    })
+
+    setAllTx(all)
     setLoading(false)
   }, [supabase])
 
@@ -119,18 +115,21 @@ export default function PaymentsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, textAlign: 'left' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                    {['Date', 'Client', 'Service', 'Amount', 'Received', 'Method'].map(h => <th key={h} style={{ padding: '10px 13px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>)}
+                    {['Date', 'Client', 'Service', 'Amount', 'Received', 'Mode of Payment', 'Client Type'].map(h => <th key={h} style={{ padding: '10px 13px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {allTx.slice(0, 1000).map((t) => (
                     <tr key={t._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                      <td style={{ padding: '11px 13px', color: '#666' }}>{fmtDate(t.date)}</td>
+                      <td style={{ padding: '11px 13px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDate(t.date)}</td>
                       <td style={{ padding: '11px 13px', fontWeight: 600, color: '#1A1A1A' }}>{t.client}</td>
                       <td style={{ padding: '11px 13px', color: '#2A2A2A' }}>{t.service}</td>
                       <td style={{ padding: '11px 13px', color: '#666' }}>{fmt(t.amount)}</td>
                       <td style={{ padding: '11px 13px', fontWeight: 700, color: '#1A1A1A' }}>{fmt(t.received)}</td>
-                      <td style={{ padding: '11px 13px', color: '#666' }}>{t.method}</td>
+                      <td style={{ padding: '11px 13px', color: '#666' }}>
+                        <span style={{ padding: '4px 8px', borderRadius: 4, backgroundColor: '#f5f5f5', fontSize: 11 }}>{t.method}</span>
+                      </td>
+                      <td style={{ padding: '11px 13px', color: '#C58F3B', fontWeight: 600, fontSize: 12 }}>{t.customerType || 'Standard'}</td>
                     </tr>
                   ))}
                 </tbody>
