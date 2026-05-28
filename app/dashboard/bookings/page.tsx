@@ -70,7 +70,7 @@ export default function BookingsPage() {
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        // Pulled customer_type to fill the Discount/Membership column
+        // Pulls customer_type which contains First Time/Returning data
         .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method, customer_type')
         .range(from, from + PAGE - 1)
 
@@ -167,7 +167,8 @@ export default function BookingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Discount/Membership'].map(h => (
+                  {/* RENAMED COLUMN TO CLIENT TYPE */}
+                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
                     <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -184,7 +185,10 @@ export default function BookingsPage() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
-                    <td style={{ padding: '14px 16px', color: '#C58F3B', fontWeight: 600 }}>{b.customerType}</td>
+                    {/* RENDERS THE CLIENT TYPE */}
+                    <td style={{ padding: '14px 16px', color: '#C58F3B', fontWeight: 600 }}>
+                      {b.customerType}
+                    </td>
                   </tr>
                 ))}
                 {paginatedBookings.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No records match your search.</td></tr>}
