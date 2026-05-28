@@ -83,7 +83,7 @@ const PAYMENT_METHODS = [
   },
 ]
 
-// FIXED: 11:00 AM to 12:00 AM
+// 11:00 AM to 12:00 AM
 const TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
   '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
@@ -222,7 +222,6 @@ export default function BookingPage() {
     loadData()
   }, [supabase])
 
-  // Custom Sorter: Ranks Top Services first, then regular order
   const popularitySort = (a: ServiceItem, b: ServiceItem) => {
     const aUpper = a.name.toUpperCase();
     const bUpper = b.name.toUpperCase();
@@ -279,14 +278,13 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
-    // THE FOOLPROOF FIX: We safely bundle Mobile and Email into Notes so it never crashes!
     let contactInfoString = `📱 Mobile: ${mobile.trim()}`;
     if (email.trim()) contactInfoString += `\n✉️ Email: ${email.trim()}`;
     const combinedNotes = `${contactInfoString}\n\n📝 Notes: ${notes.trim() || 'None'}`;
 
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
-        client_name: name.trim(),
+        client: name.trim(), // <--- THE FINAL FIX: client_name is now exactly 'client'
         service: selectedServices.map(s => s.name).join(', '),
         price: totalAmount,
         therapist: selectedTherapist?.name ?? null,
@@ -294,7 +292,7 @@ export default function BookingPage() {
         time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: combinedNotes, // Safe fallback for contact info!
+        notes: combinedNotes,
       })
 
       if (dbErr) throw new Error(dbErr.message)
@@ -428,7 +426,6 @@ export default function BookingPage() {
                 })}
               </div>
 
-              {/* Dynamic QR Code & Instructions Block */}
               {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
