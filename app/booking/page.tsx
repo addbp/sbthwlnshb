@@ -286,9 +286,11 @@ export default function BookingPage() {
     }
   }, [date, availableTimeSlots, time]);
 
+  // EMAIL IS NOW REQUIRED (Added Regex Check)
   const validation = {
     name: name.trim().length < 2,
     mobile: mobile.trim().length < 7,
+    email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
     time: time === '',
@@ -305,12 +307,15 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
+    let contactInfoString = `📱 Mobile: ${mobile.trim()}`;
+    if (email.trim()) contactInfoString += `\n✉️ Email: ${email.trim()}`;
+    const combinedNotes = `${contactInfoString}\n\n📝 Notes: ${notes.trim() || 'None'}`;
+
     try {
-      // ── MATCHES THE NEWLY ADDED SQL COLUMNS PERFECTLY ──
       const { error: dbErr } = await supabase.from('bookings').insert({
         client_name: name.trim(),
         client_mobile: mobile.trim(),
-        client_email: email.trim() || null,
+        client_email: email.trim(),
         service_name: selectedServices.map(s => s.name).join(', '),
         price: totalAmount,
         therapist_name: selectedTherapist?.name ?? null,
@@ -318,10 +323,28 @@ export default function BookingPage() {
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: notes.trim() || null,
+        notes: combinedNotes,
       })
-
       if (dbErr) throw new Error(dbErr.message)
+
+      // ── TRIGGER EMAIL CONFIRMATION IN BACKGROUND ──
+      try {
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: email.trim(),
+            date: date,
+            time: time,
+            services: selectedServices.map(s => s.name).join(', '),
+            totalAmount: totalAmount
+          })
+        })
+      } catch (e) {
+        console.error("Email notification skipped", e)
+      }
+
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed.')
@@ -330,11 +353,32 @@ export default function BookingPage() {
 
   const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
 
+  // ── UPDATED SUCCESS SCREEN ──
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
-      <div style={{ fontSize: 44, color: GOLD, marginBottom: 22 }}>✦</div>
+      <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
-      <p style={{ color: 'rgba(26,26,26,0.55)', fontSize: 16, maxWidth: 380, margin: '0 auto 36px' }}>Thank you, <strong style={{ color: BLACK }}>{name}</strong>. We'll confirm your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> via SMS shortly.</p>
+
+      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
+        Thank you, <strong style={{ color: BLACK }}>{name}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
+      </p>
+
+      <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+        <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>✉️</span> A confirmation receipt has been sent to <span style={{ color: GOLD }}>{email}</span>
+        </p>
+        <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
+        <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: '0 0 8px', lineHeight: 1.5 }}>
+          <strong style={{ color: BLACK }}>Important:</strong> Sabbath Spa will confirm your appointment 1 hour before your check-in via SMS or Call.
+        </p>
+        <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: 0, lineHeight: 1.5 }}>
+          For immediate concerns, please contact us at <strong style={{ color: BLACK }}>0917 199 7772</strong>.
+        </p>
+      </div>
+
+      <button onClick={() => window.location.reload()} style={{ height: 50, padding: '0 32px', backgroundColor: 'transparent', color: BLACK, border: '1px solid rgba(26,26,26,0.2)', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
+        Book Another Session
+      </button>
     </div>
   )
 
@@ -376,8 +420,8 @@ export default function BookingPage() {
                     placeholder="09XX XXX XXXX"
                   />
                 </Field>
-                <Field label="Email Address">
-                  <input className="bk-in" style={INPUT} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Optional" />
+                <Field label="Email Address *">
+                  <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
               </Row2>
             </Section>
