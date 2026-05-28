@@ -55,7 +55,6 @@ interface Therapist { id: string; name: string; status: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
-// ── PERFECTLY MAPPED PAYMENT METHODS ──
 const PAYMENT_METHODS = [
   {
     key: 'gcash', label: 'GCash',
@@ -84,10 +83,23 @@ const PAYMENT_METHODS = [
   },
 ]
 
+// FIXED: 11:00 AM to 12:00 AM
 const TIME_SLOTS = [
-  '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM',
-  '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
-  '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM',
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
+  '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
+  '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM',
+  '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
+  '11:00 PM', '11:30 PM', '12:00 AM'
+]
+
+// SABBATH SPA TOP SERVICES (Prioritized in list)
+const TOP_SERVICES = [
+  'COMBINATION',
+  'SWEDISH',
+  'SABBATH SIGNATURE',
+  'VENTOSA',
+  'AROMATHERAPY',
+  'HOT STONE'
 ]
 
 // ─────────────────────────────────────────────────────────────
@@ -174,7 +186,6 @@ export default function BookingPage() {
   const [payMethod, setPayMethod] = useState('')
   const [notes, setNotes] = useState('')
 
-  // ── STRICT LIVE DATA FETCHING ──────────────────────────────────
   useEffect(() => {
     const d = new Date()
     d.setDate(d.getDate() + 1)
@@ -211,20 +222,31 @@ export default function BookingPage() {
     loadData()
   }, [supabase])
 
-  // Alphabetically sort services
+  // Custom Sorter: Ranks Top Services first, then regular order
+  const popularitySort = (a: ServiceItem, b: ServiceItem) => {
+    const aUpper = a.name.toUpperCase();
+    const bUpper = b.name.toUpperCase();
+    const aIndex = TOP_SERVICES.findIndex(t => aUpper.includes(t));
+    const bIndex = TOP_SERVICES.findIndex(t => bUpper.includes(t));
+
+    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+    if (aIndex !== -1) return -1;
+    if (bIndex !== -1) return 1;
+    return 0;
+  }
+
   const massageServices = dbServices
     .filter(s => s.category?.toLowerCase().includes('massage') || s.category?.toLowerCase().includes('therapy') || s.category?.toLowerCase().includes('body'))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort(popularitySort)
 
   const nailServices = dbServices
     .filter(s => s.category?.toLowerCase().includes('nail') || s.category?.toLowerCase().includes('le') || s.category?.toLowerCase().includes('hands') || s.category?.toLowerCase().includes('feet'))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort(popularitySort)
 
   const assignedIds = new Set([...massageServices.map(s => s.id), ...nailServices.map(s => s.id)])
-  const unassigned = dbServices.filter(s => !assignedIds.has(s.id)).sort((a, b) => a.name.localeCompare(b.name))
+  const unassigned = dbServices.filter(s => !assignedIds.has(s.id)).sort(popularitySort)
   massageServices.push(...unassigned)
 
-  // Searchable Therapist Filter
   const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
   function toggleService(id: string) {
@@ -257,21 +279,22 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
+    // Merge email into notes to avoid missing column errors in Supabase!
+    const combinedNotes = email.trim() ? `Client Email: ${email.trim()}\n\n${notes.trim()}` : notes.trim();
+
     try {
-      // ── FIXED DATABASE MAPPING ──
-      // Stripped down to the exact column names confirmed by Supabase
       const { error: dbErr } = await supabase.from('bookings').insert({
         client_name: name.trim(),
         client_mobile: mobile.trim(),
-        client_email: email.trim() || null,
-        service: selectedServices.map(s => s.name).join(', '), // Replaced service_name with service
+        // Removed client_email directly to fix schema error
+        service: selectedServices.map(s => s.name).join(', '),
         price: totalAmount,
-        therapist: selectedTherapist?.name ?? null, // Replaced therapist_name with therapist
-        date: date, // FIXED: Changed appointment_date to date
-        time: time, // FIXED: Changed appointment_time to time
+        therapist: selectedTherapist?.name ?? null,
+        date: date,
+        time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: notes.trim() || null,
+        notes: combinedNotes || null,
       })
 
       if (dbErr) throw new Error(dbErr.message)
@@ -297,7 +320,6 @@ export default function BookingPage() {
         .bk-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .bk-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
         
-        /* Custom scrollbar for services area */
         .svc-scroll::-webkit-scrollbar { width: 6px; }
         .svc-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
