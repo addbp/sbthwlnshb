@@ -4,7 +4,16 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── INDESTRUCTIBLE DATE PARSER (Forces 12:00 PM to kill timezone shifts) ───
+// ─── ABSOLUTE BULLETPROOF CURRENCY PARSER ───
+// This guarantees it will NEVER return NaN, even if the database has weird text.
+function parseCurrency(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  const cleaned = String(val).replace(/[^0-9.-]+/g, '');
+  const num = Number(cleaned);
+  return isNaN(num) ? 0 : num;
+}
+
+// ─── INDESTRUCTIBLE DATE PARSER ───
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   let clean = String(raw).trim();
@@ -18,6 +27,7 @@ function parseImportDate(raw: string | null | undefined): Date | null {
 
   let d = new Date(clean);
   if (!isNaN(d.getTime())) {
+    // Force to NOON to prevent timezone shifting
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   }
   return null;
@@ -31,10 +41,20 @@ function todayISO(): string {
   return toLocalISO(new Date());
 }
 
+// ─── STRICT DATE FORMATTER ───
+function formatDateToDDMMMYY(d: Date | null): string {
+  if (!d || isNaN(d.getTime())) return '—';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mmm = months[d.getMonth()];
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}-${mmm}-${yy}`;
+}
+
 function fmtDateShort(raw: string): string {
   const d = parseImportDate(raw);
   if (!d) return String(raw);
-  return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' })
+  return formatDateToDDMMMYY(d);
 }
 
 interface Sale {
@@ -46,16 +66,19 @@ interface Sale {
 async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   const all: Sale[] = []
 
+  // 1. Fetch Live Operations Data
   const { data: liveData } = await supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(1000)
   if (liveData) {
     liveData.forEach((r: any) => {
       all.push({
         _key: `live-${r.id}`,
-        date: r.created_at || new Date().toISOString(),
+        // Use appointment_date if available, otherwise created_at
+        date: r.appointment_date || r.created_at || new Date().toISOString(),
         client: r.client_name || 'Guest',
         service: r.service_name || r.service || '—',
         therapist: r.therapist_name || r.therapist || '—',
-        revenue: Number(r.price || r.received_payment || 0),
+        // Checks all possible live revenue columns
+        revenue: parseCurrency(r.price || r.amount || r.received_payment),
         category: r.category || 'Live Booking',
         payMethod: r.payment_method || '—',
         isLive: true,
@@ -64,9 +87,10 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
     })
   }
 
+  // 2. Fetch Historical Data
   let from = 0; const PAGE = 1000;
   for (; ;) {
-    const { data } = await supabase.from('bookings_import').select('date,client_name,service,therapist,received_payment,category,payment_method').range(from, from + PAGE - 1)
+    const { data } = await supabase.from('bookings_import').select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method').range(from, from + PAGE - 1)
     if (!data || data.length === 0) break
     data.forEach((r: any, i: number) => {
       all.push({
@@ -75,7 +99,8 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
         client: String(r.client_name || 'Guest'),
         service: String(r.service || '—'),
         therapist: String(r.therapist || '—'),
-        revenue: Number(r.received_payment || 0),
+        // Checks all possible historical revenue columns
+        revenue: parseCurrency(r.received_payment || r.service_amount),
         category: String(r.category || '—'),
         payMethod: String(r.payment_method || '—'),
         isLive: false,
@@ -85,6 +110,7 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
     if (data.length < PAGE) break; from += PAGE;
   }
 
+  // Sort universally from newest to oldest
   return all.sort((a, b) => (parseImportDate(b.date)?.getTime() || 0) - (parseImportDate(a.date)?.getTime() || 0))
 }
 
