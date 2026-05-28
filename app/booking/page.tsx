@@ -262,16 +262,14 @@ export default function BookingPage() {
         client_name: name.trim(),
         client_mobile: mobile.trim(),
         client_email: email.trim() || null,
-        services: selectedServices.map(s => s.name),
         service_name: selectedServices.map(s => s.name).join(', '),
-        amount: totalAmount,
+        price: totalAmount, // FIX: Swapped 'amount' to 'price' to match your schema!
         therapist_id: therapistId || null,
         therapist_name: selectedTherapist?.name ?? null,
         appointment_date: date,
         appointment_time: time,
         payment_method: payMethod,
-        is_new_client: true, // Simplified since there is no lookup
-        status: 'upcoming',
+        status: 'Pending', // Standard default status
         notes: notes.trim() || null,
       })
       if (dbErr) throw new Error(dbErr.message)
