@@ -55,21 +55,26 @@ interface Therapist { id: string; name: string; status: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
+// UPDATED PAYMENT METHODS WITH QR IMAGES
 const PAYMENT_METHODS = [
   {
-    key: 'gcash', label: 'GCash',
+    key: 'gcash', label: 'GCash / Maya',
+    qrImage: '/qr-gcash-maya.png', // Uses the combined GCash/Maya image you uploaded
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
   },
   {
-    key: 'bank', label: 'Bank Transfer',
+    key: 'bank', label: 'QRPh (Any Bank)',
+    qrImage: '/qr-qrph.png', // Uses the blue/yellow QRPh image
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
   },
   {
-    key: 'mastercard', label: 'Mastercard',
+    key: 'mastercard', label: 'Visa / Mastercard',
+    qrImage: '/qr-visa.png', // Uses the red AUB PayMate Visa image
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="7.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /><circle cx="12.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /></svg>
   },
   {
     key: 'cash', label: 'Cash',
+    qrImage: null, // No QR for cash
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
   },
 ]
@@ -271,6 +276,8 @@ export default function BookingPage() {
     } finally { setLoading(false) }
   }
 
+  const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
+
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
       <div style={{ fontSize: 44, color: GOLD, marginBottom: 22 }}>✦</div>
@@ -362,29 +369,7 @@ export default function BookingPage() {
                 <Field label="Preferred Time *">
                   <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
                     <option value="">Select time…</option>
-                    <option value="9:00 AM">9:00 AM</option>
-                    <option value="9:30 AM">9:30 AM</option>
-                    <option value="10:00 AM">10:00 AM</option>
-                    <option value="10:30 AM">10:30 AM</option>
-                    <option value="11:00 AM">11:00 AM</option>
-                    <option value="11:30 AM">11:30 AM</option>
-                    <option value="12:00 PM">12:00 PM</option>
-                    <option value="12:30 PM">12:30 PM</option>
-                    <option value="1:00 PM">1:00 PM</option>
-                    <option value="1:30 PM">1:30 PM</option>
-                    <option value="2:00 PM">2:00 PM</option>
-                    <option value="2:30 PM">2:30 PM</option>
-                    <option value="3:00 PM">3:00 PM</option>
-                    <option value="3:30 PM">3:30 PM</option>
-                    <option value="4:00 PM">4:00 PM</option>
-                    <option value="4:30 PM">4:30 PM</option>
-                    <option value="5:00 PM">5:00 PM</option>
-                    <option value="5:30 PM">5:30 PM</option>
-                    <option value="6:00 PM">6:00 PM</option>
-                    <option value="6:30 PM">6:30 PM</option>
-                    <option value="7:00 PM">7:00 PM</option>
-                    <option value="7:30 PM">7:30 PM</option>
-                    <option value="8:00 PM">8:00 PM</option>
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </Field>
               </Row2>
@@ -410,17 +395,23 @@ export default function BookingPage() {
                   return (
                     <button key={pm.key} type="button" onClick={() => setPayMethod(pm.key)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '18px 10px', backgroundColor: sel ? BLACK : WHITE, border: `1.5px solid ${sel ? BLACK : 'rgba(26,26,26,0.13)'}`, borderRadius: 12, cursor: 'pointer', color: sel ? GOLD : 'rgba(26,26,26,0.50)', transition: 'all 180ms ease' }}>
                       {pm.icon}
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>{pm.label}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'center' }}>{pm.label}</span>
                     </button>
                   )
                 })}
               </div>
 
-              {/* QR Code Block for GCash or Bank Transfer */}
-              {['gcash', 'bank', 'mastercard'].includes(payMethod) && (
+              {/* Dynamic QR Code Block */}
+              {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay</p>
-                  <img src="/qr-code.png" alt="QR Code Placeholder" style={{ width: 180, height: 180, objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8, backgroundColor: WHITE, padding: 8, border: '1px solid rgba(26,26,26,0.08)' }} />
+                  <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
+
+                  <img
+                    src={selectedPaymentMethodObj.qrImage}
+                    alt={`QR Code for ${selectedPaymentMethodObj.label}`}
+                    style={{ width: '100%', maxWidth: 350, height: 'auto', objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8 }}
+                  />
+
                   <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.6)', marginTop: 12, lineHeight: 1.4 }}>Please scan the code above and save a screenshot of your transaction receipt.</p>
                 </div>
               )}
