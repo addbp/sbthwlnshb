@@ -258,20 +258,22 @@ export default function BookingPage() {
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
     try {
+      // ── FIXED DATABASE MAPPING ──
+      // Stripped down to the exact column names confirmed by Supabase
       const { error: dbErr } = await supabase.from('bookings').insert({
         client_name: name.trim(),
         client_mobile: mobile.trim(),
         client_email: email.trim() || null,
-        service_name: selectedServices.map(s => s.name).join(', '),
-        price: totalAmount, // FIX: Swapped 'amount' to 'price' to match your schema!
-        therapist_id: therapistId || null,
-        therapist_name: selectedTherapist?.name ?? null,
-        appointment_date: date,
-        appointment_time: time,
+        service: selectedServices.map(s => s.name).join(', '), // Replaced service_name with service
+        price: totalAmount,
+        therapist: selectedTherapist?.name ?? null, // Replaced therapist_name with therapist
+        date: date, // FIXED: Changed appointment_date to date
+        time: time, // FIXED: Changed appointment_time to time
         payment_method: payMethod,
-        status: 'Pending', // Standard default status
+        status: 'Pending',
         notes: notes.trim() || null,
       })
+
       if (dbErr) throw new Error(dbErr.message)
       setSubmitted(true)
     } catch (err) {
