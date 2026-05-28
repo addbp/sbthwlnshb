@@ -186,10 +186,18 @@ export default function BookingPage() {
   const [payMethod, setPayMethod] = useState('')
   const [notes, setNotes] = useState('')
 
+  // Get localized today string (YYYY-MM-DD)
+  const getTodayStr = useCallback(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [])
+
   useEffect(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    setMinApptDate(d.toISOString().split('T')[0])
+    // Allows booking for TODAY onwards
+    setMinApptDate(getTodayStr())
 
     async function loadData() {
       try {
@@ -220,8 +228,9 @@ export default function BookingPage() {
       }
     }
     loadData()
-  }, [supabase])
+  }, [supabase, getTodayStr])
 
+  // Custom Sorter: Ranks Top Services first, then regular order
   const popularitySort = (a: ServiceItem, b: ServiceItem) => {
     const aUpper = a.name.toUpperCase();
     const bUpper = b.name.toUpperCase();
@@ -259,6 +268,32 @@ export default function BookingPage() {
   const selectedServices = dbServices.filter(s => selectedIds.has(s.id))
   const totalAmount = selectedServices.reduce((a, s) => a + Number(s.price || 0), 0)
 
+  // ── REAL-TIME SAME-DAY TIME FILTER ──
+  const availableTimeSlots = date === getTodayStr() ? TIME_SLOTS.filter(t => {
+    const match = t.match(/(\d+):(\d+)\s(AM|PM)/);
+    if (!match) return true;
+    let h = parseInt(match[1]);
+    const m = parseInt(match[2]);
+    const ampm = match[3];
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+
+    const now = new Date();
+    const currH = now.getHours();
+    const currM = now.getMinutes();
+
+    if (h > currH) return true;
+    if (h === currH && m > currM) return true;
+    return false; // Time has already passed!
+  }) : TIME_SLOTS;
+
+  // Auto-clear time if they switch back to today and their selected time already passed
+  useEffect(() => {
+    if (time && !availableTimeSlots.includes(time)) {
+      setTime('');
+    }
+  }, [date, availableTimeSlots, time]);
+
   const validation = {
     name: name.trim().length < 2,
     mobile: mobile.trim().length < 7,
@@ -278,16 +313,18 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
+    // THE FOOLPROOF FIX: We safely bundle Mobile and Email into Notes so it never crashes!
     let contactInfoString = `📱 Mobile: ${mobile.trim()}`;
     if (email.trim()) contactInfoString += `\n✉️ Email: ${email.trim()}`;
     const combinedNotes = `${contactInfoString}\n\n📝 Notes: ${notes.trim() || 'None'}`;
 
     try {
+      // ── THE FINAL SAFE SCHEMA MAPPING ──
       const { error: dbErr } = await supabase.from('bookings').insert({
-        client: name.trim(), // <--- THE FINAL FIX: client_name is now exactly 'client'
-        service: selectedServices.map(s => s.name).join(', '),
+        client_name: name.trim(), // Restored to exact database name
+        service_name: selectedServices.map(s => s.name).join(', '), // Restored to exact database name
         price: totalAmount,
-        therapist: selectedTherapist?.name ?? null,
+        therapist_name: selectedTherapist?.name ?? null, // Restored to exact database name
         date: date,
         time: time,
         payment_method: payMethod,
@@ -394,8 +431,11 @@ export default function BookingPage() {
                 <Field label="Preferred Time *">
                   <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
                     <option value="">Select time…</option>
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {availableTimeSlots.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+                  {date === getTodayStr() && availableTimeSlots.length === 0 && (
+                    <p style={{ fontSize: 12, color: '#8B3A3A', marginTop: 8, fontWeight: 600 }}>No remaining time slots for today.</p>
+                  )}
                 </Field>
               </Row2>
               <Field label={therapistLoad ? 'Therapist (loading…)' : `Therapist`}>
@@ -426,6 +466,7 @@ export default function BookingPage() {
                 })}
               </div>
 
+              {/* Dynamic QR Code & Instructions Block */}
               {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
