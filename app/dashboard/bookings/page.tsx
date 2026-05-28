@@ -4,25 +4,22 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── SAFE CURRENCY PARSER (Fixes NaN bug) ───
+// ─── SAFE CURRENCY PARSER ───
 function parseCurrency(val: any): number {
   if (!val) return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
 }
 
-// ─── INDESTRUCTIBLE DATE PARSER (Forces Noon to kill timezone shifts) ───
+// ─── INDESTRUCTIBLE DATE PARSER ───
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   let clean = String(raw).trim();
-
-  // Format: "27-Aug-25" -> "Aug 27, 2025"
   const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
   if (dashMatch) {
     let year = dashMatch[3];
     if (year.length === 2) year = '20' + year;
     clean = `${dashMatch[2]} ${dashMatch[1]}, ${year}`;
   }
-
   let d = new Date(clean);
   if (!isNaN(d.getTime())) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
@@ -30,7 +27,7 @@ function parseImportDate(raw: string | null | undefined): Date | null {
   return null;
 }
 
-// ─── STRICT DATE FORMATTER (Fixes "August 12025" bug) ───
+// ─── STRICT DATE FORMATTER ───
 function formatDateToDDMMMYY(d: Date | null): string {
   if (!d || isNaN(d.getTime())) return '—';
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -49,6 +46,7 @@ interface Booking {
   revenue: number;
   category: string;
   payMethod: string;
+  customerType: string;
   parsedDate: Date | null;
 }
 
@@ -59,6 +57,10 @@ export default function BookingsPage() {
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('All')
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 100
+
   const loadBookings = useCallback(async () => {
     setLoading(true)
     const PAGE = 1000
@@ -68,7 +70,8 @@ export default function BookingsPage() {
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method')
+        // Pulled customer_type to fill the Discount/Membership column
+        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method, customer_type')
         .range(from, from + PAGE - 1)
 
       if (error || !data || data.length === 0) break
@@ -81,17 +84,16 @@ export default function BookingsPage() {
           client: String(r.client_name || 'Guest'),
           service: String(r.service || '—'),
           therapist: String(r.therapist || '—'),
-          // Safely strips ₱ and commas
           revenue: parseCurrency(r.received_payment || r.service_amount),
           category: String(r.category || 'Uncategorized'),
-          payMethod: String(r.payment_method || '—')
+          payMethod: String(r.payment_method || '—'),
+          customerType: String(r.customer_type || '—')
         })
       })
       if (data.length < PAGE) break
       from += PAGE
     }
 
-    // Sort strictly from newest (May 2026) to oldest (May 2025)
     all.sort((a, b) => {
       const timeA = a.parsedDate?.getTime() || 0;
       const timeB = b.parsedDate?.getTime() || 0;
@@ -104,8 +106,14 @@ export default function BookingsPage() {
 
   useEffect(() => { loadBookings() }, [loadBookings])
 
+  // Reset to page 1 whenever they search or filter
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, categoryFilter])
+
   const uniqueCategories = ['All', ...Array.from(new Set(bookings.map(b => b.category).filter(Boolean)))]
 
+  // Apply Search & Filters
   const filtered = bookings.filter(b => {
     const matchesSearch = search === '' || b.client.toLowerCase().includes(search.toLowerCase()) || b.service.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || b.category === categoryFilter;
@@ -113,6 +121,19 @@ export default function BookingsPage() {
   })
 
   const totalRevenue = filtered.reduce((sum, b) => sum + b.revenue, 0)
+
+  // Pagination Logic
+  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage))
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedBookings = filtered.slice(startIndex, startIndex + itemsPerPage)
+
+  // Button Style for Pagination
+  const btnStyle = (disabled: boolean): React.CSSProperties => ({
+    padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase',
+    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A', color: disabled ? '#aaa' : '#C58F3B',
+    border: 'none', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer',
+    transition: 'opacity 200ms ease'
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
@@ -123,7 +144,7 @@ export default function BookingsPage() {
           <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>All Bookings</h2>
         </div>
         <button onClick={loadBookings} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', cursor: 'pointer' }}>
-          {loading ? 'Loading...' : 'Refresh'}
+          {loading ? 'Loading...' : 'Refresh Data'}
         </button>
       </div>
 
@@ -137,43 +158,57 @@ export default function BookingsPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '20px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>
-          Loading all booking records...
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16 }}>
+          Loading 10,000+ booking records from database...
         </div>
       ) : (
         <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', minHeight: 400 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                  {/* RENAMED COLUMNS HERE */}
-                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Payment', 'Discount/Membership'].map(h => (
-                    <th key={h} style={{ padding: '12px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
+                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Discount/Membership'].map(h => (
+                    <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(0, 1000).map((b) => (
+                {paginatedBookings.map((b) => (
                   <tr key={b._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                    {/* APPLIED PERFECT DD-MMM-YY DATE FORMAT */}
-                    <td style={{ padding: '12px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(b.parsedDate)}</td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1A1A1A' }}>{b.client}</td>
-                    <td style={{ padding: '12px 16px', color: '#2A2A2A' }}>{b.service}</td>
-                    <td style={{ padding: '12px 16px', color: '#4A4A4A' }}>{b.therapist}</td>
-                    <td style={{ padding: '12px 16px', color: '#666' }}>
+                    <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(b.parsedDate)}</td>
+                    <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A' }}>{b.client}</td>
+                    <td style={{ padding: '14px 16px', color: '#2A2A2A' }}>{b.service}</td>
+                    <td style={{ padding: '14px 16px', color: '#4A4A4A' }}>{b.therapist}</td>
+                    <td style={{ padding: '14px 16px', color: '#666' }}>
                       <span style={{ padding: '4px 8px', borderRadius: 4, backgroundColor: '#f5f5f5', fontSize: 11 }}>{b.category}</span>
                     </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
-                    <td style={{ padding: '12px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
+                    <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
+                    <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
+                    <td style={{ padding: '14px 16px', color: '#C58F3B', fontWeight: 600 }}>{b.customerType}</td>
                   </tr>
                 ))}
-                {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No records found.</td></tr>}
+                {paginatedBookings.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No records match your search.</td></tr>}
               </tbody>
             </table>
           </div>
-          <div style={{ padding: '12px 16px', backgroundColor: '#F8F4EE', display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, color: '#666' }}>Showing {Math.min(filtered.length, 1000)} of {bookings.length}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>Total Filtered Payment: <span style={{ color: '#C58F3B' }}>₱{totalRevenue.toLocaleString()}</span></span>
+
+          {/* ─── PAGINATION BAR ─── */}
+          <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+            <span style={{ fontSize: 13, color: '#666' }}>
+              Showing <strong style={{ color: '#1A1A1A' }}>{startIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, filtered.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{filtered.length.toLocaleString()}</strong> entries
+            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+              <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Prev</button>
+
+              <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Next</button>
+              <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
+            </div>
           </div>
         </div>
       )}
