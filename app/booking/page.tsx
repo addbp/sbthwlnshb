@@ -279,14 +279,14 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
-    // Merge email into notes to avoid missing column errors in Supabase!
-    const combinedNotes = email.trim() ? `Client Email: ${email.trim()}\n\n${notes.trim()}` : notes.trim();
+    // THE FOOLPROOF FIX: We safely bundle Mobile and Email into Notes so it never crashes!
+    let contactInfoString = `📱 Mobile: ${mobile.trim()}`;
+    if (email.trim()) contactInfoString += `\n✉️ Email: ${email.trim()}`;
+    const combinedNotes = `${contactInfoString}\n\n📝 Notes: ${notes.trim() || 'None'}`;
 
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
         client_name: name.trim(),
-        client_mobile: mobile.trim(),
-        // Removed client_email directly to fix schema error
         service: selectedServices.map(s => s.name).join(', '),
         price: totalAmount,
         therapist: selectedTherapist?.name ?? null,
@@ -294,7 +294,7 @@ export default function BookingPage() {
         time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: combinedNotes || null,
+        notes: combinedNotes, // Safe fallback for contact info!
       })
 
       if (dbErr) throw new Error(dbErr.message)
@@ -428,7 +428,7 @@ export default function BookingPage() {
                 })}
               </div>
 
-              {/* Dynamic QR Code Block */}
+              {/* Dynamic QR Code & Instructions Block */}
               {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
@@ -439,7 +439,12 @@ export default function BookingPage() {
                     style={{ width: '100%', maxWidth: 350, height: 'auto', objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8 }}
                   />
 
-                  <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.6)', marginTop: 12, lineHeight: 1.4 }}>Please scan the code above and save a screenshot of your transaction receipt.</p>
+                  <div style={{ marginTop: 16, padding: '12px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8 }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#3D7A4A', margin: '0 0 4px 0' }}>Transaction Receipt Required</p>
+                    <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.7)', margin: 0, lineHeight: 1.4 }}>
+                      Please save a screenshot of your successful transfer and <strong>present it at the front desk</strong> upon checking in.
+                    </p>
+                  </div>
                 </div>
               )}
             </Section>
