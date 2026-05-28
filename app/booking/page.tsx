@@ -192,9 +192,12 @@ export default function BookingPage() {
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
   const [time, setTime] = useState('')
+
+  const [therapistSearch, setTherapistSearch] = useState('')
   const [therapistId, setTherapistId] = useState('')
   const [therapists, setTherapists] = useState<Therapist[]>([])
   const [therapistLoad, setTherapistLoad] = useState(true)
+
   const [payMethod, setPayMethod] = useState('')
   const [notes, setNotes] = useState('')
 
@@ -207,10 +210,11 @@ export default function BookingPage() {
     async function loadData() {
       try {
         const [thRes, svRes] = await Promise.all([
-          supabase.from('therapists').select('*').order('name', { ascending: true }),
-          supabase.from('services').select('*') // Grabs exactly what is in your database
+          supabase.from('staff').select('*').order('name', { ascending: true }),
+          supabase.from('services').select('*')
         ])
 
+        // Notice we check "staff" table (based on your recent fixes!)
         if (thRes.data) {
           setTherapists(thRes.data.map(t => ({ id: String(t.id), name: t.name || t.therapist_name || 'Staff', status: t.status })))
         }
@@ -218,15 +222,12 @@ export default function BookingPage() {
         if (svRes.data && svRes.data.length > 0) {
           const mappedServices = svRes.data.map(s => ({
             id: String(s.id),
-            // Flexibly checks for standard column names you might be using
             name: String(s.service_name || s.name || s.service || 'Unnamed Service'),
             duration: String(s.duration || '60 min'),
             price: Number(s.price || s.amount || 0),
             category: String(s.category || s.type || 'Massage')
           }))
           setDbServices(mappedServices)
-        } else {
-          console.warn("No services returned. Please check if your 'services' table has Row Level Security (RLS) blocking public read access.")
         }
       } catch (err) {
         console.error("Supabase fetch failed:", err)
@@ -238,13 +239,21 @@ export default function BookingPage() {
     loadData()
   }, [supabase])
 
-  const massageServices = dbServices.filter(s => s.category?.toLowerCase().includes('massage') || s.category?.toLowerCase().includes('therapy') || s.category?.toLowerCase().includes('body'))
-  const nailServices = dbServices.filter(s => s.category?.toLowerCase().includes('nail') || s.category?.toLowerCase().includes('le') || s.category?.toLowerCase().includes('hands') || s.category?.toLowerCase().includes('feet'))
+  // Alphabetically sort services
+  const massageServices = dbServices
+    .filter(s => s.category?.toLowerCase().includes('massage') || s.category?.toLowerCase().includes('therapy') || s.category?.toLowerCase().includes('body'))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
-  // Catch any uncategorized ones and push them to the main list
+  const nailServices = dbServices
+    .filter(s => s.category?.toLowerCase().includes('nail') || s.category?.toLowerCase().includes('le') || s.category?.toLowerCase().includes('hands') || s.category?.toLowerCase().includes('feet'))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   const assignedIds = new Set([...massageServices.map(s => s.id), ...nailServices.map(s => s.id)])
-  const unassigned = dbServices.filter(s => !assignedIds.has(s.id))
+  const unassigned = dbServices.filter(s => !assignedIds.has(s.id)).sort((a, b) => a.name.localeCompare(b.name))
   massageServices.push(...unassigned)
+
+  // Searchable Therapist Filter
+  const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
   // ── Smart Client Lookup ────────────────────────────────────
   const lookupClient = useCallback(async (query: string) => {
@@ -316,7 +325,6 @@ export default function BookingPage() {
     services: selectedIds.size === 0,
     date: date === '',
     time: time === '',
-    therapist: false, // Optional for booking
     payment: payMethod === '',
   }
   const isValid = !Object.values(validation).some(Boolean)
@@ -325,7 +333,7 @@ export default function BookingPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
-    if (!isValid) return
+    if (!isValid || loading) return
     setLoading(true); setSubmitError(null)
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
@@ -367,6 +375,12 @@ export default function BookingPage() {
       <style>{`
         .bk-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .bk-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
+        
+        /* Custom scrollbar for services area */
+        .svc-scroll::-webkit-scrollbar { width: 6px; }
+        .svc-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 4px; }
+        .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
+        .svc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
@@ -390,7 +404,15 @@ export default function BookingPage() {
               </Field>
               <Row2>
                 <Field label="Mobile Number *">
-                  <input className="bk-in" style={{ ...INPUT, ...eb(validation.mobile) }} type="tel" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="+63 9XX XXX XXXX" />
+                  <input
+                    className="bk-in"
+                    style={{ ...INPUT, ...eb(validation.mobile) }}
+                    type="tel"
+                    inputMode="numeric"
+                    value={mobile}
+                    onChange={e => setMobile(e.target.value.replace(/\D/g, ''))}
+                    placeholder="09XX XXX XXXX"
+                  />
                 </Field>
                 <Field label="Email Address">
                   <input className="bk-in" style={INPUT} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Optional" />
@@ -404,10 +426,9 @@ export default function BookingPage() {
               ) : dbServices.length === 0 ? (
                 <div style={{ backgroundColor: 'rgba(139,58,58,0.05)', padding: 16, borderRadius: 8, border: '1px solid rgba(139,58,58,0.2)' }}>
                   <p style={{ color: '#8B3A3A', fontSize: 14, margin: 0, fontWeight: 600 }}>No services found in database.</p>
-                  <p style={{ color: '#8B3A3A', fontSize: 12, margin: '4px 0 0 0' }}>If your Supabase table has data, please ensure <strong>Row Level Security (RLS)</strong> is configured to allow public reads for the `services` table.</p>
                 </div>
               ) : (
-                <>
+                <div className="svc-scroll" style={{ maxHeight: 350, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
                   {massageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Massage Therapy</div>
@@ -418,14 +439,14 @@ export default function BookingPage() {
                   )}
 
                   {nailServices.length > 0 && (
-                    <div style={{ marginTop: 20 }}>
+                    <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
                         {nailServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               )}
             </Section>
 
@@ -442,9 +463,16 @@ export default function BookingPage() {
                 </Field>
               </Row2>
               <Field label={therapistLoad ? 'Therapist (loading…)' : `Therapist`}>
+                <input
+                  className="bk-in"
+                  style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }}
+                  placeholder="Search for a therapist..."
+                  value={therapistSearch}
+                  onChange={e => setTherapistSearch(e.target.value)}
+                />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
                   <option value="">Choose your therapist (optional)…</option>
-                  {therapists.map(t => <option key={t.id} value={t.id}>{t.name}{t.status ? ` (${t.status})` : ''}</option>)}
+                  {filteredTherapists.map(t => <option key={t.id} value={t.id}>{t.name}{t.status ? ` (${t.status})` : ''}</option>)}
                 </select>
               </Field>
             </Section>
@@ -461,14 +489,29 @@ export default function BookingPage() {
                   )
                 })}
               </div>
+
+              {/* QR Code Block for GCash or Bank Transfer */}
+              {['gcash', 'bank', 'mastercard'].includes(payMethod) && (
+                <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay</p>
+                  <img src="/qr-code.png" alt="QR Code Placeholder" style={{ width: 180, height: 180, objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8, backgroundColor: WHITE, padding: 8, border: '1px solid rgba(26,26,26,0.08)' }} />
+                  <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.6)', marginTop: 12, lineHeight: 1.4 }}>Please scan the code above and save a screenshot of your transaction receipt.</p>
+                </div>
+              )}
             </Section>
 
             <Section title="Additional Notes" note="optional">
               <textarea className="bk-in" style={{ ...INPUT, height: 'auto', minHeight: 100, padding: '13px 15px', resize: 'vertical', lineHeight: 1.65 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Allergies, special requests…" />
             </Section>
 
+            {submitError && (
+              <div style={{ padding: 14, backgroundColor: 'rgba(139,58,58,0.08)', border: '1px solid rgba(139,58,58,0.2)', borderRadius: 8, color: '#8B3A3A', fontSize: 14, textAlign: 'center' }}>
+                {submitError}
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button type="submit" disabled={loading || !isValid} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: 'pointer', opacity: loading || !isValid ? 0.4 : 1 }}>
+              <button type="submit" disabled={loading || !isValid} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading || !isValid ? 'not-allowed' : 'pointer', opacity: loading || !isValid ? 0.4 : 1, transition: 'opacity 200ms ease' }}>
                 {loading ? 'Sending request…' : `Confirm Booking${totalAmount > 0 ? ` · ${fmt(totalAmount)}` : ''}`}
               </button>
             </div>
