@@ -4,53 +4,36 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── INDESTRUCTIBLE DATE PARSER ───
+// ─── SAFE CURRENCY PARSER (Fixes NaN bug) ───
+function parseCurrency(val: any): number {
+    if (!val) return 0;
+    return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
+}
+
+// ─── INDESTRUCTIBLE DATE PARSER (Fixes corrupt dates) ───
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 function parseImportDate(raw: string | null | undefined): Date | null {
     if (!raw) return null;
-    const clean = String(raw).trim().replace(/,/g, '').replace(/\s+/g, ' ');
-    if (!clean) return null;
-
-    const MONTHS: Record<string, number> = {
-        jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
-        may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
-        oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
-    };
-
-    let year = 0, month = 0, day = 1, matched = false;
-
-    const match1 = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
-    if (match1) {
-        day = parseInt(match1[1], 10); month = MONTHS[match1[2].toLowerCase()] ?? 0; year = parseInt(match1[3], 10); matched = true;
+    let clean = String(raw).trim();
+    const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+    if (dashMatch) {
+        let year = dashMatch[3];
+        if (year.length === 2) year = '20' + year;
+        clean = `${dashMatch[2]} ${dashMatch[1]}, ${year}`;
     }
-    if (!matched) {
-        const match2 = clean.match(/^([A-Za-z]{3,})[-\s/]+(\d{1,2})[-\s/]+(\d{2,4})$/);
-        if (match2) {
-            month = MONTHS[match2[1].toLowerCase()] ?? 0; day = parseInt(match2[2], 10); year = parseInt(match2[3], 10); matched = true;
-        }
+    let d = new Date(clean);
+    if (!isNaN(d.getTime())) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
     }
-    if (!matched) {
-        const match3 = clean.match(/^(\d{4})[-\s/]+(\d{1,2})[-\s/]+(\d{1,2})$/);
-        if (match3) {
-            year = parseInt(match3[1], 10); month = parseInt(match3[2], 10) - 1; day = parseInt(match3[3], 10); matched = true;
-        }
-    }
-
-    if (matched) {
-        if (year < 100) year += 2000;
-        return new Date(year, month, day, 12, 0, 0);
-    }
-
-    const d = new Date(clean);
-    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
     return null;
 }
 
 async function fetchHistory(supabase: ReturnType<typeof createClient>) {
     let from = 0; const PAGE = 1000; const all: any[] = [];
     for (; ;) {
-        const { data } = await supabase.from('bookings_import').select('date,received_payment').range(from, from + PAGE - 1)
+        // Now fetching both possible revenue columns
+        const { data } = await supabase.from('bookings_import').select('date, received_payment, service_amount').range(from, from + PAGE - 1)
         if (!data || data.length === 0) break
         all.push(...data)
         if (data.length < PAGE) break; from += PAGE;
@@ -74,7 +57,11 @@ export default function ReportsPage() {
         rows.forEach((r: any) => {
             const d = parseImportDate(r.date)
             if (!d) return;
-            const rev = Number(r.received_payment || 0)
+
+            // Apply Safe Currency Parser!
+            const rev = parseCurrency(r.received_payment || r.service_amount)
+            if (rev === 0) return; // Skip empty/zero rows to keep reports clean
+
             total += rev;
 
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -83,7 +70,8 @@ export default function ReportsPage() {
         })
 
         const formattedStats = Object.entries(monthlyMap)
-            .sort((a, b) => a[0].localeCompare(b[0]))
+            // Sort Descending (Newest Month First)
+            .sort((a, b) => b[0].localeCompare(a[0]))
             .map(([key, revenue]) => {
                 const [y, mo] = key.split('-')
                 return { label: `${MONTH_ABBR[parseInt(mo, 10) - 1]} ${y}`, revenue }
