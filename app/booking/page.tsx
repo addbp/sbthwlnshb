@@ -52,8 +52,6 @@ const LABEL: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string }
 interface Therapist { id: string; name: string; status: string }
-type ClientStatus = 'idle' | 'checking' | 'new' | 'returning'
-interface ClientInfo { status: ClientStatus; visits?: number; name?: string; pastServices?: string[] }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
@@ -108,37 +106,6 @@ function Row2({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14, alignItems: 'end' }}>{children}</div>
 }
 
-function ClientBadge({ info }: { info: ClientInfo }) {
-  if (info.status === 'idle') return null
-  if (info.status === 'checking') return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', backgroundColor: 'rgba(26,26,26,0.05)', borderRadius: 9, fontSize: 13, color: 'rgba(26,26,26,0.50)', fontFamily: BODY }}>
-      Checking client records…
-    </div>
-  )
-  if (info.status === 'new') return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', backgroundColor: 'rgba(61,122,74,0.10)', border: '1px solid rgba(61,122,74,0.28)', borderRadius: 9 }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: '#3D7A4A', fontFamily: BODY }}>New Client</span>
-      <span style={{ fontSize: 12, color: 'rgba(61,122,74,0.70)', fontFamily: BODY }}>— welcome to Sabbath Spa!</span>
-    </div>
-  )
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '12px 14px', backgroundColor: 'rgba(197,143,59,0.11)', border: '1px solid rgba(197,143,59,0.35)', borderRadius: 9 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: GOLD, flexShrink: 0 }} />
-        <span style={{ fontSize: 13, fontWeight: 600, color: GOLD, fontFamily: BODY }}>Returning Client</span>
-        <span style={{ fontSize: 13, color: 'rgba(197,143,59,0.90)', fontFamily: BODY }}>
-          {info.name ? `— ${info.name}` : ''} ({info.visits} visits)
-        </span>
-      </div>
-      {info.pastServices && info.pastServices.length > 0 && (
-        <div style={{ paddingLeft: 16, fontSize: 11, color: 'rgba(197,143,59,0.75)', fontFamily: BODY }}>
-          <strong>Previously Availed:</strong> {info.pastServices.join(' · ')}
-        </div>
-      )}
-    </div>
-  )
-}
-
 function ServiceChip({ item, selected, onToggle }: { item: ServiceItem; selected: boolean; onToggle: () => void }) {
   return (
     <button type="button" onClick={onToggle} style={{
@@ -177,10 +144,6 @@ export default function BookingPage() {
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const [lookupQuery, setLookupQuery] = useState('')
-  const [clientInfo, setClientInfo] = useState<ClientInfo>({ status: 'idle' })
-  const lookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const [name, setName] = useState('')
   const [mobile, setMobile] = useState('')
   const [email, setEmail] = useState('')
@@ -214,7 +177,6 @@ export default function BookingPage() {
           supabase.from('services').select('*')
         ])
 
-        // Notice we check "staff" table (based on your recent fixes!)
         if (thRes.data) {
           setTherapists(thRes.data.map(t => ({ id: String(t.id), name: t.name || t.therapist_name || 'Staff', status: t.status })))
         }
@@ -254,59 +216,6 @@ export default function BookingPage() {
 
   // Searchable Therapist Filter
   const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
-
-  // ── Smart Client Lookup ────────────────────────────────────
-  const lookupClient = useCallback(async (query: string) => {
-    const clean = query.trim()
-    if (clean.length < 3) { setClientInfo({ status: 'idle' }); return }
-
-    setClientInfo({ status: 'checking' })
-    try {
-      const isPhone = /^[\d\s+\-()]+$/.test(clean)
-      let orQuery = `client_name.ilike.%${clean}%`
-      if (isPhone) {
-        const numOnly = clean.replace(/\D/g, '')
-        orQuery = `client_mobile.ilike.%${numOnly}%,mobile.ilike.%${numOnly}%,client_name.ilike.%${clean}%`
-      }
-
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
-        .or(orQuery)
-        .order('created_at', { ascending: false })
-
-      if (error || !data || data.length === 0) {
-        setClientInfo({ status: 'new' }); return
-      }
-
-      setName(data[0].client_name || '')
-      if (data[0].client_mobile) setMobile(data[0].client_mobile)
-      if (data[0].client_email) setEmail(data[0].client_email)
-
-      const pastSet = new Set<string>()
-      data.forEach(b => {
-        if (b.service_name) pastSet.add(b.service_name)
-        if (b.services && Array.isArray(b.services)) b.services.forEach((s: string) => pastSet.add(s))
-      })
-      const pastArr = Array.from(pastSet).slice(0, 3)
-
-      setClientInfo({
-        status: 'returning',
-        visits: data.length,
-        name: data[0].client_name,
-        pastServices: pastArr
-      })
-    } catch {
-      setClientInfo({ status: 'new' })
-    }
-  }, [supabase])
-
-  function handleLookupChange(val: string) {
-    setLookupQuery(val)
-    setClientInfo({ status: 'idle' })
-    if (lookupTimer.current) clearTimeout(lookupTimer.current)
-    lookupTimer.current = setTimeout(() => lookupClient(val), 800)
-  }
 
   function toggleService(id: string) {
     setSelectedIds(prev => {
@@ -351,7 +260,7 @@ export default function BookingPage() {
         appointment_date: date,
         appointment_time: time,
         payment_method: payMethod,
-        is_new_client: clientInfo.status === 'new',
+        is_new_client: true, // Simplified since there is no lookup
         status: 'upcoming',
         notes: notes.trim() || null,
       })
@@ -394,11 +303,6 @@ export default function BookingPage() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} noValidate>
 
             <Section title="Client Information">
-              <Field label="Search by Name or Mobile Number">
-                <input className="bk-in" style={INPUT} type="text" value={lookupQuery} onChange={e => handleLookupChange(e.target.value)} placeholder="Maria Santos or 09XX XXX XXXX" />
-              </Field>
-              <ClientBadge info={clientInfo} />
-
               <Field label="Full Name *">
                 <input className="bk-in" style={{ ...INPUT, ...eb(validation.name) }} value={name} onChange={e => setName(e.target.value)} placeholder="Maria Santos" />
               </Field>
@@ -458,7 +362,29 @@ export default function BookingPage() {
                 <Field label="Preferred Time *">
                   <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
                     <option value="">Select time…</option>
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    <option value="9:00 AM">9:00 AM</option>
+                    <option value="9:30 AM">9:30 AM</option>
+                    <option value="10:00 AM">10:00 AM</option>
+                    <option value="10:30 AM">10:30 AM</option>
+                    <option value="11:00 AM">11:00 AM</option>
+                    <option value="11:30 AM">11:30 AM</option>
+                    <option value="12:00 PM">12:00 PM</option>
+                    <option value="12:30 PM">12:30 PM</option>
+                    <option value="1:00 PM">1:00 PM</option>
+                    <option value="1:30 PM">1:30 PM</option>
+                    <option value="2:00 PM">2:00 PM</option>
+                    <option value="2:30 PM">2:30 PM</option>
+                    <option value="3:00 PM">3:00 PM</option>
+                    <option value="3:30 PM">3:30 PM</option>
+                    <option value="4:00 PM">4:00 PM</option>
+                    <option value="4:30 PM">4:30 PM</option>
+                    <option value="5:00 PM">5:00 PM</option>
+                    <option value="5:30 PM">5:30 PM</option>
+                    <option value="6:00 PM">6:00 PM</option>
+                    <option value="6:30 PM">6:30 PM</option>
+                    <option value="7:00 PM">7:00 PM</option>
+                    <option value="7:30 PM">7:30 PM</option>
+                    <option value="8:00 PM">8:00 PM</option>
                   </select>
                 </Field>
               </Row2>
