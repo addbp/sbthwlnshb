@@ -64,41 +64,85 @@ export default function BookingsPage() {
   const loadBookings = useCallback(async () => {
     setLoading(true)
     const PAGE = 1000
-    let from = 0
     const all: Booking[] = []
 
+    // ─── 1. FETCH LIVE BOOKINGS CONTINUOUSLY (NO LIMIT) ───
+    let liveFrom = 0
+    for (; ;) {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id, appointment_date, created_at, client_name, service_name, service, therapist_name, therapist, price, amount, received_payment, category, payment_method')
+        .range(liveFrom, liveFrom + PAGE - 1)
+
+      if (error || !data || data.length === 0) break
+
+      data.forEach(r => {
+        all.push({
+          _key: `live-${r.id}-${liveFrom}`,
+          date: String(r.appointment_date || r.created_at || ''),
+          parsedDate: parseImportDate(r.appointment_date || r.created_at),
+          client: String(r.client_name || 'Guest'),
+          service: String(r.service_name || r.service || '—'),
+          therapist: String(r.therapist_name || r.therapist || '—'),
+          revenue: parseCurrency(r.price || r.amount || r.received_payment),
+          category: String(r.category || 'Live Booking'),
+          payMethod: String(r.payment_method || '—').toUpperCase(),
+          customerType: '—'
+        })
+      })
+      if (data.length < PAGE) break
+      liveFrom += PAGE
+    }
+
+    // ─── 2. FETCH HISTORICAL BOOKINGS CONTINUOUSLY (NO LIMIT) ───
+    let histFrom = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        // Pulls customer_type which contains First Time/Returning data
-        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method, customer_type')
-        .range(from, from + PAGE - 1)
+        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method')
+        .range(histFrom, histFrom + PAGE - 1)
 
       if (error || !data || data.length === 0) break
 
       data.forEach((r, i) => {
         all.push({
-          _key: `${r.client_name}-${i}-${from}`,
+          _key: `hist-${histFrom}-${i}`,
           date: String(r.date || ''),
           parsedDate: parseImportDate(r.date),
           client: String(r.client_name || 'Guest'),
           service: String(r.service || '—'),
           therapist: String(r.therapist || '—'),
           revenue: parseCurrency(r.received_payment || r.service_amount),
-          category: String(r.category || 'Uncategorized'),
-          payMethod: String(r.payment_method || '—'),
-          customerType: String(r.customer_type || '—')
+          category: String(r.category || '—'),
+          payMethod: String(r.payment_method || '—').toUpperCase(),
+          customerType: '—'
         })
       })
       if (data.length < PAGE) break
-      from += PAGE
+      histFrom += PAGE
     }
 
-    all.sort((a, b) => {
-      const timeA = a.parsedDate?.getTime() || 0;
-      const timeB = b.parsedDate?.getTime() || 0;
-      return timeB - timeA;
+    // ─── 3. TIMELINE SCANNER (CALCULATES NEW VS RETURNING ACCURATELY) ───
+    all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0)) // Oldest to Newest
+
+    const visitCounter = new Map<string, number>()
+    all.forEach(p => {
+      const nameKey = p.client.toLowerCase().trim()
+      if (!nameKey || nameKey === 'guest' || nameKey === '—') {
+        p.customerType = 'WALK-IN'
+        return
+      }
+      const visits = visitCounter.get(nameKey) || 0
+      if (visits === 0) {
+        p.customerType = 'NEW CLIENT'
+      } else {
+        p.customerType = 'RETURNING CLIENT'
+      }
+      visitCounter.set(nameKey, visits + 1)
     })
+
+    // ─── 4. SORT NEWEST TO OLDEST FOR DASHBOARD ───
+    all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
 
     setBookings(all)
     setLoading(false)
@@ -119,8 +163,6 @@ export default function BookingsPage() {
     const matchesCategory = categoryFilter === 'All' || b.category === categoryFilter;
     return matchesSearch && matchesCategory;
   })
-
-  const totalRevenue = filtered.reduce((sum, b) => sum + b.revenue, 0)
 
   // Pagination Logic
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -148,18 +190,45 @@ export default function BookingsPage() {
         </button>
       </div>
 
+      {/* ─── FILTERS AND SEARCH ─── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
           {uniqueCategories.map(cat => (
-            <button key={cat} onClick={() => setCategoryFilter(cat)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid', backgroundColor: categoryFilter === cat ? '#1A1A1A' : '#fff', color: categoryFilter === cat ? '#C58F3B' : '#666', borderColor: categoryFilter === cat ? '#1A1A1A' : '#ddd', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>{cat}</button>
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: '1px solid',
+                backgroundColor: categoryFilter === cat ? '#1A1A1A' : '#fff',
+                color: categoryFilter === cat ? '#C58F3B' : '#666',
+                borderColor: categoryFilter === cat ? '#1A1A1A' : '#ddd',
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 600
+              }}
+            >
+              {cat}
+            </button>
           ))}
         </div>
-        <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search client or service..." style={{ height: 40, width: '100%', maxWidth: 300, padding: '0 14px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, outline: 'none' }} />
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search client or service..."
+          style={{
+            height: 40, width: '100%', maxWidth: 300, padding: '0 14px',
+            border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8,
+            fontSize: 14, outline: 'none'
+          }}
+        />
       </div>
 
       {loading ? (
         <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16 }}>
-          Loading 10,000+ booking records from database...
+          Syncing continuous live and historical data...
         </div>
       ) : (
         <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
@@ -167,7 +236,6 @@ export default function BookingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                  {/* RENAMED COLUMN TO CLIENT TYPE */}
                   {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
                     <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
@@ -185,9 +253,14 @@ export default function BookingsPage() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
-                    {/* RENDERS THE CLIENT TYPE */}
-                    <td style={{ padding: '14px 16px', color: '#C58F3B', fontWeight: 600 }}>
-                      {b.customerType}
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{
+                        padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                        backgroundColor: b.customerType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
+                        color: b.customerType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
+                      }}>
+                        {b.customerType}
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -196,20 +269,16 @@ export default function BookingsPage() {
             </table>
           </div>
 
-          {/* ─── PAGINATION BAR ─── */}
+          {/* ─── PAGINATION BAR (FIXED) ─── */}
           <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <span style={{ fontSize: 13, color: '#666' }}>
-              Showing <strong style={{ color: '#1A1A1A' }}>{startIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, filtered.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{filtered.length.toLocaleString()}</strong> entries
+              Showing <strong style={{ color: '#1A1A1A' }}>{filtered.length > 0 ? startIndex + 1 : 0}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, filtered.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{filtered.length.toLocaleString()}</strong> entries
             </span>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
               <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Prev</button>
-
-              <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-
+              <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPages}</span>
               <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Next</button>
               <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
             </div>
