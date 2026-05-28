@@ -55,26 +55,31 @@ interface Therapist { id: string; name: string; status: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
-// UPDATED PAYMENT METHODS WITH QR IMAGES
+// ── PERFECTLY MAPPED PAYMENT METHODS ──
 const PAYMENT_METHODS = [
   {
-    key: 'gcash', label: 'GCash / Maya',
-    qrImage: '/qr-gcash-maya.png', // Uses the combined GCash/Maya image you uploaded
+    key: 'gcash', label: 'GCash',
+    qrImage: '/qr-gcash.png',
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
   },
   {
-    key: 'bank', label: 'QRPh (Any Bank)',
-    qrImage: '/qr-qrph.png', // Uses the blue/yellow QRPh image
+    key: 'maya', label: 'Maya',
+    qrImage: '/qr-maya.png',
+    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+  },
+  {
+    key: 'bank', label: 'Bank Transfer (QRPh)',
+    qrImage: '/qr-qrph.png',
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
   },
   {
     key: 'mastercard', label: 'Visa / Mastercard',
-    qrImage: '/qr-visa.png', // Uses the red AUB PayMate Visa image
+    qrImage: '/qr-visa.png',
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="7.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /><circle cx="12.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /></svg>
   },
   {
     key: 'cash', label: 'Cash',
-    qrImage: null, // No QR for cash
+    qrImage: null,
     icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
   },
 ]
@@ -389,7 +394,7 @@ export default function BookingPage() {
             </Section>
 
             <Section title="Payment Method">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(140px,100%),1fr))', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(120px,100%),1fr))', gap: 10 }}>
                 {PAYMENT_METHODS.map(pm => {
                   const sel = payMethod === pm.key
                   return (
