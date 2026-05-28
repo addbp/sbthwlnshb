@@ -63,10 +63,11 @@ export default function PaymentsPage() {
     let from = 0
     const all: PaymentRecord[] = []
 
+    // 1. Fetch entire database history
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        .select('date, client_name, service, service_amount, received_payment, payment_method, customer_type')
+        .select('date, client_name, service, service_amount, received_payment, payment_method')
         .range(from, from + PAGE - 1)
 
       if (error || !data || data.length === 0) break
@@ -80,14 +81,36 @@ export default function PaymentsPage() {
           amount: parseCurrency(r.service_amount),
           received: parseCurrency(r.received_payment),
           modeOfPayment: String(r.payment_method || '—').toUpperCase(),
-          clientType: String(r.customer_type || '—').toUpperCase()
+          clientType: '—' // Will be calculated dynamically below
         })
       })
       if (data.length < PAGE) break
       from += PAGE
     }
 
-    // Sort newest to oldest
+    // 2. Sort OLDEST to NEWEST to simulate the exact timeline of the spa
+    all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
+
+    // 3. Scan the database timeline to dynamically calculate NEW vs RETURNING clients
+    const visitCounter = new Map<string, number>()
+    all.forEach(p => {
+      // Use lowercase trim to match names perfectly (e.g., "John" matches "john ")
+      const nameKey = p.client.toLowerCase().trim()
+      if (!nameKey || nameKey === 'guest' || nameKey === '—') {
+        p.clientType = 'WALK-IN / GUEST'
+        return
+      }
+
+      const visits = visitCounter.get(nameKey) || 0
+      if (visits === 0) {
+        p.clientType = 'NEW CLIENT'
+      } else {
+        p.clientType = 'RETURNING CLIENT'
+      }
+      visitCounter.set(nameKey, visits + 1)
+    })
+
+    // 4. Sort NEWEST to OLDEST for the dashboard display view
     all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
 
     setPayments(all)
@@ -142,7 +165,7 @@ export default function PaymentsPage() {
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
-          Aggregating 10,000+ payment records from database...
+          Scanning timeline to map New vs Returning clients...
         </div>
       ) : (
         <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
@@ -168,8 +191,14 @@ export default function PaymentsPage() {
                         {p.modeOfPayment}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px', color: '#C58F3B', fontWeight: 600, fontSize: 12 }}>
-                      {p.clientType}
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{
+                        padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                        backgroundColor: p.clientType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
+                        color: p.clientType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
+                      }}>
+                        {p.clientType}
+                      </span>
                     </td>
                   </tr>
                 ))}
