@@ -5,7 +5,6 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── ABSOLUTE BULLETPROOF CURRENCY PARSER ───
-// This guarantees it will NEVER return NaN, even if the database has weird text.
 function parseCurrency(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
   const cleaned = String(val).replace(/[^0-9.-]+/g, '');
@@ -27,7 +26,6 @@ function parseImportDate(raw: string | null | undefined): Date | null {
 
   let d = new Date(clean);
   if (!isNaN(d.getTime())) {
-    // Force to NOON to prevent timezone shifting
     return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   }
   return null;
@@ -72,12 +70,10 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
     liveData.forEach((r: any) => {
       all.push({
         _key: `live-${r.id}`,
-        // Use appointment_date if available, otherwise created_at
         date: r.appointment_date || r.created_at || new Date().toISOString(),
         client: r.client_name || 'Guest',
         service: r.service_name || r.service || '—',
         therapist: r.therapist_name || r.therapist || '—',
-        // Checks all possible live revenue columns
         revenue: parseCurrency(r.price || r.amount || r.received_payment),
         category: r.category || 'Live Booking',
         payMethod: r.payment_method || '—',
@@ -87,7 +83,7 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
     })
   }
 
-  // 2. Fetch Historical Data
+  // 2. Fetch Historical Data (Pulls ALL 10,000+ records)
   let from = 0; const PAGE = 1000;
   for (; ;) {
     const { data } = await supabase.from('bookings_import').select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method').range(from, from + PAGE - 1)
@@ -99,7 +95,6 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
         client: String(r.client_name || 'Guest'),
         service: String(r.service || '—'),
         therapist: String(r.therapist || '—'),
-        // Checks all possible historical revenue columns
         revenue: parseCurrency(r.received_payment || r.service_amount),
         category: String(r.category || '—'),
         payMethod: String(r.payment_method || '—'),
@@ -110,7 +105,6 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
     if (data.length < PAGE) break; from += PAGE;
   }
 
-  // Sort universally from newest to oldest
   return all.sort((a, b) => (parseImportDate(b.date)?.getTime() || 0) - (parseImportDate(a.date)?.getTime() || 0))
 }
 
@@ -118,8 +112,14 @@ export default function OverviewPage() {
   const supabase = useRef(createClient()).current
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState<'daily' | 'all'>('daily')
-  const [selectedDate, setSelectedDate] = useState(todayISO())
+
+  // Date Range Filter States
+  const [startDate, setStartDate] = useState(todayISO())
+  const [endDate, setEndDate] = useState(todayISO())
+
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 100
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -130,16 +130,23 @@ export default function OverviewPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  const displaySales = mode === 'all'
-    ? sales.slice(0, 500)
-    : sales.filter(s => {
-      const d = parseImportDate(s.date);
-      if (!d) return false;
-      return toLocalISO(d) === selectedDate;
-    })
+  // Reset page to 1 when dates change
+  useEffect(() => { setCurrentPage(1) }, [startDate, endDate])
 
+  // Apply Date Range Filter safely
+  const displaySales = sales.filter(s => {
+    const d = parseImportDate(s.date);
+    if (!d) return false;
+    const iso = toLocalISO(d);
+
+    if (startDate && iso < startDate) return false;
+    if (endDate && iso > endDate) return false;
+
+    return true;
+  })
+
+  // KPIs calculated from the FULL filtered dataset (no 500 limit!)
   const totalRev = displaySales.reduce((a, s) => a + s.revenue, 0)
-
   const counts = {
     total: displaySales.length,
     pending: displaySales.filter(s => s.status.toLowerCase() === 'pending').length,
@@ -147,9 +154,22 @@ export default function OverviewPage() {
     completed: displaySales.filter(s => s.status.toLowerCase() === 'completed').length,
   }
 
+  // Pagination Logic for the Table
+  const totalPages = Math.max(1, Math.ceil(displaySales.length / itemsPerPage))
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const paginatedSales = displaySales.slice(startIndex, startIndex + itemsPerPage)
+
+  const btnStyle = (disabled: boolean): React.CSSProperties => ({
+    padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase',
+    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A', color: disabled ? '#aaa' : '#C58F3B',
+    border: 'none', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer',
+    transition: 'opacity 200ms ease'
+  })
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
+      {/* ─── HEADER ─── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Operations</p>
@@ -160,20 +180,34 @@ export default function OverviewPage() {
         </button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', borderRadius: 9, border: '1px solid rgba(26,26,26,0.14)', overflow: 'hidden' }}>
-          <button onClick={() => setMode('daily')} style={{ padding: '0 18px', height: 36, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', backgroundColor: mode === 'daily' ? '#1A1A1A' : 'transparent', color: mode === 'daily' ? '#C58F3B' : '#666' }}>Daily View</button>
-          <button onClick={() => setMode('all')} style={{ padding: '0 18px', height: 36, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', backgroundColor: mode === 'all' ? '#1A1A1A' : 'transparent', color: mode === 'all' ? '#C58F3B' : '#666' }}>All Time History</button>
+      {/* ─── DATE FILTERS ─── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 10, padding: '4px 8px' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase' }}>From</span>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: 13, color: '#1A1A1A', backgroundColor: 'transparent', cursor: 'pointer' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase', borderLeft: '1px solid #ddd', paddingLeft: 8 }}>To</span>
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: 13, color: '#1A1A1A', backgroundColor: 'transparent', cursor: 'pointer' }} />
+          {(startDate || endDate) && (
+            <button onClick={() => { setStartDate(''); setEndDate('') }} style={{ background: 'none', border: 'none', color: '#8B3A3A', fontSize: 18, cursor: 'pointer', padding: '0 4px', lineHeight: 1 }} title="Clear Filter">&times;</button>
+          )}
         </div>
-        {mode === 'daily' && (
-          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={{ height: 36, padding: '0 12px', border: '1px solid #ddd', borderRadius: 8, outline: 'none', cursor: 'pointer' }} />
-        )}
+
+        {/* Quick Filter Buttons */}
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button onClick={() => { setStartDate(todayISO()); setEndDate(todayISO()) }} style={{ padding: '6px 12px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 8, backgroundColor: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#1A1A1A', cursor: 'pointer' }}>
+            Today
+          </button>
+          <button onClick={() => { setStartDate(''); setEndDate('') }} style={{ padding: '6px 12px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 8, backgroundColor: '#fff', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#1A1A1A', cursor: 'pointer' }}>
+            All Time
+          </button>
+        </div>
       </div>
 
       {loading ? (
-        <div style={{ padding: '20px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>Loading operations data...</div>
+        <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>Aggregating 10,000+ records for operations dashboard...</div>
       ) : (
         <>
+          {/* ─── KPIs ─── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(200px,100%),1fr))', gap: 12 }}>
             <div style={{ backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.20)', borderRadius: 14, padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(243,233,224,0.50)', margin: '0 0 8px' }}>Total Revenue</p>
@@ -181,24 +215,25 @@ export default function OverviewPage() {
             </div>
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total Bookings</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.total}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.total.toLocaleString()}</p>
             </div>
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', borderLeft: '4px solid #888' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Pending</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.pending}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.pending.toLocaleString()}</p>
             </div>
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', borderLeft: '4px solid #C58F3B' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Ongoing</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.ongoing}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.ongoing.toLocaleString()}</p>
             </div>
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', borderLeft: '4px solid #3D7A4A' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3D7A4A', margin: '0 0 8px' }}>Completed</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.completed}</p>
+              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.completed.toLocaleString()}</p>
             </div>
           </div>
 
+          {/* ─── DATA TABLE WITH PAGINATION ─── */}
           <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflowX: 'auto', minHeight: 400 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
@@ -206,7 +241,7 @@ export default function OverviewPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displaySales.map((s) => (
+                  {paginatedSales.map((s) => (
                     <tr key={s._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
                       <td style={{ padding: '12px 16px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDateShort(s.date)}</td>
                       <td style={{ padding: '12px 16px' }}>
@@ -224,10 +259,26 @@ export default function OverviewPage() {
                       <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{s.revenue.toLocaleString()}</td>
                     </tr>
                   ))}
-                  {displaySales.length === 0 && <tr><td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No bookings for this view.</td></tr>}
+                  {paginatedSales.length === 0 && <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No bookings found for the selected date range.</td></tr>}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <span style={{ fontSize: 13, color: '#666' }}>
+                Showing <strong style={{ color: '#1A1A1A' }}>{displaySales.length > 0 ? startIndex + 1 : 0}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, displaySales.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{displaySales.length.toLocaleString()}</strong> entries
+              </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+                <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
+                <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPages}</span>
+                <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}>Next</button>
+                <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
+              </div>
+            </div>
+
           </div>
         </>
       )}
