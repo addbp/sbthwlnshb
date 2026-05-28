@@ -4,55 +4,52 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── INDESTRUCTIBLE DATE PARSER ───
+// ─── SAFE CURRENCY PARSER (Fixes NaN bug) ───
+function parseCurrency(val: any): number {
+  if (!val) return 0;
+  return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
+}
+
+// ─── INDESTRUCTIBLE DATE PARSER (Forces Noon to kill timezone shifts) ───
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
-  const clean = String(raw).trim().replace(/,/g, '').replace(/\s+/g, ' ');
-  if (!clean) return null;
+  let clean = String(raw).trim();
 
-  const MONTHS: Record<string, number> = {
-    jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
-    may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, september: 8,
-    oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11
-  };
-
-  let year = 0, month = 0, day = 1, matched = false;
-
-  const match1 = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
-  if (match1) {
-    day = parseInt(match1[1], 10); month = MONTHS[match1[2].toLowerCase()] ?? 0; year = parseInt(match1[3], 10); matched = true;
-  }
-  if (!matched) {
-    const match2 = clean.match(/^([A-Za-z]{3,})[-\s/]+(\d{1,2})[-\s/]+(\d{2,4})$/);
-    if (match2) {
-      month = MONTHS[match2[1].toLowerCase()] ?? 0; day = parseInt(match2[2], 10); year = parseInt(match2[3], 10); matched = true;
-    }
-  }
-  if (!matched) {
-    const match3 = clean.match(/^(\d{4})[-\s/]+(\d{1,2})[-\s/]+(\d{1,2})$/);
-    if (match3) {
-      year = parseInt(match3[1], 10); month = parseInt(match3[2], 10) - 1; day = parseInt(match3[3], 10); matched = true;
-    }
+  // Format: "27-Aug-25" -> "Aug 27, 2025"
+  const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+  if (dashMatch) {
+    let year = dashMatch[3];
+    if (year.length === 2) year = '20' + year;
+    clean = `${dashMatch[2]} ${dashMatch[1]}, ${year}`;
   }
 
-  if (matched) {
-    if (year < 100) year += 2000;
-    return new Date(year, month, day, 12, 0, 0);
+  let d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   }
-
-  const d = new Date(clean);
-  if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   return null;
 }
 
-function fmtDateShort(raw: string): string {
-  const d = parseImportDate(raw)
-  return d ? d.toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : String(raw)
+// ─── STRICT DATE FORMATTER (Fixes "August 12025" bug) ───
+function formatDateToDDMMMYY(d: Date | null): string {
+  if (!d || isNaN(d.getTime())) return '—';
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mmm = months[d.getMonth()];
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}-${mmm}-${yy}`;
 }
 
 interface Booking {
-  _key: string; date: string; client: string; service: string; therapist: string;
-  revenue: number; category: string; payMethod: string;
+  _key: string;
+  date: string;
+  client: string;
+  service: string;
+  therapist: string;
+  revenue: number;
+  category: string;
+  payMethod: string;
+  parsedDate: Date | null;
 }
 
 export default function BookingsPage() {
@@ -71,7 +68,7 @@ export default function BookingsPage() {
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        .select('date, client_name, service, therapist, received_payment, category, payment_method')
+        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method')
         .range(from, from + PAGE - 1)
 
       if (error || !data || data.length === 0) break
@@ -80,10 +77,12 @@ export default function BookingsPage() {
         all.push({
           _key: `${r.client_name}-${i}-${from}`,
           date: String(r.date || ''),
+          parsedDate: parseImportDate(r.date),
           client: String(r.client_name || 'Guest'),
           service: String(r.service || '—'),
           therapist: String(r.therapist || '—'),
-          revenue: Number(r.received_payment || 0),
+          // Safely strips ₱ and commas
+          revenue: parseCurrency(r.received_payment || r.service_amount),
           category: String(r.category || 'Uncategorized'),
           payMethod: String(r.payment_method || '—')
         })
@@ -92,10 +91,11 @@ export default function BookingsPage() {
       from += PAGE
     }
 
+    // Sort strictly from newest (May 2026) to oldest (May 2025)
     all.sort((a, b) => {
-      const da = parseImportDate(a.date)?.getTime() || 0;
-      const db = parseImportDate(b.date)?.getTime() || 0;
-      return db - da;
+      const timeA = a.parsedDate?.getTime() || 0;
+      const timeB = b.parsedDate?.getTime() || 0;
+      return timeB - timeA;
     })
 
     setBookings(all)
@@ -146,7 +146,8 @@ export default function BookingsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Revenue', 'Payment'].map(h => (
+                  {/* RENAMED COLUMNS HERE */}
+                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Payment', 'Discount/Membership'].map(h => (
                     <th key={h} style={{ padding: '12px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -154,7 +155,8 @@ export default function BookingsPage() {
               <tbody>
                 {filtered.slice(0, 1000).map((b) => (
                   <tr key={b._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                    <td style={{ padding: '12px 16px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDateShort(b.date)}</td>
+                    {/* APPLIED PERFECT DD-MMM-YY DATE FORMAT */}
+                    <td style={{ padding: '12px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(b.parsedDate)}</td>
                     <td style={{ padding: '12px 16px', fontWeight: 600, color: '#1A1A1A' }}>{b.client}</td>
                     <td style={{ padding: '12px 16px', color: '#2A2A2A' }}>{b.service}</td>
                     <td style={{ padding: '12px 16px', color: '#4A4A4A' }}>{b.therapist}</td>
@@ -162,7 +164,7 @@ export default function BookingsPage() {
                       <span style={{ padding: '4px 8px', borderRadius: 4, backgroundColor: '#f5f5f5', fontSize: 11 }}>{b.category}</span>
                     </td>
                     <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
-                    <td style={{ padding: '12px 16px', color: '#666' }}>{b.payMethod}</td>
+                    <td style={{ padding: '12px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
                   </tr>
                 ))}
                 {filtered.length === 0 && <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No records found.</td></tr>}
@@ -171,7 +173,7 @@ export default function BookingsPage() {
           </div>
           <div style={{ padding: '12px 16px', backgroundColor: '#F8F4EE', display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 12, color: '#666' }}>Showing {Math.min(filtered.length, 1000)} of {bookings.length}</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>Total Filtered Revenue: <span style={{ color: '#C58F3B' }}>₱{totalRevenue.toLocaleString()}</span></span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A1A' }}>Total Filtered Payment: <span style={{ color: '#C58F3B' }}>₱{totalRevenue.toLocaleString()}</span></span>
           </div>
         </div>
       )}
