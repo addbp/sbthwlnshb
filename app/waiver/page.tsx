@@ -108,7 +108,6 @@ export default function WaiverPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
-  // Canvas Signature State
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
 
@@ -125,23 +124,24 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── FETCH EVERYTHING FROM DATABASE ──
+  // ── FETCH RECORDS (Case-insensitive multi-table search) ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
-        const [liveRes, archiveRes, clientRes] = await Promise.all([
-          supabase.from('bookings').select('client_name, created_at, service_name').order('created_at', { ascending: false }),
-          supabase.from('bookings_import').select('client_name, created_at, service_name').order('created_at', { ascending: false }),
-          supabase.from('client').select('client_name, created_at').order('created_at', { ascending: false }).catch(() => ({ data: [] }))
-        ])
+        const fetchBookings = supabase.from('bookings').select('client_name, created_at, service_name').then(res => res.data || [])
+        const fetchImport = supabase.from('bookings_import').select('client_name, created_at, service_name').then(res => res.data || [])
+        const fetchClientTable = supabase.from('client').select('client_name, created_at').then(res => res.data || [])
+
+        const results = await Promise.allSettled([fetchBookings, fetchImport, fetchClientTable])
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const combined: any[] = [
-          ...(liveRes.data || []),
-          ...(archiveRes.data || []),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ...((clientRes as any).data || [])
-        ].filter(d => d.client_name)
+        const combined: any[] = results
+          .filter((res): res is PromiseFulfilledResult<any[]> => res.status === 'fulfilled')
+          .map(res => res.value)
+          .flat()
+          .filter(d => d && d.client_name)
+
+        combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
         setClientHistory(combined)
         setClientDbNames(Array.from(new Set(combined.map(d => d.client_name))))
@@ -180,14 +180,14 @@ export default function WaiverPage() {
     return { x: clientX - rect.left, y: clientY - rect.top }
   }
 
-  const startDrawing = (e: any) => {
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d'); if (!ctx) return
     const { x, y } = getCoords(e, canvas.getBoundingClientRect())
     ctx.beginPath(); ctx.moveTo(x, y); setIsDrawing(true)
   }
 
-  const draw = (e: any) => {
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !canvasRef.current) return
     const ctx = canvasRef.current.getContext('2d'); if (!ctx) return
     const { x, y } = getCoords(e, canvasRef.current.getBoundingClientRect())
@@ -197,6 +197,15 @@ export default function WaiverPage() {
   const stopDrawing = () => {
     setIsDrawing(false)
     if (canvasRef.current) setSignature(canvasRef.current.toDataURL('image/png'))
+  }
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+      setSignature('')
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -212,7 +221,10 @@ export default function WaiverPage() {
       })
       if (error) throw error
       setSubmitted(true)
-    } catch (err: any) { alert("Error: " + err.message) } finally { setLoading(false) }
+    } catch (err) {
+      const error = err as Error
+      alert("Error: " + error.message)
+    } finally { setLoading(false) }
   }
 
   if (submitted) return (
@@ -235,7 +247,6 @@ export default function WaiverPage() {
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justifyContent: center; padding: 20px; }
       `}</style>
 
-      {/* ── CLIENT HISTORY MODAL ── */}
       {showHistoryModal && (
         <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
           <div style={{ backgroundColor: WHITE, width: '100%', maxWidth: 500, borderRadius: 20, padding: 30, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
@@ -243,15 +254,13 @@ export default function WaiverPage() {
               <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0 }}>Client Visit History</h3>
               <button onClick={() => setShowHistoryModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
             </div>
-            <p style={{ fontSize: 13, color: GOLD, fontWeight: 700, textTransform: 'uppercase', marginBottom: 15 }}>Records for {name}</p>
             <div className="focus-scroll" style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #eee', borderRadius: 12 }}>
               {matchingHistory.map((h, i) => (
                 <div key={i} style={{ padding: '15px', borderBottom: i === matchingHistory.length - 1 ? 'none' : '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: BLACK }}>{h.service_name || 'Massage Session'}</div>
-                    <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                    <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at).toLocaleDateString()}</div>
                   </div>
-                  <div style={{ fontSize: 10, backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, padding: '4px 8px', borderRadius: 4, fontWeight: 800 }}>PAST</div>
                 </div>
               ))}
             </div>
@@ -269,7 +278,6 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── CLIENT DETAILS SECTION ── */}
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <label style={LABEL}>Full Name *</label>
@@ -291,13 +299,12 @@ export default function WaiverPage() {
                     <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Found ${matchingHistory.length} previous visits.` : 'Welcome! Please complete your first intake.'}</p>
                   </div>
                   {isReturningClient && (
-                    <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 10px rgba(197,143,59,0.2)' }}>VIEW HISTORY</button>
+                    <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>VIEW HISTORY</button>
                   )}
                 </div>
               )}
             </Section>
 
-            {/* ── BODY MAP SECTION (UNTOUCHED) ── */}
             <Section title="Body Focus Areas" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
@@ -320,7 +327,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS ── */}
             <Section title="Health Conditions">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => (
@@ -334,7 +340,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── CONSENT ── */}
             <Section title="Acknowledgement">
               <div style={{ display: 'flex', gap: 14, cursor: 'pointer' }} onClick={() => setAgreed(!agreed)}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -344,10 +349,19 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── SIGNATURE ── */}
             <Section title="Digital Signature">
               <div style={{ position: 'relative', width: '100%', maxWidth: 500 }}>
-                <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={stopDrawing} onMouseLeave={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} style={{ border: '1px solid rgba(197,143,59,0.5)', borderRadius: 12, backgroundColor: '#fafafa', width: '100%', height: 200, touchAction: 'none', cursor: 'crosshair' }} />
+                <canvas
+                  ref={canvasRef}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                  style={{ border: '1px solid rgba(197,143,59,0.5)', borderRadius: 12, backgroundColor: '#fafafa', width: '100%', height: 200, touchAction: 'none', cursor: 'crosshair' }}
+                />
                 <button type="button" onClick={clearSignature} style={{ position: 'absolute', top: 12, right: 12, fontSize: 10, fontWeight: 700, padding: '6px 12px', borderRadius: 6, backgroundColor: 'rgba(26,26,26,0.05)', border: 'none', cursor: 'pointer' }}>CLEAR</button>
               </div>
             </Section>
