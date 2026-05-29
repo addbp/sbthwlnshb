@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, FormEvent, useMemo } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS (PRESERVED)
+// DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -71,6 +71,7 @@ export default function WaiverPage() {
   const [loading, setLoading] = useState(false)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [allRecords, setAllRecords] = useState<any[]>([])
@@ -90,12 +91,10 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── ATOMIC DATABASE FETCH (BRUTE FORCE) ──
+  // ── ULTIMATE BRUTE-FORCE DATA SCRAPER ──
   useEffect(() => {
     async function fetchAllRecords() {
-      console.log("🔄 Initializing Database Sync...");
       try {
-        // We fetch ALL columns to detect which one holds the name
         const queries = [
           supabase.from('bookings').select('*'),
           supabase.from('bookings_import').select('*'),
@@ -104,53 +103,44 @@ export default function WaiverPage() {
         ];
 
         const results = await Promise.allSettled(queries);
-
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalPool: any[] = [];
 
-        results.forEach((res, index) => {
-          const tableName = ['bookings', 'bookings_import', 'client', 'clients'][index];
+        results.forEach((res) => {
           if (res.status === 'fulfilled' && res.value.data) {
-            console.log(`✅ Table [${tableName}] found: ${res.value.data.length} records.`);
             res.value.data.forEach((item: any) => {
-              // Brute force name detection
               const rawName = item.client_name || item.full_name || item.name || "";
+              const rawDate = item.created_at || item.booking_date || item.date || item.updated_at;
+              const rawService = item.service_name || item.service || item.treatment || "Spa Service";
+
               if (rawName) {
                 finalPool.push({
                   ...item,
-                  client_name: rawName, // Unified name key
-                  search_key: rawName.toString().trim().toLowerCase()
+                  display_name: rawName,
+                  display_date: rawDate ? new Date(rawDate).toLocaleDateString() : "Unknown Date",
+                  display_service: rawService,
+                  search_key: rawName.toString().trim().toLowerCase(),
+                  sort_date: rawDate ? new Date(rawDate).getTime() : 0
                 });
               }
             });
-          } else {
-            console.warn(`⚠️ Table [${tableName}] could not be read (Check RLS or Table Name).`);
           }
         });
 
-        finalPool.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        finalPool.sort((a, b) => b.sort_date - a.sort_date);
         setAllRecords(finalPool);
         setDataLoaded(true);
-        console.log(`🎯 Total Searchable Records: ${finalPool.length}`);
-      } catch (err) { console.error("Critical Fetch Error:", err) }
+      } catch (err) { console.error("Database Fetch Error:", err) }
     }
     fetchAllRecords()
   }, [supabase])
 
   const normalizedInput = name.trim().toLowerCase()
-
-  // Exact match logic
-  const matchingHistory = useMemo(() => {
-    if (!normalizedInput) return []
-    return allRecords.filter(r => r.search_key === normalizedInput)
-  }, [allRecords, normalizedInput])
-
-  // Partial match for returning true/false
+  const matchingHistory = useMemo(() => normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : [], [allRecords, normalizedInput])
   const isReturningClient = matchingHistory.length > 0
-
   const dropdownOptions = useMemo(() => {
     if (!normalizedInput || normalizedInput.length < 2) return []
-    const names = Array.from(new Set(allRecords.map(r => r.client_name)))
+    const names = Array.from(new Set(allRecords.map(r => r.display_name)))
     return names.filter(n => n.toLowerCase().includes(normalizedInput) && n.toLowerCase() !== normalizedInput).slice(0, 5)
   }, [allRecords, normalizedInput])
 
@@ -194,7 +184,7 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !agreed || !signature) return alert("Please complete and sign the form.")
+    if (!name.trim() || !agreed || !signature) return alert("Please complete all sections and sign.")
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
@@ -231,11 +221,11 @@ export default function WaiverPage() {
               <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0 }}>Visit History</h3>
               <button onClick={() => setShowHistoryModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #eee', borderRadius: 12 }}>
+            <div style={{ maxHeight: 350, overflowY: 'auto', border: '1px solid #eee', borderRadius: 12 }}>
               {matchingHistory.map((h, i) => (
                 <div key={i} style={{ padding: '15px', borderBottom: i === matchingHistory.length - 1 ? 'none' : '1px solid #eee' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.service_name || h.service || 'Massage Session'}</div>
-                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at || h.date).toLocaleDateString()}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.display_service}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{h.display_date}</div>
                 </div>
               ))}
             </div>
@@ -245,41 +235,32 @@ export default function WaiverPage() {
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
-
           <div style={{ textAlign: 'center' }}>
             <h1 style={{ fontFamily: DSP, fontSize: 40, color: BLACK }}>Digital Intake & Waiver</h1>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <label style={LABEL}>Full Name *</label>
                 <input className="wv-in" style={INPUT} value={name} onChange={e => { setName(e.target.value); setShowDropdown(true) }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 200)} placeholder="Search for name..." required autoComplete="off" />
-
                 {showDropdown && dropdownOptions.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50 }}>
-                    {dropdownOptions.map(n => (
-                      <div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>
-                    ))}
+                    {dropdownOptions.map(n => (<div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>))}
                   </div>
                 )}
               </div>
-
               {name.trim().length > 1 && dataLoaded && (
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous records.` : 'No previous records found.'}</p>
+                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client' : 'New Client Registration'}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Verified: ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
                   </div>
-                  {isReturningClient && (
-                    <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>
-                  )}
+                  {isReturningClient && (<button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>)}
                 </div>
               )}
             </Section>
 
-            {/* --- BODY DIAGRAM (PRESERVED) --- */}
             <Section title="Body Focus Areas" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', maxWidth: 500, margin: '0 auto' }}>
@@ -290,10 +271,7 @@ export default function WaiverPage() {
                 </div>
                 <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' }}>
                   {INTERACTIVE_ZONES.map(zone => (
-                    <button key={`list-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)} style={{ padding: '14px 16px', backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedAreas.has(zone.id) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>
-                      {zone.id}
-                      {selectedAreas.has(zone.id) && <span style={{ color: GOLD }}>✓</span>}
-                    </button>
+                    <button key={`list-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)} style={{ padding: '14px 16px', backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedAreas.has(zone.id) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>{zone.id}{selectedAreas.has(zone.id) && <span style={{ color: GOLD }}>✓</span>}</button>
                   ))}
                 </div>
               </div>
@@ -314,9 +292,17 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            <Section title="Signature">
-              <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => { setIsDrawing(false); setSignature(canvasRef.current!.toDataURL()) }} style={{ border: '1px solid #ddd', borderRadius: 12, backgroundColor: '#fafafa', width: '100%', height: 200, cursor: 'crosshair' }} />
-              <button type="button" onClick={() => { const ctx = canvasRef.current!.getContext('2d')!; ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height); setSignature('') }} style={{ alignSelf: 'flex-end', fontSize: 10, fontWeight: 700, padding: '6px 12px', cursor: 'pointer' }}>CLEAR</button>
+            <Section title="Signature & Date" note="Please sign and verify the date">
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 350px' }}>
+                  <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => { setIsDrawing(false); setSignature(canvasRef.current!.toDataURL()) }} style={{ border: '1px solid #ddd', borderRadius: 12, backgroundColor: '#fafafa', width: '100%', height: 200, cursor: 'crosshair' }} />
+                  <button type="button" onClick={() => { const ctx = canvasRef.current!.getContext('2d')!; ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height); setSignature('') }} style={{ float: 'right', marginTop: 8, fontSize: 10, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', border: 'none', background: 'transparent' }}>CLEAR SIGNATURE</button>
+                </div>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={LABEL}>Date Signed</label>
+                  <div style={{ ...INPUT, backgroundColor: '#F0F0F0', display: 'flex', alignItems: 'center', color: 'rgba(0,0,0,0.5)', fontWeight: 600 }}>{today}</div>
+                </div>
+              </div>
             </Section>
 
             <button type="submit" disabled={loading} style={{ height: 60, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{loading ? 'Processing...' : 'Confirm & Sign'}</button>
