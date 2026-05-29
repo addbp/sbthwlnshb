@@ -91,25 +91,49 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── UNLIMITED BRUTE-FORCE DATA SCRAPER ──
+  // ── UNLIMITED PAGINATION SCRAPER ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
-        // OVERRIDING DEFAULT LIMITS: Forcing Supabase to fetch up to 100,000 records per table
-        const queries = [
-          supabase.from('bookings').select('*').limit(100000),
-          supabase.from('bookings_import').select('*').limit(100000),
-          supabase.from('client').select('*').limit(100000),
-          supabase.from('clients').select('*').limit(100000)
-        ];
+        const tables = ['bookings', 'bookings_import', 'client', 'clients'];
 
-        const results = await Promise.allSettled(queries);
+        // Helper function to bypass the 1000 row limit using a while loop
+        const fetchPaginated = async (tableName: string) => {
+          let allTableData: any[] = [];
+          let start = 0;
+          const step = 1000; // Fetch 1000 at a time
+          let hasMore = true;
+
+          while (hasMore) {
+            const { data, error } = await supabase
+              .from(tableName)
+              .select('*')
+              .range(start, start + step - 1);
+
+            if (error || !data) {
+              hasMore = false;
+              break;
+            }
+
+            allTableData.push(...data);
+
+            if (data.length < step) {
+              hasMore = false; // We reached the end of the table
+            } else {
+              start += step; // Advance to the next 1000 chunk
+            }
+          }
+          return allTableData;
+        };
+
+        // Fetch all tables concurrently
+        const results = await Promise.allSettled(tables.map(t => fetchPaginated(t)));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalPool: any[] = [];
 
         results.forEach((res) => {
-          if (res.status === 'fulfilled' && res.value.data) {
-            res.value.data.forEach((item: any) => {
+          if (res.status === 'fulfilled' && res.value) {
+            res.value.forEach((item: any) => {
               const rawName = item.client_name || item.full_name || item.name || "";
               const rawDate = item.created_at || item.booking_date || item.date || item.updated_at;
               const rawService = item.service_name || item.service || item.treatment || "Spa Service";
@@ -128,6 +152,7 @@ export default function WaiverPage() {
           }
         });
 
+        // Sort everything universally from newest to oldest
         finalPool.sort((a, b) => b.sort_date - a.sort_date);
         setAllRecords(finalPool);
         setDataLoaded(true);
@@ -254,8 +279,8 @@ export default function WaiverPage() {
               {name.trim().length > 1 && dataLoaded && (
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client' : 'New Client Registration'}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Verified: ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
+                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
                   </div>
                   {isReturningClient && (<button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>)}
                 </div>
