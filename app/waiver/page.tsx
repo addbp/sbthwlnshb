@@ -100,6 +100,10 @@ export default function WaiverPage() {
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set())
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
 
+  // New States for Acknowledgement & Signature
+  const [agreed, setAgreed] = useState(false)
+  const [signature, setSignature] = useState('')
+
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
@@ -142,13 +146,9 @@ export default function WaiverPage() {
   const toggleCondition = (cond: string) => {
     setSelectedConditions(prev => {
       const next = new Set(prev)
-
-      // Smart logic: If they click 'None of the above', clear everything else.
       if (cond === 'None of the above') {
         return next.has('None of the above') ? new Set() : new Set(['None of the above'])
       }
-
-      // If they click a normal condition, remove 'None of the above'
       next.delete('None of the above')
       next.has(cond) ? next.delete(cond) : next.add(cond)
       return next
@@ -159,6 +159,9 @@ export default function WaiverPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return alert("Please enter your full name.")
+    if (!agreed) return alert("Please acknowledge and agree to the terms.")
+    if (!signature.trim()) return alert("Please provide your digital signature.")
+
     setLoading(true)
 
     const areasArray = Array.from(selectedAreas).join(', ')
@@ -169,6 +172,8 @@ export default function WaiverPage() {
         client_name: name.trim(),
         focus_areas: areasArray || 'None',
         health_conditions: conditionsArray || 'None',
+        signature: signature.trim(),
+        terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
 
@@ -185,7 +190,7 @@ export default function WaiverPage() {
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
       <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Waiver Signed Successfully</h2>
-      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your preferences have been saved securely.</p>
+      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your signed waiver has been securely saved.</p>
     </div>
   )
 
@@ -195,6 +200,7 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
+        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap');
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
@@ -207,7 +213,7 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── CLIENT DETAILS WITH SMART SEARCH ── */}
+            {/* ── CLIENT DETAILS ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
@@ -223,15 +229,11 @@ export default function WaiverPage() {
                     required
                     autoComplete="off"
                   />
-
-                  {/* Returning / New Client Badge */}
                   {name.trim().length > 1 && (
                     <div style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.15)' : 'rgba(46, 125, 50, 0.1)', color: isReturningClient ? GOLD : '#2e7d32', padding: '6px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                       {isReturningClient ? 'Returning Client' : 'New Client'}
                     </div>
                   )}
-
-                  {/* Dropdown for Search */}
                   {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
                       {filteredNames.map(n => (
@@ -245,21 +247,14 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── GORGEOUS, SIDE-BY-SIDE BODY MAP SECTION (UNTOUCHED!) ── */}
+            {/* ── BODY MAP SECTION (UNTOUCHED) ── */}
             <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
-
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-                  <img
-                    src="/muscular-body.png"
-                    alt="Muscular Anatomy"
-                    style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
-                  />
-
+                  <img src="/muscular-body.png" alt="Muscular Anatomy" style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }} />
                   {INTERACTIVE_ZONES.map((zone) => {
                     const isSelected = selectedAreas.has(zone.id)
-                    const unselectedColor = 'rgba(197, 143, 59, 0.0)';
-
+                    const unselectedColor = 'rgba(197, 143, 59, 0.0)'
                     return (
                       <button
                         key={zone.id} type="button" onClick={() => toggleArea(zone.id)} title={zone.id}
@@ -275,7 +270,6 @@ export default function WaiverPage() {
                     )
                   })}
                 </div>
-
                 <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
                   {Array.from(selectedAreas).length === 0 ? (
@@ -294,7 +288,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── UPGRADED HEALTH CONDITIONS SECTION ── */}
+            {/* ── HEALTH CONDITIONS SECTION ── */}
             <Section title="Health Conditions" note="Please select all that apply">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => {
@@ -307,16 +301,13 @@ export default function WaiverPage() {
                         backgroundColor: isSelected ? 'rgba(197,143,59,0.08)' : WHITE,
                         border: `1px solid ${isSelected ? 'rgba(197,143,59,0.4)' : 'rgba(26,26,26,0.13)'}`,
                         borderRadius: 10,
-                        ...TEXT_FORMAT,
-                        fontWeight: 500, // Slightly lighter font for conditions grid to match screenshot
-                        color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
+                        ...TEXT_FORMAT, fontWeight: 500, color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         cursor: 'pointer', textAlign: 'left', transition: 'all 150ms ease',
                         boxShadow: isSelected ? '0 2px 8px rgba(197,143,59,0.1)' : 'none'
                       }}
                     >
                       {cond}
-                      {/* Checkbox UI matching the requested design */}
                       <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {isSelected && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                       </div>
@@ -326,7 +317,41 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            <button type="submit" disabled={loading} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
+            {/* ── NEW: ACKNOWLEDGEMENT & CONSENT ── */}
+            <Section title="Acknowledgement & Consent">
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', cursor: 'pointer', padding: '4px 0' }} onClick={() => setAgreed(!agreed)}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, transition: 'all 0.2s' }}>
+                  {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                </div>
+                <p style={{ margin: 0, fontSize: 14, color: 'rgba(26,26,26,0.85)', lineHeight: 1.6, fontFamily: BODY }}>
+                  I understand that massage therapy is provided for stress reduction, relaxation, and relief from muscular tension. I acknowledge that massage therapy is not a substitute for medical examination or diagnosis. I have stated all my known medical conditions and take it upon myself to keep the therapist updated on my health.
+                </p>
+              </div>
+            </Section>
+
+            {/* ── NEW: DIGITAL SIGNATURE ── */}
+            <Section title="Digital Signature" note="Type your full name to sign">
+              <div>
+                <input
+                  className="wv-in"
+                  style={{
+                    display: 'block', width: '100%', height: 60,
+                    padding: '10px 15px', backgroundColor: 'transparent',
+                    border: 'none', borderBottom: '2px solid rgba(26,26,26,0.2)',
+                    borderRadius: 0, fontSize: 32, color: BLACK,
+                    fontFamily: "'Caveat', cursive", // Beautiful cursive signature font
+                    boxSizing: 'border-box', outline: 'none',
+                    transition: 'border-color 180ms ease'
+                  }}
+                  value={signature}
+                  onChange={e => setSignature(e.target.value)}
+                  placeholder="Sign your name here..."
+                  required
+                />
+              </div>
+            </Section>
+
+            <button type="submit" disabled={loading} style={{ height: 64, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 14, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, marginTop: 10 }}>
               {loading ? 'Submitting...' : 'Confirm & Sign Waiver'}
             </button>
 
