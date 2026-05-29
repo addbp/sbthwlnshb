@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useRef, FormEvent } from 'react'
+import { useState, useEffect, useRef, FormEvent, useMemo } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
@@ -102,8 +102,7 @@ export default function WaiverPage() {
 
   // Smart Search & History States
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [clientHistory, setClientHistory] = useState<any[]>([])
-  const [clientDbNames, setClientDbNames] = useState<string[]>([])
+  const [allRecords, setAllRecords] = useState<any[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
@@ -120,7 +119,7 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── FETCH RECORDS (Independent error-proof requests) ──
+  // ── FETCH RECORDS (Fail-safe independent requests) ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
@@ -134,22 +133,41 @@ export default function WaiverPage() {
           ...(res1.status === 'fulfilled' ? (res1.value.data || []) : []),
           ...(res2.status === 'fulfilled' ? (res2.value.data || []) : []),
           ...(res3.status === 'fulfilled' ? (res3.value.data || []) : [])
-        ].filter(d => d && d.client_name)
+        ]
+          .filter(d => d && d.client_name)
+          // Normalizing data for instant matching
+          .map(d => ({
+            ...d,
+            search_key: d.client_name.trim().toLowerCase()
+          }))
 
         combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-
-        setClientHistory(combined)
-        setClientDbNames(Array.from(new Set(combined.map(d => d.client_name))))
+        setAllRecords(combined)
       } catch (err) { console.error("History Load Error:", err) }
     }
     fetchAllRecords()
   }, [supabase])
 
-  // ── LOGIC: CASE-INSENSITIVE MATCHING ──
-  const searchName = name.trim().toLowerCase()
-  const filteredNames = clientDbNames.filter(n => n.toLowerCase().includes(searchName) && n.toLowerCase() !== searchName)
-  const matchingHistory = clientHistory.filter(h => h.client_name.toLowerCase() === searchName)
+  // ── INTELLIGENT MATCHING LOGIC ──
+  const normalizedInput = name.trim().toLowerCase()
+
+  // Find matching history
+  const matchingHistory = useMemo(() => {
+    if (!normalizedInput) return []
+    return allRecords.filter(r => r.search_key === normalizedInput)
+  }, [allRecords, normalizedInput])
+
   const isReturningClient = matchingHistory.length > 0
+
+  // Dropdown options
+  const dropdownOptions = useMemo(() => {
+    if (!normalizedInput) return []
+    const uniqueNames = Array.from(new Set(allRecords.map(r => r.client_name)))
+    return uniqueNames.filter(n =>
+      n.toLowerCase().includes(normalizedInput) &&
+      n.toLowerCase() !== normalizedInput
+    ).slice(0, 5) // Limit to top 5
+  }, [allRecords, normalizedInput])
 
   const toggleArea = (id: string) => {
     setSelectedAreas(prev => {
@@ -162,7 +180,7 @@ export default function WaiverPage() {
   const toggleCondition = (cond: string) => {
     setSelectedConditions(prev => {
       const next = new Set(prev)
-      if (cond === 'None of the above') return next.has('None of the above') ? new Set() : new Set(['None of the above'])
+      if (cond === 'None of the above') return new Set(['None of the above'])
       next.delete('None of the above'); next.has(cond) ? next.delete(cond) : next.add(cond)
       return next
     })
@@ -225,13 +243,13 @@ export default function WaiverPage() {
         <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
           <div style={{ backgroundColor: WHITE, width: '100%', maxWidth: 500, borderRadius: 20, padding: 30 }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0 }}>Visit History: {name}</h3>
+              <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0 }}>Visit History</h3>
               <button onClick={() => setShowHistoryModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ maxHeight: 300, overflowY: 'auto' }}>
               {matchingHistory.map((h, i) => (
                 <div key={i} style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.service_name || 'Service Session'}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.service_name || 'Massage Session'}</div>
                   <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at).toLocaleDateString()}</div>
                 </div>
               ))}
@@ -250,14 +268,15 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+            {/* ── CLIENT DETAILS WITH RE-ENGINEERED DETECTION ── */}
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <label style={LABEL}>Full Name *</label>
                 <input className="wv-in" style={INPUT} value={name} onChange={e => { setName(e.target.value); setShowDropdown(true) }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 200)} placeholder="Search for name..." required autoComplete="off" />
 
-                {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
+                {showDropdown && dropdownOptions.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50 }}>
-                    {filteredNames.map(n => (
+                    {dropdownOptions.map(n => (
                       <div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>
                     ))}
                   </div>
