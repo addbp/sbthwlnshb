@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── SAFE CURRENCY PARSER ───
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
   if (!val) return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
@@ -122,23 +123,27 @@ export default function BookingsPage() {
       histFrom += PAGE
     }
 
-    // ─── 3. TIMELINE SCANNER (CALCULATES NEW VS RETURNING ACCURATELY) ───
-    all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0)) // Oldest to Newest
-
+    // ─── 3. TWO-PASS SCANNER (ACCURATE TOTAL COUNT LOGIC) ───
     const visitCounter = new Map<string, number>()
+
+    // Pass 1: Count total visits per client
+    all.forEach(p => {
+      const nameKey = p.client.toLowerCase().trim()
+      if (nameKey && nameKey !== 'guest' && nameKey !== '—') {
+        visitCounter.set(nameKey, (visitCounter.get(nameKey) || 0) + 1)
+      }
+    })
+
+    // Pass 2: Assign tags based on total count
     all.forEach(p => {
       const nameKey = p.client.toLowerCase().trim()
       if (!nameKey || nameKey === 'guest' || nameKey === '—') {
         p.customerType = 'WALK-IN'
-        return
-      }
-      const visits = visitCounter.get(nameKey) || 0
-      if (visits === 0) {
-        p.customerType = 'NEW CLIENT'
       } else {
-        p.customerType = 'RETURNING CLIENT'
+        const totalVisits = visitCounter.get(nameKey) || 1
+        // 2 or more = Returning, Exactly 1 = New
+        p.customerType = totalVisits >= 2 ? 'RETURNING CLIENT' : 'NEW CLIENT'
       }
-      visitCounter.set(nameKey, visits + 1)
     })
 
     // ─── 4. SORT NEWEST TO OLDEST FOR DASHBOARD ───
@@ -253,9 +258,10 @@ export default function BookingsPage() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
-                    <td style={{ padding: '14px 16px' }}>
+                    {/* ─── ADDED NOWRAP TO THIS CELL TO PREVENT BREAKING ─── */}
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                       <span style={{
-                        padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
+                        padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap',
                         backgroundColor: b.customerType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
                         color: b.customerType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
                       }}>
@@ -269,7 +275,7 @@ export default function BookingsPage() {
             </table>
           </div>
 
-          {/* ─── PAGINATION BAR (FIXED) ─── */}
+          {/* ─── PAGINATION BAR ─── */}
           <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <span style={{ fontSize: 13, color: '#666' }}>
               Showing <strong style={{ color: '#1A1A1A' }}>{filtered.length > 0 ? startIndex + 1 : 0}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, filtered.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{filtered.length.toLocaleString()}</strong> entries
