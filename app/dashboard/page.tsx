@@ -1,10 +1,12 @@
 'use client'
+
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── ABSOLUTE BULLETPROOF CURRENCY PARSER ───
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
   const cleaned = String(val).replace(/[^0-9.-]+/g, '');
@@ -56,17 +58,26 @@ function fmtDateShort(raw: string): string {
 }
 
 interface Sale {
-  _key: string; date: string; service: string; therapist: string;
-  client: string; revenue: number; category: string; payMethod: string;
-  isLive: boolean; status: string;
+  _key: string;
+  date: string;
+  service: string;
+  therapist: string;
+  client: string;
+  revenue: number;
+  category: string;
+  payMethod: string;
+  isLive: boolean;
+  status: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   const all: Sale[] = []
 
   // 1. Fetch Live Operations Data
   const { data: liveData } = await supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(1000)
   if (liveData) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     liveData.forEach((r: any) => {
       all.push({
         _key: `live-${r.id}`,
@@ -86,8 +97,13 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   // 2. Fetch Historical Data (Pulls ALL 10,000+ records)
   let from = 0; const PAGE = 1000;
   for (; ;) {
-    const { data } = await supabase.from('bookings_import').select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method').range(from, from + PAGE - 1)
+    const { data } = await supabase
+      .from('bookings_import')
+      .select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method')
+      .range(from, from + PAGE - 1)
+
     if (!data || data.length === 0) break
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data.forEach((r: any, i: number) => {
       all.push({
         _key: `hist-${from + i}`,
@@ -102,7 +118,8 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
         status: 'Completed'
       })
     })
-    if (data.length < PAGE) break; from += PAGE;
+    if (data.length < PAGE) break;
+    from += PAGE;
   }
 
   return all.sort((a, b) => (parseImportDate(b.date)?.getTime() || 0) - (parseImportDate(a.date)?.getTime() || 0))
@@ -145,8 +162,7 @@ export default function OverviewPage() {
     return true;
   })
 
-  // KPIs calculated from the FULL filtered dataset (no 500 limit!)
-  const totalRev = displaySales.reduce((a, s) => a + s.revenue, 0)
+  // KPIs calculated from the FULL filtered dataset (No Total Revenue)
   const counts = {
     total: displaySales.length,
     pending: displaySales.filter(s => s.status.toLowerCase() === 'pending').length,
@@ -160,9 +176,15 @@ export default function OverviewPage() {
   const paginatedSales = displaySales.slice(startIndex, startIndex + itemsPerPage)
 
   const btnStyle = (disabled: boolean): React.CSSProperties => ({
-    padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase',
-    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A', color: disabled ? '#aaa' : '#C58F3B',
-    border: 'none', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer',
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A',
+    color: disabled ? '#aaa' : '#C58F3B',
+    border: 'none',
+    borderRadius: 6,
+    cursor: disabled ? 'not-allowed' : 'pointer',
     transition: 'opacity 200ms ease'
   })
 
@@ -207,15 +229,11 @@ export default function OverviewPage() {
         <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>Aggregating 10,000+ records for operations dashboard...</div>
       ) : (
         <>
-          {/* ─── KPIs ─── */}
+          {/* ─── KPIs (Total Revenue Removed) ─── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(200px,100%),1fr))', gap: 12 }}>
             <div style={{ backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.20)', borderRadius: 14, padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(243,233,224,0.50)', margin: '0 0 8px' }}>Total Revenue</p>
-              <p style={{ fontSize: 28, fontWeight: 700, color: '#F3E9E0', margin: 0 }}>₱{totalRev.toLocaleString()}</p>
-            </div>
-            <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total Bookings</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{counts.total.toLocaleString()}</p>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(243,233,224,0.50)', margin: '0 0 8px' }}>Total Bookings</p>
+              <p style={{ fontSize: 28, fontWeight: 700, color: '#F3E9E0', margin: 0 }}>{counts.total.toLocaleString()}</p>
             </div>
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', borderLeft: '4px solid #888' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Pending</p>
