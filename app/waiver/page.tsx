@@ -1,7 +1,7 @@
 'use client'
 
-// app/waiver/page.tsx  —  Finalized Master Intake & Waiver
-// Unified Design, Database Aligned, Clickable Options, and Photorealistic Anatomy
+// app/waiver/page.tsx — UNIFIED MASTER WAIVER
+// GORGEOUS, REALISTIC ANATOMY, FIXED CONDITIONS, UNIFIED FONTS, DATABASE READY
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,7 @@ import { useState, useRef, FormEvent } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS
+// DESIGN TOKENS (Shared fonts and colours with other pages)
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -36,16 +36,14 @@ const LABEL: React.CSSProperties = {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DATA SETS
+// DATA SETS (Anatomically mapped based on guide)
 // ─────────────────────────────────────────────────────────────
 const FRONT_ZONES = [
   { id: 'Neck & Cervical', top: '10%', left: '40%', width: '20%', height: '10%' },
   { id: 'Deltoids (Shoulders)', top: '22%', left: '20%', width: '60%', height: '12%' },
   { id: 'Pectorals (Chest)', top: '35%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Abdominals (Stomach)', top: '50%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Biceps (Arms)', top: '35%', left: '15%', width: '15%', height: '25%' },
-  { id: 'Forearms (Hands)', top: '60%', left: '10%', width: '15%', height: '20%' },
-  { id: 'Calves', top: '70%', left: '30%', width: '40%', height: '15%' },
+  { id: 'Biceps & Triceps (Arms)', top: '35%', left: '15%', width: '15%', height: '25%' },
+  { id: 'Forearms & Hands', top: '60%', left: '10%', width: '15%', height: '20%' },
   { id: 'Feet & Ankles', top: '85%', left: '30%', width: '40%', height: '10%' },
 ]
 
@@ -56,7 +54,6 @@ const BACK_ZONES = [
   { id: 'Lats & Rhomboids (Upper Back)', top: '38%', left: '30%', width: '40%', height: '15%' },
   { id: 'Lumbar (Lower Back)', top: '55%', left: '35%', width: '30%', height: '15%' },
   { id: 'Calves', top: '70%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Feet & Ankles', top: '85%', left: '30%', width: '40%', height: '10%' },
 ]
 
 const HEALTH_CONDITIONS_LIST = [
@@ -132,7 +129,7 @@ export default function WaiverPage() {
     const conditionsArray = Array.from(selectedConditions).join(', ')
 
     try {
-      // ⚠️ IMPORTANT: Ensure your Supabase has a 'waivers' table with these exact columns!
+      // ⚠️ IMPORTANT: Ensure your Supabase has a 'waivers' table with 'client_name', 'focus_areas', 'health_conditions', 'date_signed'
       const { error } = await supabase.from('waivers').insert({
         client_name: name.trim(),
         focus_areas: areasArray || 'None',
@@ -183,7 +180,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── INTERACTIVE BODY MAP SECTION ── */}
+            {/* ── GORGEOUS, REALISTIC BODY MAP SECTION ── */}
             <Section title="Body Focus Areas" note="Select specific muscular zones">
               <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
 
@@ -218,7 +215,7 @@ export default function WaiverPage() {
                   </div>
                 </div>
 
-                {/* Selected Areas List (Font perfectly standardises to Health Conditions) */}
+                {/* Selected Areas List (Font standardised to Health Conditions) */}
                 <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
                   {Array.from(selectedAreas).length === 0 ? (
