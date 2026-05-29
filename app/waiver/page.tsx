@@ -215,7 +215,7 @@ export default function WaiverPage() {
                   </div>
                 </div>
 
-                {/* Selected Areas List (Font standardised to Health Conditions) */}
+                {/* Selected Areas List (Font standardized to Health Conditions) */}
                 <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
                   {Array.from(selectedAreas).length === 0 ? (
@@ -232,7 +232,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS SECTION (FIXED Clickability, standardised Font) ── */}
+            {/* ── HEALTH CONDITIONS SECTION (FIXED Clickability, standardized Font) ── */}
             <Section title="Health Conditions" note="Please select all that apply">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => {
@@ -245,9 +245,9 @@ export default function WaiverPage() {
                         backgroundColor: isSelected ? 'rgba(197,143,59,0.1)' : WHITE,
                         border: `1.5px solid ${isSelected ? GOLD : 'rgba(26,26,26,0.13)'}`,
                         borderRadius: 10,
-                        fontSize: 14, // standardised to Body Areas list
-                        fontWeight: 600, // standardised
-                        fontFamily: BODY, // standardised
+                        fontSize: 14, // standardized to Body Areas list
+                        fontWeight: 600, // standardized
+                        fontFamily: BODY, // standardized
                         color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         cursor: 'pointer', textAlign: 'left', transition: 'all 150ms ease',
