@@ -101,12 +101,13 @@ export default function WaiverPage() {
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
 
   const [agreed, setAgreed] = useState(false)
-  const [signature, setSignature] = useState('') // This will now hold the drawn image data
+  const [signature, setSignature] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
   // Smart Search States
+  const [clientHistory, setClientHistory] = useState<any[]>([])
   const [clientDbNames, setClientDbNames] = useState<string[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
 
@@ -120,7 +121,7 @@ export default function WaiverPage() {
     if (canvas) {
       const rect = canvas.getBoundingClientRect()
       canvas.width = rect.width
-      canvas.height = 200 // Fixed height for signature pad
+      canvas.height = 200
       const ctx = canvas.getContext('2d')
       if (ctx) {
         ctx.strokeStyle = BLACK
@@ -131,18 +132,22 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // Fetch client history for Smart Search
+  // Fetch client history for Smart Search & Previous Bookings Data
   useEffect(() => {
     async function fetchClientHistory() {
       try {
         const [liveRes, archiveRes] = await Promise.all([
-          supabase.from('bookings').select('client_name'),
-          supabase.from('bookings_import').select('client_name')
+          supabase.from('bookings').select('client_name, created_at').order('created_at', { ascending: false }),
+          supabase.from('bookings_import').select('client_name, created_at').order('created_at', { ascending: false })
         ])
-        const liveNames = liveRes.data ? liveRes.data.map(d => d.client_name) : []
-        const archiveNames = archiveRes.data ? archiveRes.data.map(d => d.client_name) : []
-        const combinedHistory = [...liveNames, ...archiveNames].filter(Boolean)
-        const uniqueNames = Array.from(new Set(combinedHistory))
+
+        const live = liveRes.data || []
+        const archive = archiveRes.data || []
+        const combined = [...live, ...archive].filter(d => d.client_name)
+
+        setClientHistory(combined)
+
+        const uniqueNames = Array.from(new Set(combined.map(d => d.client_name)))
         setClientDbNames(uniqueNames)
       } catch (err) {
         console.error("Failed to load client history", err)
@@ -152,7 +157,10 @@ export default function WaiverPage() {
   }, [supabase])
 
   const filteredNames = clientDbNames.filter(n => n.toLowerCase().includes(name.toLowerCase()) && n.toLowerCase() !== name.toLowerCase())
-  const isReturningClient = clientDbNames.some(n => n.toLowerCase() === name.trim().toLowerCase())
+
+  // Gets all past bookings for the EXACT name typed
+  const matchingHistory = clientHistory.filter(h => h.client_name.toLowerCase() === name.trim().toLowerCase())
+  const isReturningClient = matchingHistory.length > 0
 
   // ── TOGGLE FUNCTIONS ──
   const toggleArea = (id: string) => {
@@ -219,7 +227,7 @@ export default function WaiverPage() {
   const stopDrawing = () => {
     setIsDrawing(false)
     if (canvasRef.current) {
-      setSignature(canvasRef.current.toDataURL('image/png')) // Saves drawing as base64 image
+      setSignature(canvasRef.current.toDataURL('image/png'))
     }
   }
 
@@ -249,7 +257,7 @@ export default function WaiverPage() {
         client_name: name.trim(),
         focus_areas: areasArray || 'None',
         health_conditions: conditionsArray || 'None',
-        signature: signature, // Now sending the drawn image data to the database
+        signature: signature,
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -264,10 +272,18 @@ export default function WaiverPage() {
   }
 
   if (submitted) return (
-    <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
+    <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Waiver Signed Successfully</h2>
       <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your signed digital waiver has been securely saved.</p>
+
+      {/* ── NEW: BACK BUTTON TO WAIVER PAGE ── */}
+      <button
+        onClick={() => window.location.reload()}
+        style={{ marginTop: 32, padding: '0 24px', height: 50, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}
+      >
+        Submit Another Waiver
+      </button>
     </div>
   )
 
@@ -277,6 +293,10 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
+        /* Custom scrollbar for focus areas */
+        .focus-scroll::-webkit-scrollbar { width: 6px; }
+        .focus-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.2); border-radius: 6px; }
+        .focus-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.4); }
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
@@ -289,6 +309,7 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+            {/* ── CLIENT DETAILS WITH DATABASE HISTORY ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
@@ -304,11 +325,7 @@ export default function WaiverPage() {
                     required
                     autoComplete="off"
                   />
-                  {name.trim().length > 1 && (
-                    <div style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.15)' : 'rgba(46, 125, 50, 0.1)', color: isReturningClient ? GOLD : '#2e7d32', padding: '6px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                      {isReturningClient ? 'Returning Client' : 'New Client'}
-                    </div>
-                  )}
+
                   {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
                       {filteredNames.map(n => (
@@ -319,11 +336,29 @@ export default function WaiverPage() {
                     </div>
                   )}
                 </div>
+
+                {/* ── NEW: DATABASE CLIENT HISTORY CARD ── */}
+                {isReturningClient && (
+                  <div style={{ marginTop: 14, padding: '14px 18px', backgroundColor: 'rgba(197,143,59,0.06)', borderRadius: 10, border: '1px solid rgba(197,143,59,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Returning Client Profile Found</p>
+                      <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>
+                        Past Bookings: <strong>{matchingHistory.length}</strong>
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: 'rgba(26,26,26,0.4)', textTransform: 'uppercase' }}>Last Visit</p>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: BLACK }}>
+                        {matchingHistory[0]?.created_at ? new Date(matchingHistory[0].created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </Section>
 
-            {/* ── BODY MAP SECTION (UNTOUCHED) ── */}
-            <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones">
+            {/* ── BODY MAP SECTION (WITH TWO-WAY CHECKBOXES) ── */}
+            <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones or select from the list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
                   <img src="/muscular-body.png" alt="Muscular Anatomy" style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }} />
@@ -332,7 +367,7 @@ export default function WaiverPage() {
                     const unselectedColor = 'rgba(197, 143, 59, 0.0)'
                     return (
                       <button
-                        key={zone.id} type="button" onClick={() => toggleArea(zone.id)} title={zone.id}
+                        key={`map-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)} title={zone.id}
                         style={{
                           position: 'absolute', top: zone.top, left: zone.left, width: zone.width, height: zone.height,
                           backgroundColor: isSelected ? 'rgba(197,143,59,0.5)' : unselectedColor,
@@ -345,20 +380,33 @@ export default function WaiverPage() {
                     )
                   })}
                 </div>
-                <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
-                  {Array.from(selectedAreas).length === 0 ? (
-                    <div style={{ padding: '20px', backgroundColor: '#fafafa', border: '1px dashed #ddd', borderRadius: 10, textAlign: 'center' }}>
-                      <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic', margin: 0 }}>Tap the diagram to select areas.</p>
-                    </div>
-                  ) : (
-                    Array.from(selectedAreas).map(area => (
-                      <div key={area} onClick={() => toggleArea(area)} style={{ padding: '14px 16px', backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.4)', borderRadius: 10, ...TEXT_FORMAT, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 2px 8px rgba(197,143,59,0.1)' }}>
-                        {area}
-                        <span style={{ color: GOLD }}>✓</span>
-                      </div>
-                    ))
-                  )}
+
+                {/* ── NEW: FULL CHECKBOX LIST OF BODY PARTS (TWO-WAY BINDING) ── */}
+                <div className="focus-scroll" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 6 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Select Focus Areas:</p>
+                  {INTERACTIVE_ZONES.map(zone => {
+                    const isSelected = selectedAreas.has(zone.id)
+                    return (
+                      <button
+                        key={`list-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)}
+                        style={{
+                          padding: '14px 16px',
+                          backgroundColor: isSelected ? 'rgba(197,143,59,0.08)' : WHITE,
+                          border: `1px solid ${isSelected ? 'rgba(197,143,59,0.4)' : 'rgba(26,26,26,0.13)'}`,
+                          borderRadius: 10,
+                          ...TEXT_FORMAT, fontWeight: 500, color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          cursor: 'pointer', textAlign: 'left', transition: 'all 150ms ease',
+                          boxShadow: isSelected ? '0 2px 8px rgba(197,143,59,0.1)' : 'none'
+                        }}
+                      >
+                        {zone.id}
+                        <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isSelected && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                        </div>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             </Section>
@@ -392,7 +440,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── RESTORED ACKNOWLEDGEMENT SECTION ── */}
+            {/* ── RESTORED ACKNOWLEDGEMENT SECTION (UNTOUCHED) ── */}
             <Section title="Acknowledgement & Consent">
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', cursor: 'pointer', padding: '4px 0' }} onClick={() => setAgreed(!agreed)}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, transition: 'all 0.2s' }}>
@@ -409,10 +457,9 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── DRAWN DIGITAL SIGNATURE SECTION ── */}
+            {/* ── DRAWN DIGITAL SIGNATURE SECTION (UNTOUCHED) ── */}
             <Section title="Digital Waiver & Signature" note="Please sign inside the box below">
               <div style={{ position: 'relative', width: '100%', maxWidth: 500 }}>
-                {/* The Canvas Element for Drawing */}
                 <canvas
                   ref={canvasRef}
                   onMouseDown={startDrawing}
@@ -428,13 +475,12 @@ export default function WaiverPage() {
                     backgroundColor: '#fafafa',
                     width: '100%',
                     height: 200,
-                    touchAction: 'none', // Prevents page scrolling while signing on mobile
+                    touchAction: 'none',
                     cursor: 'crosshair',
                     boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.02)'
                   }}
                 />
 
-                {/* Clear Signature Button */}
                 <button
                   type="button"
                   onClick={clearSignature}
