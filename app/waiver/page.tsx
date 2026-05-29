@@ -15,6 +15,13 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+const TEXT_FORMAT: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  fontFamily: BODY,
+  color: BLACK,
+}
+
 const INPUT: React.CSSProperties = {
   display: 'block', width: '100%', height: 54,
   padding: '0 15px',
@@ -33,22 +40,22 @@ const LABEL: React.CSSProperties = {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ALL INTERACTIVE ZONES (Mapped for Side-By-Side Image)
+// ALL INTERACTIVE ZONES - PROFESSIONALLY CALIBRATED
 // ─────────────────────────────────────────────────────────────
 const INTERACTIVE_ZONES = [
-  // FRONT BODY (Left side)
-  { id: 'Neck & Cervical', top: '10%', left: '21%', width: '8%', height: '6%' },
-  { id: 'Pectorals (Chest)', top: '22%', left: '15%', width: '20%', height: '12%' },
-  { id: 'Biceps & Triceps (Arms)', top: '35%', left: '8%', width: '34%', height: '15%' },
-  { id: 'Forearms & Hands', top: '50%', left: '4%', width: '42%', height: '15%' },
+  // --- FRONT BODY (Left half of image) ---
+  { id: 'Neck & Cervical', top: '10%', left: '21%', width: '8%', height: '7%' },
+  { id: 'Pectorals (Chest)', top: '19%', left: '15.5%', width: '19%', height: '11.5%' },
+  { id: 'Biceps & Triceps (Arms)', top: '23%', left: '11%', width: '7%', height: '24%' },
+  { id: 'Forearms & Hands', top: '48%', left: '4%', width: '8%', height: '20%' },
 
-  // BACK BODY (Right side)
-  { id: 'Trapezius (Upper Back)', top: '18%', left: '65%', width: '20%', height: '10%' },
-  { id: 'Deltoids (Shoulders)', top: '20%', left: '58%', width: '34%', height: '10%' },
-  { id: 'Lats & Rhomboids (Upper Back)', top: '30%', left: '65%', width: '20%', height: '15%' },
-  { id: 'Lumbar (Lower Back)', top: '45%', left: '67%', width: '16%', height: '10%' },
-  { id: 'Calves', top: '75%', left: '64%', width: '22%', height: '15%' },
-  { id: 'Feet & Ankles', top: '90%', left: '64%', width: '22%', height: '6%' },
+  // --- BACK BODY (Right half of image) ---
+  { id: 'Trapezius (Upper Back)', top: '16%', left: '62.5%', width: '25%', height: '9%' },
+  { id: 'Deltoids (Shoulders)', top: '18%', left: '55%', width: '12%', height: '11%' },
+  { id: 'Lats & Rhomboids (Upper Back)', top: '25%', left: '62.5%', width: '25%', height: '14%' },
+  { id: 'Lumbar (Lower Back)', top: '42%', left: '67.5%', width: '15%', height: '9%' },
+  { id: 'Calves', top: '70%', left: '61.5%', width: '27%', height: '13%' },
+  { id: 'Feet & Ankles', top: '88%', left: '66%', width: '18%', height: '7%' },
 ]
 
 const HEALTH_CONDITIONS_LIST = [
@@ -185,12 +192,10 @@ export default function WaiverPage() {
                     style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
                   />
 
-                  {/* Interactive HUD-style hotspots */}
+                  {/* Interactive HUD-style hotspots (PROFESSIONALLY CALIBRATED) */}
                   {INTERACTIVE_ZONES.map((zone) => {
                     const isSelected = selectedAreas.has(zone.id)
-
-                    // 🚨 CALIBRATION: Change 0.0 to 0.4 red here to see the boxes temporarily! 
-                    const unselectedColor = 'rgba(255, 0, 0, 0.0)';
+                    const unselectedColor = 'rgba(197, 143, 59, 0.0)';
 
                     return (
                       <button
@@ -217,7 +222,7 @@ export default function WaiverPage() {
                     </div>
                   ) : (
                     Array.from(selectedAreas).map(area => (
-                      <div key={area} onClick={() => toggleArea(area)} style={{ padding: '14px 16px', backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.4)', borderRadius: 10, fontSize: 14, fontWeight: 600, fontFamily: BODY, color: BLACK, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 2px 8px rgba(197,143,59,0.1)' }}>
+                      <div key={area} onClick={() => toggleArea(area)} style={{ padding: '14px 16px', backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.4)', borderRadius: 10, ...TEXT_FORMAT, display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: '0 2px 8px rgba(197,143,59,0.1)' }}>
                         {area}
                         <span style={{ color: GOLD }}>✓</span>
                       </div>
@@ -240,9 +245,7 @@ export default function WaiverPage() {
                         backgroundColor: isSelected ? 'rgba(197,143,59,0.08)' : WHITE,
                         border: `1px solid ${isSelected ? 'rgba(197,143,59,0.4)' : 'rgba(26,26,26,0.13)'}`,
                         borderRadius: 10,
-                        fontSize: 14, // Standardised to Body Areas list
-                        fontWeight: 600, // Standardised
-                        fontFamily: BODY, // Standardised
+                        ...TEXT_FORMAT,
                         color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         cursor: 'pointer', textAlign: 'left', transition: 'all 150ms ease',
@@ -250,7 +253,6 @@ export default function WaiverPage() {
                       }}
                     >
                       {cond}
-                      {/* Custom styled checkbox UI */}
                       <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {isSelected && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                       </div>
