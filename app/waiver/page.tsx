@@ -43,13 +43,10 @@ const LABEL: React.CSSProperties = {
 // ALL INTERACTIVE ZONES - PROFESSIONALLY CALIBRATED (UNTOUCHED)
 // ─────────────────────────────────────────────────────────────
 const INTERACTIVE_ZONES = [
-  // --- FRONT BODY (Left half of image) ---
   { id: 'Neck & Cervical', top: '10%', left: '21%', width: '8%', height: '7%' },
   { id: 'Pectorals (Chest)', top: '19%', left: '15.5%', width: '19%', height: '11.5%' },
   { id: 'Biceps & Triceps (Arms)', top: '23%', left: '11%', width: '7%', height: '24%' },
   { id: 'Forearms & Hands', top: '48%', left: '4%', width: '8%', height: '20%' },
-
-  // --- BACK BODY (Right half of image) ---
   { id: 'Trapezius (Upper Back)', top: '16%', left: '62.5%', width: '25%', height: '9%' },
   { id: 'Deltoids (Shoulders)', top: '18%', left: '55%', width: '12%', height: '11%' },
   { id: 'Lats & Rhomboids (Upper Back)', top: '25%', left: '62.5%', width: '25%', height: '14%' },
@@ -115,7 +112,6 @@ export default function WaiverPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
 
-  // Setup Canvas Resolution on load
   useEffect(() => {
     const canvas = canvasRef.current
     if (canvas) {
@@ -146,7 +142,6 @@ export default function WaiverPage() {
         const combined = [...live, ...archive].filter(d => d.client_name)
 
         setClientHistory(combined)
-
         const uniqueNames = Array.from(new Set(combined.map(d => d.client_name)))
         setClientDbNames(uniqueNames)
       } catch (err) {
@@ -157,12 +152,9 @@ export default function WaiverPage() {
   }, [supabase])
 
   const filteredNames = clientDbNames.filter(n => n.toLowerCase().includes(name.toLowerCase()) && n.toLowerCase() !== name.toLowerCase())
-
-  // Gets all past bookings for the EXACT name typed
   const matchingHistory = clientHistory.filter(h => h.client_name.toLowerCase() === name.trim().toLowerCase())
   const isReturningClient = matchingHistory.length > 0
 
-  // ── TOGGLE FUNCTIONS ──
   const toggleArea = (id: string) => {
     setSelectedAreas(prev => {
       const next = new Set(prev)
@@ -183,14 +175,12 @@ export default function WaiverPage() {
     })
   }
 
-  // ── CANVAS DRAWING LOGIC ──
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const rect = canvas.getBoundingClientRect()
-
     let x, y
     if ('touches' in e) {
       x = e.touches[0].clientX - rect.left
@@ -211,7 +201,6 @@ export default function WaiverPage() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const rect = canvas.getBoundingClientRect()
-
     let x, y
     if ('touches' in e) {
       x = e.touches[0].clientX - rect.left
@@ -240,7 +229,6 @@ export default function WaiverPage() {
     }
   }
 
-  // ── SUBMIT FUNCTION ──
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return alert("Please enter your full name.")
@@ -277,7 +265,6 @@ export default function WaiverPage() {
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Waiver Signed Successfully</h2>
       <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your signed digital waiver has been securely saved.</p>
 
-      {/* ── NEW: BACK BUTTON TO WAIVER PAGE ── */}
       <button
         onClick={() => window.location.reload()}
         style={{ marginTop: 32, padding: '0 24px', height: 50, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s' }}
@@ -293,7 +280,6 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
-        /* Custom scrollbar for focus areas */
         .focus-scroll::-webkit-scrollbar { width: 6px; }
         .focus-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.2); border-radius: 6px; }
         .focus-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.4); }
@@ -309,7 +295,7 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── CLIENT DETAILS WITH DATABASE HISTORY ── */}
+            {/* ── UPDATED CLIENT DETAILS WITH DYNAMIC HISTORY CARD ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
@@ -326,6 +312,14 @@ export default function WaiverPage() {
                     autoComplete="off"
                   />
 
+                  {/* Internal Input Badge */}
+                  {name.trim().length > 1 && (
+                    <div style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.15)' : 'rgba(46, 125, 50, 0.1)', color: isReturningClient ? GOLD : '#2e7d32', padding: '6px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      {isReturningClient ? 'Returning Client' : 'New Client'}
+                    </div>
+                  )}
+
+                  {/* Smart Search Dropdown */}
                   {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
                       {filteredNames.map(n => (
@@ -337,27 +331,35 @@ export default function WaiverPage() {
                   )}
                 </div>
 
-                {/* ── NEW: DATABASE CLIENT HISTORY CARD ── */}
-                {isReturningClient && (
-                  <div style={{ marginTop: 14, padding: '14px 18px', backgroundColor: 'rgba(197,143,59,0.06)', borderRadius: 10, border: '1px solid rgba(197,143,59,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {/* DYNAMIC DATABASE HISTORY CARD (Shows immediately when typing) */}
+                {name.trim().length > 1 && (
+                  <div style={{ marginTop: 14, padding: '14px 18px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 10, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.3s ease' }}>
                     <div>
-                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Returning Client Profile Found</p>
+                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {isReturningClient ? 'Returning Client Profile Found' : 'New Client Registration'}
+                      </p>
                       <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>
-                        Past Bookings: <strong>{matchingHistory.length}</strong>
+                        {isReturningClient ? (
+                          <>Past Bookings: <strong>{matchingHistory.length}</strong></>
+                        ) : (
+                          'No previous history found. Welcome!'
+                        )}
                       </p>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: 'rgba(26,26,26,0.4)', textTransform: 'uppercase' }}>Last Visit</p>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: BLACK }}>
-                        {matchingHistory[0]?.created_at ? new Date(matchingHistory[0].created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}
-                      </p>
-                    </div>
+                    {isReturningClient && matchingHistory.length > 0 && (
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: 'rgba(26,26,26,0.4)', textTransform: 'uppercase' }}>Last Visit</p>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: BLACK }}>
+                          {matchingHistory[0]?.created_at ? new Date(matchingHistory[0].created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </Section>
 
-            {/* ── BODY MAP SECTION (WITH TWO-WAY CHECKBOXES) ── */}
+            {/* ── BODY MAP SECTION (UNTOUCHED) ── */}
             <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones or select from the list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
@@ -381,7 +383,6 @@ export default function WaiverPage() {
                   })}
                 </div>
 
-                {/* ── NEW: FULL CHECKBOX LIST OF BODY PARTS (TWO-WAY BINDING) ── */}
                 <div className="focus-scroll" style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 6 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Select Focus Areas:</p>
                   {INTERACTIVE_ZONES.map(zone => {
