@@ -15,12 +15,40 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-const TEXT_FORMAT: React.CSSProperties = { fontSize: 14, fontWeight: 600, fontFamily: BODY, color: BLACK }
-const INPUT: React.CSSProperties = { display: 'block', width: '100%', height: 54, padding: '0 15px', backgroundColor: WHITE, border: '1px solid rgba(26,26,26,0.14)', borderRadius: 10, fontSize: 16, color: BLACK, fontFamily: BODY, outline: 'none' }
-const LABEL: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'rgba(26,26,26,0.50)', marginBottom: 7, fontFamily: BODY }
+const TEXT_FORMAT: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  fontFamily: BODY,
+  color: BLACK
+}
+
+const INPUT: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  height: 54,
+  padding: '0 15px',
+  backgroundColor: WHITE,
+  border: '1px solid rgba(26,26,26,0.14)',
+  borderRadius: 10,
+  fontSize: 16,
+  color: BLACK,
+  fontFamily: BODY,
+  outline: 'none'
+}
+
+const LABEL: React.CSSProperties = {
+  display: 'block',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.13em',
+  textTransform: 'uppercase',
+  color: 'rgba(26,26,26,0.50)',
+  marginBottom: 7,
+  fontFamily: BODY
+}
 
 // ─────────────────────────────────────────────────────────────
-// INTERACTIVE ZONES (UNTOUCHED COORDINATES)
+// INTERACTIVE ZONES
 // ─────────────────────────────────────────────────────────────
 const INTERACTIVE_ZONES = [
   { id: 'Neck & Cervical', top: '10%', left: '21%', width: '8%', height: '7%' },
@@ -87,7 +115,12 @@ export default function WaiverPage() {
       const rect = canvas.getBoundingClientRect()
       canvas.width = rect.width; canvas.height = 200
       const ctx = canvas.getContext('2d')
-      if (ctx) { ctx.strokeStyle = BLACK; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round' }
+      if (ctx) {
+        ctx.strokeStyle = BLACK;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round'
+      }
     }
   }, [])
 
@@ -159,8 +192,13 @@ export default function WaiverPage() {
   }, [supabase])
 
   const normalizedInput = name.trim().toLowerCase()
-  const matchingHistory = useMemo(() => normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : [], [allRecords, normalizedInput])
+
+  const matchingHistory = useMemo(() => {
+    return normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : []
+  }, [allRecords, normalizedInput])
+
   const isReturningClient = matchingHistory.length > 0
+
   const dropdownOptions = useMemo(() => {
     if (!normalizedInput || normalizedInput.length < 2) return []
     const names = Array.from(new Set(allRecords.map(r => r.display_name)))
@@ -179,11 +217,13 @@ export default function WaiverPage() {
     setSelectedConditions(prev => {
       const next = new Set(prev)
       if (cond === 'None of the above') return new Set(['None of the above'])
-      next.delete('None of the above'); next.has(cond) ? next.delete(cond) : next.add(cond)
+      next.delete('None of the above');
+      next.has(cond) ? next.delete(cond) : next.add(cond)
       return next
     })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getCoords = (e: any, rect: DOMRect) => {
     const isTouch = e.touches
     const clientX = isTouch ? e.touches[0].clientX : e.clientX
@@ -191,6 +231,7 @@ export default function WaiverPage() {
     return { x: clientX - rect.left, y: clientY - rect.top }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startDrawing = (e: any) => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d'); if (!ctx) return
@@ -198,6 +239,7 @@ export default function WaiverPage() {
     ctx.beginPath(); ctx.moveTo(x, y); setIsDrawing(true)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const draw = (e: any) => {
     if (!isDrawing || !canvasRef.current) return
     const ctx = canvasRef.current.getContext('2d'); if (!ctx) return
@@ -205,21 +247,45 @@ export default function WaiverPage() {
     ctx.lineTo(x, y); ctx.stroke()
   }
 
+  const stopDrawing = () => {
+    setIsDrawing(false)
+    if (canvasRef.current) {
+      setSignature(canvasRef.current.toDataURL('image/png'))
+    }
+  }
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+      setSignature('')
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    // Body Focus Areas are intentionally left out of this validation to make them completely optional
-    if (!name.trim() || !agreed || !signature) return alert("Please complete all required fields and sign.")
+    if (!name.trim() || !agreed || !signature) {
+      return alert("Please complete Name, Acknowledgement, and Signature.")
+    }
+
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
         client_name: name.trim(),
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
-        signature, terms_agreed: agreed, date_signed: new Date().toISOString()
+        signature: signature,
+        terms_agreed: agreed,
+        date_signed: new Date().toISOString()
       })
       if (error) throw error
       setSubmitted(true)
-    } catch (err: any) { alert("Error: " + err.message) } finally { setLoading(false) }
+    } catch (err: any) {
+      alert("Error: " + err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (submitted) return (
@@ -267,70 +333,194 @@ export default function WaiverPage() {
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <label style={LABEL}>Full Name *</label>
-                <input className="wv-in" style={INPUT} value={name} onChange={e => { setName(e.target.value); setShowDropdown(true) }} onFocus={() => setShowDropdown(true)} onBlur={() => setTimeout(() => setShowDropdown(false), 200)} placeholder="Search for name..." required autoComplete="off" />
+                <input
+                  className="wv-in"
+                  style={INPUT}
+                  value={name}
+                  onChange={e => { setName(e.target.value); setShowDropdown(true) }}
+                  onFocus={() => setShowDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                  placeholder="Search for name..."
+                  required
+                  autoComplete="off"
+                />
                 {showDropdown && dropdownOptions.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50 }}>
-                    {dropdownOptions.map(n => (<div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>))}
+                    {dropdownOptions.map(n => (
+                      <div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>
+                    ))}
                   </div>
                 )}
               </div>
+
               {name.trim().length > 1 && dataLoaded && (
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
                     <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
                   </div>
-                  {isReturningClient && (<button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>)}
+                  {isReturningClient && (
+                    <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>
+                  )}
                 </div>
               )}
             </Section>
 
-            {/* ── UPDATED: Marked Optional ── */}
             <Section title="Body Focus Areas (Optional)" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', maxWidth: 500, margin: '0 auto' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/muscular-body.png" alt="Anatomy" style={{ width: '100%', height: 'auto', display: 'block' }} />
                   {INTERACTIVE_ZONES.map((zone) => (
-                    <button key={`map-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)} style={{ position: 'absolute', top: zone.top, left: zone.left, width: zone.width, height: zone.height, backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.5)' : 'transparent', border: `2px solid ${selectedAreas.has(zone.id) ? GOLD : 'transparent'}`, borderRadius: '16px', cursor: 'pointer' }} />
+                    <button
+                      key={`map-${zone.id}`}
+                      type="button"
+                      onClick={() => toggleArea(zone.id)}
+                      style={{
+                        position: 'absolute',
+                        top: zone.top,
+                        left: zone.left,
+                        width: zone.width,
+                        height: zone.height,
+                        backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.5)' : 'transparent',
+                        border: `2px solid ${selectedAreas.has(zone.id) ? GOLD : 'transparent'}`,
+                        borderRadius: '16px',
+                        cursor: 'pointer'
+                      }}
+                    />
                   ))}
                 </div>
                 <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 420, overflowY: 'auto' }}>
                   {INTERACTIVE_ZONES.map(zone => (
-                    <button key={`list-${zone.id}`} type="button" onClick={() => toggleArea(zone.id)} style={{ padding: '14px 16px', backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedAreas.has(zone.id) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>{zone.id}{selectedAreas.has(zone.id) && <span style={{ color: GOLD }}>✓</span>}</button>
+                    <button
+                      key={`list-${zone.id}`}
+                      type="button"
+                      onClick={() => toggleArea(zone.id)}
+                      style={{
+                        padding: '14px 16px',
+                        backgroundColor: selectedAreas.has(zone.id) ? 'rgba(197,143,59,0.08)' : WHITE,
+                        border: `1px solid ${selectedAreas.has(zone.id) ? GOLD : 'rgba(26,26,26,0.13)'}`,
+                        borderRadius: 10,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        ...TEXT_FORMAT
+                      }}
+                    >
+                      {zone.id}
+                      {selectedAreas.has(zone.id) && <span style={{ color: GOLD }}>✓</span>}
+                    </button>
                   ))}
                 </div>
               </div>
             </Section>
 
-            <Section title="Health Conditions">
+            <Section title="Health Conditions (Optional)">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => (
-                  <button key={cond} type="button" onClick={() => toggleCondition(cond)} style={{ padding: '14px 16px', backgroundColor: selectedConditions.has(cond) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedConditions.has(cond) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>{cond}{selectedConditions.has(cond) && <span style={{ color: GOLD }}>✓</span>}</button>
+                  <button
+                    key={cond}
+                    type="button"
+                    onClick={() => toggleCondition(cond)}
+                    style={{
+                      padding: '14px 16px',
+                      backgroundColor: selectedConditions.has(cond) ? 'rgba(197,143,59,0.08)' : WHITE,
+                      border: `1px solid ${selectedConditions.has(cond) ? GOLD : 'rgba(26,26,26,0.13)'}`,
+                      borderRadius: 10,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      cursor: 'pointer',
+                      ...TEXT_FORMAT
+                    }}
+                  >
+                    {cond}
+                    {selectedConditions.has(cond) && <span style={{ color: GOLD }}>✓</span>}
+                  </button>
                 ))}
               </div>
             </Section>
 
             <Section title="Acknowledgement">
               <div style={{ display: 'flex', gap: 14, cursor: 'pointer' }} onClick={() => setAgreed(!agreed)}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}</div>
-                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.7)', lineHeight: 1.6 }}>I acknowledge that massage therapy is not a substitute for medical diagnosis.</p>
+                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.7)', lineHeight: 1.6 }}>
+                  I acknowledge that massage therapy is not a substitute for medical diagnosis.
+                </p>
               </div>
             </Section>
 
             <Section title="Signature & Date" note="Please sign and verify the date">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
-                  <canvas ref={canvasRef} onMouseDown={startDrawing} onMouseMove={draw} onMouseUp={() => setIsDrawing(false)} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={() => { setIsDrawing(false); setSignature(canvasRef.current!.toDataURL()) }} style={{ border: '1px solid #ddd', borderRadius: 12, backgroundColor: '#fafafa', width: '100%', height: 200, cursor: 'crosshair' }} />
-                  <button type="button" onClick={() => { const ctx = canvasRef.current!.getContext('2d')!; ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height); setSignature('') }} style={{ float: 'right', marginTop: 8, fontSize: 10, fontWeight: 700, padding: '6px 12px', cursor: 'pointer', border: 'none', background: 'transparent' }}>CLEAR SIGNATURE</button>
+                  <canvas
+                    ref={canvasRef}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                    style={{
+                      border: '1px solid #ddd',
+                      borderRadius: 12,
+                      backgroundColor: '#fafafa',
+                      width: '100%',
+                      height: 200,
+                      cursor: 'crosshair'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={clearSignature}
+                    style={{
+                      float: 'right',
+                      marginTop: 8,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: '6px 12px',
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: 'transparent'
+                    }}
+                  >
+                    CLEAR SIGNATURE
+                  </button>
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={LABEL}>Date Signed</label>
-                  <div style={{ ...INPUT, backgroundColor: '#F0F0F0', display: 'flex', alignItems: 'center', color: 'rgba(0,0,0,0.5)', fontWeight: 600 }}>{today}</div>
+                  <div style={{
+                    ...INPUT,
+                    backgroundColor: '#F0F0F0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: 'rgba(0,0,0,0.5)',
+                    fontWeight: 600
+                  }}>
+                    {today}
+                  </div>
                 </div>
               </div>
             </Section>
 
-            <button type="submit" disabled={loading} style={{ height: 60, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{loading ? 'Processing...' : 'Confirm & Sign'}</button>
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                height: 60,
+                backgroundColor: BLACK,
+                color: GOLD,
+                border: 'none',
+                borderRadius: 12,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              {loading ? 'Processing...' : 'Confirm & Sign'}
+            </button>
           </form>
         </div>
       </div>
