@@ -91,15 +91,16 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── ULTIMATE BRUTE-FORCE DATA SCRAPER ──
+  // ── UNLIMITED BRUTE-FORCE DATA SCRAPER ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
+        // OVERRIDING DEFAULT LIMITS: Forcing Supabase to fetch up to 100,000 records per table
         const queries = [
-          supabase.from('bookings').select('*'),
-          supabase.from('bookings_import').select('*'),
-          supabase.from('client').select('*'),
-          supabase.from('clients').select('*')
+          supabase.from('bookings').select('*').limit(100000),
+          supabase.from('bookings_import').select('*').limit(100000),
+          supabase.from('client').select('*').limit(100000),
+          supabase.from('clients').select('*').limit(100000)
         ];
 
         const results = await Promise.allSettled(queries);
