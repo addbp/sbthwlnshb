@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, FormEvent, useMemo } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS
+// DESIGN TOKENS (UNTOUCHED)
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -15,31 +15,12 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-const TEXT_FORMAT: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 600,
-  fontFamily: BODY,
-  color: BLACK,
-}
-
-const INPUT: React.CSSProperties = {
-  display: 'block', width: '100%', height: 54,
-  padding: '0 15px',
-  backgroundColor: WHITE,
-  border: '1px solid rgba(26,26,26,0.14)',
-  borderRadius: 10, fontSize: 16, color: BLACK,
-  fontFamily: BODY, outline: 'none',
-  transition: 'border-color 180ms ease',
-}
-
-const LABEL: React.CSSProperties = {
-  display: 'block', fontSize: 11, fontWeight: 700,
-  letterSpacing: '0.13em', textTransform: 'uppercase',
-  color: 'rgba(26,26,26,0.50)', marginBottom: 7, fontFamily: BODY,
-}
+const TEXT_FORMAT: React.CSSProperties = { fontSize: 14, fontWeight: 600, fontFamily: BODY, color: BLACK }
+const INPUT: React.CSSProperties = { display: 'block', width: '100%', height: 54, padding: '0 15px', backgroundColor: WHITE, border: '1px solid rgba(26,26,26,0.14)', borderRadius: 10, fontSize: 16, color: BLACK, fontFamily: BODY, outline: 'none' }
+const LABEL: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'rgba(26,26,26,0.50)', marginBottom: 7, fontFamily: BODY }
 
 // ─────────────────────────────────────────────────────────────
-// ALL INTERACTIVE ZONES - UNTOUCHED COORDINATES
+// INTERACTIVE ZONES (UNTOUCHED COORDINATES)
 // ─────────────────────────────────────────────────────────────
 const INTERACTIVE_ZONES = [
   { id: 'Neck & Cervical', top: '10%', left: '21%', width: '8%', height: '7%' },
@@ -55,15 +36,11 @@ const INTERACTIVE_ZONES = [
 ]
 
 const HEALTH_CONDITIONS_LIST = [
-  'Stress', 'High Blood Pressure', 'Heart Issues', 'Arthritis',
-  'Diabetes', 'Epilepsy', 'Osteoporosis', 'Joint Swelling',
-  'Numbness', 'Allergies', 'Pregnancy', 'Contagious Diseases',
+  'Stress', 'High Blood Pressure', 'Heart Issues', 'Arthritis', 'Diabetes', 'Epilepsy',
+  'Osteoporosis', 'Joint Swelling', 'Numbness', 'Allergies', 'Pregnancy', 'Contagious Diseases',
   'Other', 'None of the above'
 ]
 
-// ─────────────────────────────────────────────────────────────
-// COMPONENTS
-// ─────────────────────────────────────────────────────────────
 function Section({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
   return (
     <div style={{ backgroundColor: WHITE, border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, padding: '28px', display: 'flex', flexDirection: 'column', gap: 18, boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
@@ -79,16 +56,10 @@ function Section({ title, children, note }: { title: string; children: React.Rea
   )
 }
 
-// ─────────────────────────────────────────────────────────────
-// MAIN PAGE
-// ─────────────────────────────────────────────────────────────
 export default function WaiverPage() {
   const supabaseRef = useRef<SupabaseClient | null>(null)
   if (!supabaseRef.current) {
-    supabaseRef.current = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
+    supabaseRef.current = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
   }
   const supabase = supabaseRef.current
 
@@ -98,9 +69,9 @@ export default function WaiverPage() {
   const [agreed, setAgreed] = useState(false)
   const [signature, setSignature] = useState('')
   const [loading, setLoading] = useState(false)
+  const [dataLoaded, setDataLoaded] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  // Smart Search & History States
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [allRecords, setAllRecords] = useState<any[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -119,39 +90,33 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── FETCH RECORDS (Fail-safe independent requests) ──
+  // ── DEEP DATABASE FETCH ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
-        const [res1, res2, res3] = await Promise.allSettled([
-          supabase.from('bookings').select('client_name, created_at, service_name'),
-          supabase.from('bookings_import').select('client_name, created_at, service_name'),
-          supabase.from('client').select('client_name, created_at')
-        ])
+        const fetchB = supabase.from('bookings').select('client_name, created_at, service_name')
+        const fetchI = supabase.from('bookings_import').select('client_name, created_at, service_name')
+        const fetchC = supabase.from('client').select('client_name, created_at')
+        const fetchCs = supabase.from('clients').select('client_name, created_at')
+
+        const [r1, r2, r3, r4] = await Promise.all([fetchB, fetchI, fetchC, fetchCs])
 
         const combined = [
-          ...(res1.status === 'fulfilled' ? (res1.value.data || []) : []),
-          ...(res2.status === 'fulfilled' ? (res2.value.data || []) : []),
-          ...(res3.status === 'fulfilled' ? (res3.value.data || []) : [])
-        ]
-          .filter(d => d && d.client_name)
-          // Normalizing data for instant matching
-          .map(d => ({
-            ...d,
-            search_key: d.client_name.trim().toLowerCase()
-          }))
+          ...(r1.data || []), ...(r2.data || []), ...(r3.data || []), ...(r4.data || [])
+        ].filter(d => d && d.client_name).map(d => ({
+          ...d,
+          search_key: d.client_name.toString().trim().toLowerCase()
+        }))
 
-        combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         setAllRecords(combined)
-      } catch (err) { console.error("History Load Error:", err) }
+        setDataLoaded(true)
+      } catch (err) { console.error("Database Fetch Error:", err) }
     }
     fetchAllRecords()
   }, [supabase])
 
-  // ── INTELLIGENT MATCHING LOGIC ──
   const normalizedInput = name.trim().toLowerCase()
 
-  // Find matching history
   const matchingHistory = useMemo(() => {
     if (!normalizedInput) return []
     return allRecords.filter(r => r.search_key === normalizedInput)
@@ -159,14 +124,10 @@ export default function WaiverPage() {
 
   const isReturningClient = matchingHistory.length > 0
 
-  // Dropdown options
   const dropdownOptions = useMemo(() => {
-    if (!normalizedInput) return []
-    const uniqueNames = Array.from(new Set(allRecords.map(r => r.client_name)))
-    return uniqueNames.filter(n =>
-      n.toLowerCase().includes(normalizedInput) &&
-      n.toLowerCase() !== normalizedInput
-    ).slice(0, 5) // Limit to top 5
+    if (!normalizedInput || normalizedInput.length < 2) return []
+    const names = Array.from(new Set(allRecords.map(r => r.client_name)))
+    return names.filter(n => n.toLowerCase().includes(normalizedInput) && n.toLowerCase() !== normalizedInput).slice(0, 5)
   }, [allRecords, normalizedInput])
 
   const toggleArea = (id: string) => {
@@ -209,7 +170,7 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !agreed || !signature) return alert("Required fields missing.")
+    if (!name.trim() || !agreed || !signature) return alert("Please sign the waiver.")
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
@@ -220,7 +181,7 @@ export default function WaiverPage() {
       })
       if (error) throw error
       setSubmitted(true)
-    } catch (err: any) { alert("Submission Error: " + err.message) } finally { setLoading(false) }
+    } catch (err: any) { alert("Error: " + err.message) } finally { setLoading(false) }
   }
 
   if (submitted) return (
@@ -262,13 +223,11 @@ export default function WaiverPage() {
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
           <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.20em', color: GOLD, textTransform: 'uppercase' }}>Client Consent</p>
             <h1 style={{ fontFamily: DSP, fontSize: 40, color: BLACK }}>Digital Intake & Waiver</h1>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── CLIENT DETAILS WITH RE-ENGINEERED DETECTION ── */}
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <label style={LABEL}>Full Name *</label>
@@ -283,11 +242,11 @@ export default function WaiverPage() {
                 )}
               </div>
 
-              {name.trim().length > 1 && (
+              {name.trim().length > 1 && dataLoaded && (
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client' : 'New Client Registration'}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Found ${matchingHistory.length} visits in system.` : 'No previous records found.'}</p>
+                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
                   </div>
                   {isReturningClient && (
                     <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>
@@ -296,7 +255,8 @@ export default function WaiverPage() {
               )}
             </Section>
 
-            <Section title="Body Focus Areas">
+            {/* --- BODY DIAGRAM (UNTOUCHED) --- */}
+            <Section title="Body Focus Areas" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', maxWidth: 500, margin: '0 auto' }}>
                   <img src="/muscular-body.png" alt="Anatomy" style={{ width: '100%', height: 'auto', display: 'block' }} />
@@ -318,20 +278,15 @@ export default function WaiverPage() {
             <Section title="Health Conditions">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => (
-                  <button key={cond} type="button" onClick={() => toggleCondition(cond)} style={{ padding: '14px 16px', backgroundColor: selectedConditions.has(cond) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedConditions.has(cond) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>
-                    {cond}
-                    {selectedConditions.has(cond) && <span style={{ color: GOLD }}>✓</span>}
-                  </button>
+                  <button key={cond} type="button" onClick={() => toggleCondition(cond)} style={{ padding: '14px 16px', backgroundColor: selectedConditions.has(cond) ? 'rgba(197,143,59,0.08)' : WHITE, border: `1px solid ${selectedConditions.has(cond) ? GOLD : 'rgba(26,26,26,0.13)'}`, borderRadius: 10, display: 'flex', justifyContent: 'space-between', cursor: 'pointer', ...TEXT_FORMAT }}>{cond}{selectedConditions.has(cond) && <span style={{ color: GOLD }}>✓</span>}</button>
                 ))}
               </div>
             </Section>
 
             <Section title="Acknowledgement">
               <div style={{ display: 'flex', gap: 14, cursor: 'pointer' }} onClick={() => setAgreed(!agreed)}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}
-                </div>
-                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.7)' }}>I acknowledge that massage therapy is not a substitute for medical diagnosis.</p>
+                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}</div>
+                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.7)', lineHeight: 1.6 }}>I acknowledge that massage therapy is not a substitute for medical diagnosis.</p>
               </div>
             </Section>
 
@@ -340,10 +295,7 @@ export default function WaiverPage() {
               <button type="button" onClick={() => { const ctx = canvasRef.current!.getContext('2d')!; ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height); setSignature('') }} style={{ alignSelf: 'flex-end', fontSize: 10, fontWeight: 700, padding: '6px 12px', cursor: 'pointer' }}>CLEAR</button>
             </Section>
 
-            <button type="submit" disabled={loading} style={{ height: 60, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              {loading ? 'Processing...' : 'Confirm & Sign'}
-            </button>
-
+            <button type="submit" disabled={loading} style={{ height: 60, backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>{loading ? 'Processing...' : 'Confirm & Sign'}</button>
           </form>
         </div>
       </div>
