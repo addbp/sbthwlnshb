@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, FormEvent, useMemo } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS (UNTOUCHED)
+// DESIGN TOKENS (PRESERVED)
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -90,38 +90,62 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // ── DEEP DATABASE FETCH ──
+  // ── ATOMIC DATABASE FETCH (BRUTE FORCE) ──
   useEffect(() => {
     async function fetchAllRecords() {
+      console.log("🔄 Initializing Database Sync...");
       try {
-        const fetchB = supabase.from('bookings').select('client_name, created_at, service_name')
-        const fetchI = supabase.from('bookings_import').select('client_name, created_at, service_name')
-        const fetchC = supabase.from('client').select('client_name, created_at')
-        const fetchCs = supabase.from('clients').select('client_name, created_at')
+        // We fetch ALL columns to detect which one holds the name
+        const queries = [
+          supabase.from('bookings').select('*'),
+          supabase.from('bookings_import').select('*'),
+          supabase.from('client').select('*'),
+          supabase.from('clients').select('*')
+        ];
 
-        const [r1, r2, r3, r4] = await Promise.all([fetchB, fetchI, fetchC, fetchCs])
+        const results = await Promise.allSettled(queries);
 
-        const combined = [
-          ...(r1.data || []), ...(r2.data || []), ...(r3.data || []), ...(r4.data || [])
-        ].filter(d => d && d.client_name).map(d => ({
-          ...d,
-          search_key: d.client_name.toString().trim().toLowerCase()
-        }))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const finalPool: any[] = [];
 
-        setAllRecords(combined)
-        setDataLoaded(true)
-      } catch (err) { console.error("Database Fetch Error:", err) }
+        results.forEach((res, index) => {
+          const tableName = ['bookings', 'bookings_import', 'client', 'clients'][index];
+          if (res.status === 'fulfilled' && res.value.data) {
+            console.log(`✅ Table [${tableName}] found: ${res.value.data.length} records.`);
+            res.value.data.forEach((item: any) => {
+              // Brute force name detection
+              const rawName = item.client_name || item.full_name || item.name || "";
+              if (rawName) {
+                finalPool.push({
+                  ...item,
+                  client_name: rawName, // Unified name key
+                  search_key: rawName.toString().trim().toLowerCase()
+                });
+              }
+            });
+          } else {
+            console.warn(`⚠️ Table [${tableName}] could not be read (Check RLS or Table Name).`);
+          }
+        });
+
+        finalPool.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        setAllRecords(finalPool);
+        setDataLoaded(true);
+        console.log(`🎯 Total Searchable Records: ${finalPool.length}`);
+      } catch (err) { console.error("Critical Fetch Error:", err) }
     }
     fetchAllRecords()
   }, [supabase])
 
   const normalizedInput = name.trim().toLowerCase()
 
+  // Exact match logic
   const matchingHistory = useMemo(() => {
     if (!normalizedInput) return []
     return allRecords.filter(r => r.search_key === normalizedInput)
   }, [allRecords, normalizedInput])
 
+  // Partial match for returning true/false
   const isReturningClient = matchingHistory.length > 0
 
   const dropdownOptions = useMemo(() => {
@@ -170,7 +194,7 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !agreed || !signature) return alert("Please sign the waiver.")
+    if (!name.trim() || !agreed || !signature) return alert("Please complete and sign the form.")
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
@@ -187,8 +211,8 @@ export default function WaiverPage() {
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ fontSize: 44, color: GOLD, marginBottom: 20, width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
-      <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK }}>Waiver Signed</h2>
-      <button onClick={() => window.location.reload()} style={{ marginTop: 30, height: 50, padding: '0 30px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>SUBMIT ANOTHER</button>
+      <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK }}>Waiver Saved</h2>
+      <button onClick={() => window.location.reload()} style={{ marginTop: 30, height: 50, padding: '0 30px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 10, fontWeight: 700, cursor: 'pointer' }}>NEW WAIVER</button>
     </div>
   )
 
@@ -202,16 +226,16 @@ export default function WaiverPage() {
 
       {showHistoryModal && (
         <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
-          <div style={{ backgroundColor: WHITE, width: '100%', maxWidth: 500, borderRadius: 20, padding: 30 }} onClick={e => e.stopPropagation()}>
+          <div style={{ backgroundColor: WHITE, width: '100%', maxWidth: 500, borderRadius: 20, padding: 30, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0 }}>Visit History</h3>
               <button onClick={() => setShowHistoryModal(false)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+            <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #eee', borderRadius: 12 }}>
               {matchingHistory.map((h, i) => (
-                <div key={i} style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.service_name || 'Massage Session'}</div>
-                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at).toLocaleDateString()}</div>
+                <div key={i} style={{ padding: '15px', borderBottom: i === matchingHistory.length - 1 ? 'none' : '1px solid #eee' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.service_name || h.service || 'Massage Session'}</div>
+                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{new Date(h.created_at || h.date).toLocaleDateString()}</div>
                 </div>
               ))}
             </div>
@@ -246,7 +270,7 @@ export default function WaiverPage() {
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous records.` : 'No previous records found.'}</p>
                   </div>
                   {isReturningClient && (
                     <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>
@@ -255,7 +279,7 @@ export default function WaiverPage() {
               )}
             </Section>
 
-            {/* --- BODY DIAGRAM (UNTOUCHED) --- */}
+            {/* --- BODY DIAGRAM (PRESERVED) --- */}
             <Section title="Body Focus Areas" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', maxWidth: 500, margin: '0 auto' }}>
