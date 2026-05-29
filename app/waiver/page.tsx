@@ -104,6 +104,7 @@ export default function WaiverPage() {
   const [submitted, setSubmitted] = useState(false)
 
   // Smart Search States
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [clientHistory, setClientHistory] = useState<any[]>([])
   const [clientDbNames, setClientDbNames] = useState<string[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -128,18 +129,25 @@ export default function WaiverPage() {
     }
   }, [])
 
-  // Fetch client history for Smart Search & Previous Bookings Data
+  // ── SUPERCHARGED DATA FETCHING ──
   useEffect(() => {
     async function fetchClientHistory() {
       try {
-        const [liveRes, archiveRes] = await Promise.all([
-          supabase.from('bookings').select('client_name, created_at').order('created_at', { ascending: false }),
-          supabase.from('bookings_import').select('client_name, created_at').order('created_at', { ascending: false })
+        const [liveRes, archiveRes, clientRes, clientsRes] = await Promise.all([
+          supabase.from('bookings').select('client_name, created_at'),
+          supabase.from('bookings_import').select('client_name, created_at'),
+          supabase.from('client').select('client_name, created_at').catch(() => ({ data: [] })),
+          supabase.from('clients').select('client_name, created_at').catch(() => ({ data: [] }))
         ])
 
-        const live = liveRes.data || []
-        const archive = archiveRes.data || []
-        const combined = [...live, ...archive].filter(d => d.client_name)
+        const live = liveRes?.data || []
+        const archive = archiveRes?.data || []
+        const client1 = clientRes?.data || []
+        const client2 = clientsRes?.data || []
+
+        const combined = [...live, ...archive, ...client1, ...client2].filter(d => d && d.client_name)
+
+        combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
         setClientHistory(combined)
         const uniqueNames = Array.from(new Set(combined.map(d => d.client_name)))
@@ -183,11 +191,13 @@ export default function WaiverPage() {
     const rect = canvas.getBoundingClientRect()
     let x, y
     if ('touches' in e) {
-      x = e.touches[0].clientX - rect.left
-      y = e.touches[0].clientY - rect.top
+      const touchEvent = e as React.TouchEvent<HTMLCanvasElement>
+      x = touchEvent.touches[0].clientX - rect.left
+      y = touchEvent.touches[0].clientY - rect.top
     } else {
-      x = e.clientX - rect.left
-      y = e.clientY - rect.top
+      const mouseEvent = e as React.MouseEvent<HTMLCanvasElement>
+      x = mouseEvent.clientX - rect.left
+      y = mouseEvent.clientY - rect.top
     }
     ctx.beginPath()
     ctx.moveTo(x, y)
@@ -203,11 +213,13 @@ export default function WaiverPage() {
     const rect = canvas.getBoundingClientRect()
     let x, y
     if ('touches' in e) {
-      x = e.touches[0].clientX - rect.left
-      y = e.touches[0].clientY - rect.top
+      const touchEvent = e as React.TouchEvent<HTMLCanvasElement>
+      x = touchEvent.touches[0].clientX - rect.left
+      y = touchEvent.touches[0].clientY - rect.top
     } else {
-      x = e.clientX - rect.left
-      y = e.clientY - rect.top
+      const mouseEvent = e as React.MouseEvent<HTMLCanvasElement>
+      x = mouseEvent.clientX - rect.left
+      y = mouseEvent.clientY - rect.top
     }
     ctx.lineTo(x, y)
     ctx.stroke()
@@ -252,8 +264,9 @@ export default function WaiverPage() {
 
       if (error) throw new Error(error.message)
       setSubmitted(true)
-    } catch (err: any) {
-      alert("Submission failed: " + err.message)
+    } catch (err) {
+      const error = err as Error
+      alert("Submission failed: " + error.message)
     } finally {
       setLoading(false)
     }
@@ -295,7 +308,6 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── UPDATED CLIENT DETAILS WITH DYNAMIC HISTORY CARD ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
@@ -312,14 +324,12 @@ export default function WaiverPage() {
                     autoComplete="off"
                   />
 
-                  {/* Internal Input Badge */}
                   {name.trim().length > 1 && (
                     <div style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.15)' : 'rgba(46, 125, 50, 0.1)', color: isReturningClient ? GOLD : '#2e7d32', padding: '6px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
                       {isReturningClient ? 'Returning Client' : 'New Client'}
                     </div>
                   )}
 
-                  {/* Smart Search Dropdown */}
                   {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
                       {filteredNames.map(n => (
@@ -331,7 +341,6 @@ export default function WaiverPage() {
                   )}
                 </div>
 
-                {/* DYNAMIC DATABASE HISTORY CARD (Shows immediately when typing) */}
                 {name.trim().length > 1 && (
                   <div style={{ marginTop: 14, padding: '14px 18px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 10, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.3s ease' }}>
                     <div>
@@ -340,7 +349,7 @@ export default function WaiverPage() {
                       </p>
                       <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>
                         {isReturningClient ? (
-                          <>Past Bookings: <strong>{matchingHistory.length}</strong></>
+                          <>Past Records Found: <strong>{matchingHistory.length}</strong></>
                         ) : (
                           'No previous history found. Welcome!'
                         )}
@@ -348,7 +357,7 @@ export default function WaiverPage() {
                     </div>
                     {isReturningClient && matchingHistory.length > 0 && (
                       <div style={{ textAlign: 'right' }}>
-                        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: 'rgba(26,26,26,0.4)', textTransform: 'uppercase' }}>Last Visit</p>
+                        <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 700, color: 'rgba(26,26,26,0.4)', textTransform: 'uppercase' }}>Last Record</p>
                         <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: BLACK }}>
                           {matchingHistory[0]?.created_at ? new Date(matchingHistory[0].created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown'}
                         </p>
@@ -359,10 +368,10 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── BODY MAP SECTION (UNTOUCHED) ── */}
             <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones or select from the list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/muscular-body.png" alt="Muscular Anatomy" style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }} />
                   {INTERACTIVE_ZONES.map((zone) => {
                     const isSelected = selectedAreas.has(zone.id)
@@ -412,7 +421,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS SECTION (UNTOUCHED) ── */}
             <Section title="Health Conditions" note="Please select all that apply">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => {
@@ -441,7 +449,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── RESTORED ACKNOWLEDGEMENT SECTION (UNTOUCHED) ── */}
             <Section title="Acknowledgement & Consent">
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', cursor: 'pointer', padding: '4px 0' }} onClick={() => setAgreed(!agreed)}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, transition: 'all 0.2s' }}>
@@ -458,7 +465,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── DRAWN DIGITAL SIGNATURE SECTION (UNTOUCHED) ── */}
             <Section title="Digital Waiver & Signature" note="Please sign inside the box below">
               <div style={{ position: 'relative', width: '100%', maxWidth: 500 }}>
                 <canvas
