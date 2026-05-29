@@ -97,11 +97,10 @@ export default function WaiverPage() {
       try {
         const tables = ['bookings', 'bookings_import', 'client', 'clients'];
 
-        // Helper function to bypass the 1000 row limit using a while loop
         const fetchPaginated = async (tableName: string) => {
           let allTableData: any[] = [];
           let start = 0;
-          const step = 1000; // Fetch 1000 at a time
+          const step = 1000;
           let hasMore = true;
 
           while (hasMore) {
@@ -118,15 +117,14 @@ export default function WaiverPage() {
             allTableData.push(...data);
 
             if (data.length < step) {
-              hasMore = false; // We reached the end of the table
+              hasMore = false;
             } else {
-              start += step; // Advance to the next 1000 chunk
+              start += step;
             }
           }
           return allTableData;
         };
 
-        // Fetch all tables concurrently
         const results = await Promise.allSettled(tables.map(t => fetchPaginated(t)));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalPool: any[] = [];
@@ -152,7 +150,6 @@ export default function WaiverPage() {
           }
         });
 
-        // Sort everything universally from newest to oldest
         finalPool.sort((a, b) => b.sort_date - a.sort_date);
         setAllRecords(finalPool);
         setDataLoaded(true);
@@ -210,7 +207,8 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !agreed || !signature) return alert("Please complete all sections and sign.")
+    // Body Focus Areas are intentionally left out of this validation to make them completely optional
+    if (!name.trim() || !agreed || !signature) return alert("Please complete all required fields and sign.")
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
@@ -287,7 +285,8 @@ export default function WaiverPage() {
               )}
             </Section>
 
-            <Section title="Body Focus Areas" note="Tap diagram or select from list">
+            {/* ── UPDATED: Marked Optional ── */}
+            <Section title="Body Focus Areas (Optional)" note="Tap diagram or select from list">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ flex: '1 1 400px', position: 'relative', maxWidth: 500, margin: '0 auto' }}>
                   <img src="/muscular-body.png" alt="Anatomy" style={{ width: '100%', height: 'auto', display: 'block' }} />
