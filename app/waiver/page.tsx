@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useState, useRef, FormEvent } from 'react'
+import { useState, useEffect, useRef, FormEvent } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ const LABEL: React.CSSProperties = {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ALL INTERACTIVE ZONES - PROFESSIONALLY CALIBRATED
+// ALL INTERACTIVE ZONES - PROFESSIONALLY CALIBRATED (UNTOUCHED)
 // ─────────────────────────────────────────────────────────────
 const INTERACTIVE_ZONES = [
   // --- FRONT BODY (Left half of image) ---
@@ -59,10 +59,10 @@ const INTERACTIVE_ZONES = [
 ]
 
 const HEALTH_CONDITIONS_LIST = [
-  'Stress', 'High Blood Pressure', 'Heart Issues',
-  'Arthritis', 'Diabetes', 'Epilepsy',
-  'Osteoporosis', 'Joint Swelling', 'Numbness',
-  'Allergies', 'Pregnancy', 'Contagious Diseases'
+  'Stress', 'High Blood Pressure', 'Heart Issues', 'Arthritis',
+  'Diabetes', 'Epilepsy', 'Osteoporosis', 'Joint Swelling',
+  'Numbness', 'Allergies', 'Pregnancy', 'Contagious Diseases',
+  'Other', 'None of the above'
 ]
 
 // ─────────────────────────────────────────────────────────────
@@ -103,6 +103,33 @@ export default function WaiverPage() {
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
+  // Smart Search States
+  const [clientDbNames, setClientDbNames] = useState<string[]>([])
+  const [showDropdown, setShowDropdown] = useState(false)
+
+  // Fetch client history for Smart Search
+  useEffect(() => {
+    async function fetchClientHistory() {
+      try {
+        const [liveRes, archiveRes] = await Promise.all([
+          supabase.from('bookings').select('client_name'),
+          supabase.from('bookings_import').select('client_name')
+        ])
+        const liveNames = liveRes.data ? liveRes.data.map(d => d.client_name) : []
+        const archiveNames = archiveRes.data ? archiveRes.data.map(d => d.client_name) : []
+        const combinedHistory = [...liveNames, ...archiveNames].filter(Boolean)
+        const uniqueNames = Array.from(new Set(combinedHistory))
+        setClientDbNames(uniqueNames)
+      } catch (err) {
+        console.error("Failed to load client history", err)
+      }
+    }
+    fetchClientHistory()
+  }, [supabase])
+
+  const filteredNames = clientDbNames.filter(n => n.toLowerCase().includes(name.toLowerCase()) && n.toLowerCase() !== name.toLowerCase())
+  const isReturningClient = clientDbNames.some(n => n.toLowerCase() === name.trim().toLowerCase())
+
   // ── TOGGLE FUNCTIONS ──
   const toggleArea = (id: string) => {
     setSelectedAreas(prev => {
@@ -115,6 +142,14 @@ export default function WaiverPage() {
   const toggleCondition = (cond: string) => {
     setSelectedConditions(prev => {
       const next = new Set(prev)
+
+      // Smart logic: If they click 'None of the above', clear everything else.
+      if (cond === 'None of the above') {
+        return next.has('None of the above') ? new Set() : new Set(['None of the above'])
+      }
+
+      // If they click a normal condition, remove 'None of the above'
+      next.delete('None of the above')
       next.has(cond) ? next.delete(cond) : next.add(cond)
       return next
     })
@@ -159,6 +194,7 @@ export default function WaiverPage() {
       <style>{`
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
+        .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
@@ -171,28 +207,55 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+            {/* ── CLIENT DETAILS WITH SMART SEARCH ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
-                <input className="wv-in" style={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="Enter your full name" required />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="wv-in"
+                    style={INPUT}
+                    value={name}
+                    onChange={e => { setName(e.target.value); setShowDropdown(true) }}
+                    onFocus={() => setShowDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                    placeholder="Search or enter your full name"
+                    required
+                    autoComplete="off"
+                  />
+
+                  {/* Returning / New Client Badge */}
+                  {name.trim().length > 1 && (
+                    <div style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.15)' : 'rgba(46, 125, 50, 0.1)', color: isReturningClient ? GOLD : '#2e7d32', padding: '6px 10px', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      {isReturningClient ? 'Returning Client' : 'New Client'}
+                    </div>
+                  )}
+
+                  {/* Dropdown for Search */}
+                  {showDropdown && name.trim().length > 0 && filteredNames.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}>
+                      {filteredNames.map(n => (
+                        <div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14, fontWeight: 500, fontFamily: BODY }}>
+                          {n}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </Section>
 
-            {/* ── GORGEOUS, SIDE-BY-SIDE BODY MAP SECTION ── */}
+            {/* ── GORGEOUS, SIDE-BY-SIDE BODY MAP SECTION (UNTOUCHED!) ── */}
             <Section title="Body Focus Areas" note="Tap directly on the specific muscular zones">
               <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', alignItems: 'center' }}>
 
-                {/* Image & Hotspots Container - WIDER AND SEAMLESS */}
                 <div style={{ flex: '1 1 400px', position: 'relative', width: '100%', maxWidth: 500, margin: '0 auto', backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 16, overflow: 'hidden', display: 'flex', justifyContent: 'center' }}>
-
-                  {/* Your side-by-side muscular-body.png */}
                   <img
                     src="/muscular-body.png"
                     alt="Muscular Anatomy"
                     style={{ width: '100%', height: 'auto', display: 'block', objectFit: 'contain' }}
                   />
 
-                  {/* Interactive HUD-style hotspots (PROFESSIONALLY CALIBRATED) */}
                   {INTERACTIVE_ZONES.map((zone) => {
                     const isSelected = selectedAreas.has(zone.id)
                     const unselectedColor = 'rgba(197, 143, 59, 0.0)';
@@ -213,7 +276,6 @@ export default function WaiverPage() {
                   })}
                 </div>
 
-                {/* Selected Areas List */}
                 <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
                   {Array.from(selectedAreas).length === 0 ? (
@@ -232,9 +294,9 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS SECTION ── */}
+            {/* ── UPGRADED HEALTH CONDITIONS SECTION ── */}
             <Section title="Health Conditions" note="Please select all that apply">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => {
                   const isSelected = selectedConditions.has(cond)
                   return (
@@ -246,6 +308,7 @@ export default function WaiverPage() {
                         border: `1px solid ${isSelected ? 'rgba(197,143,59,0.4)' : 'rgba(26,26,26,0.13)'}`,
                         borderRadius: 10,
                         ...TEXT_FORMAT,
+                        fontWeight: 500, // Slightly lighter font for conditions grid to match screenshot
                         color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                         cursor: 'pointer', textAlign: 'left', transition: 'all 150ms ease',
@@ -253,6 +316,7 @@ export default function WaiverPage() {
                       }}
                     >
                       {cond}
+                      {/* Checkbox UI matching the requested design */}
                       <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {isSelected && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                       </div>
