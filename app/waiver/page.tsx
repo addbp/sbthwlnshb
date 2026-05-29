@@ -100,9 +100,8 @@ export default function WaiverPage() {
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set())
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
 
-  // New States for Acknowledgement & Signature
   const [agreed, setAgreed] = useState(false)
-  const [signature, setSignature] = useState('')
+  const [signature, setSignature] = useState('') // This will now hold the drawn image data
 
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -110,6 +109,27 @@ export default function WaiverPage() {
   // Smart Search States
   const [clientDbNames, setClientDbNames] = useState<string[]>([])
   const [showDropdown, setShowDropdown] = useState(false)
+
+  // Canvas Signature States
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [isDrawing, setIsDrawing] = useState(false)
+
+  // Setup Canvas Resolution on load
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = rect.width
+      canvas.height = 200 // Fixed height for signature pad
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.strokeStyle = BLACK
+        ctx.lineWidth = 3
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+      }
+    }
+  }, [])
 
   // Fetch client history for Smart Search
   useEffect(() => {
@@ -155,12 +175,69 @@ export default function WaiverPage() {
     })
   }
 
+  // ── CANVAS DRAWING LOGIC ──
+  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const rect = canvas.getBoundingClientRect()
+
+    let x, y
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left
+      y = e.touches[0].clientY - rect.top
+    } else {
+      x = e.clientX - rect.left
+      y = e.clientY - rect.top
+    }
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    setIsDrawing(true)
+  }
+
+  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const rect = canvas.getBoundingClientRect()
+
+    let x, y
+    if ('touches' in e) {
+      x = e.touches[0].clientX - rect.left
+      y = e.touches[0].clientY - rect.top
+    } else {
+      x = e.clientX - rect.left
+      y = e.clientY - rect.top
+    }
+    ctx.lineTo(x, y)
+    ctx.stroke()
+  }
+
+  const stopDrawing = () => {
+    setIsDrawing(false)
+    if (canvasRef.current) {
+      setSignature(canvasRef.current.toDataURL('image/png')) // Saves drawing as base64 image
+    }
+  }
+
+  const clearSignature = () => {
+    const canvas = canvasRef.current
+    if (canvas) {
+      const ctx = canvas.getContext('2d')
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
+      setSignature('')
+    }
+  }
+
   // ── SUBMIT FUNCTION ──
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return alert("Please enter your full name.")
     if (!agreed) return alert("Please acknowledge and agree to the terms.")
-    if (!signature.trim()) return alert("Please provide your digital signature.")
+    if (!signature) return alert("Please provide your digital signature in the box.")
 
     setLoading(true)
 
@@ -172,7 +249,7 @@ export default function WaiverPage() {
         client_name: name.trim(),
         focus_areas: areasArray || 'None',
         health_conditions: conditionsArray || 'None',
-        signature: signature.trim(),
+        signature: signature, // Now sending the drawn image data to the database
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -190,7 +267,7 @@ export default function WaiverPage() {
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
       <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Waiver Signed Successfully</h2>
-      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your signed waiver has been securely saved.</p>
+      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16 }}>Thank you, {name}. Your signed digital waiver has been securely saved.</p>
     </div>
   )
 
@@ -200,7 +277,6 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
-        @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap');
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
@@ -213,7 +289,6 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ── CLIENT DETAILS ── */}
             <Section title="Client Details">
               <div>
                 <label style={LABEL}>Full Name *</label>
@@ -288,7 +363,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS SECTION ── */}
+            {/* ── HEALTH CONDITIONS SECTION (UNTOUCHED) ── */}
             <Section title="Health Conditions" note="Please select all that apply">
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
                 {HEALTH_CONDITIONS_LIST.map(cond => {
@@ -317,37 +392,62 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ── NEW: ACKNOWLEDGEMENT & CONSENT ── */}
+            {/* ── RESTORED ACKNOWLEDGEMENT SECTION ── */}
             <Section title="Acknowledgement & Consent">
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', cursor: 'pointer', padding: '4px 0' }} onClick={() => setAgreed(!agreed)}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, transition: 'all 0.2s' }}>
                   {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </div>
-                <p style={{ margin: 0, fontSize: 14, color: 'rgba(26,26,26,0.85)', lineHeight: 1.6, fontFamily: BODY }}>
-                  I understand that massage therapy is provided for stress reduction, relaxation, and relief from muscular tension. I acknowledge that massage therapy is not a substitute for medical examination or diagnosis. I have stated all my known medical conditions and take it upon myself to keep the therapist updated on my health.
-                </p>
+                <div style={{ margin: 0, fontSize: 14, color: 'rgba(26,26,26,0.85)', lineHeight: 1.6, fontFamily: BODY }}>
+                  <p style={{ margin: '0 0 10px' }}>
+                    I understand that massage therapy is provided for stress reduction, relaxation, and relief from muscular tension. I acknowledge that massage therapy is not a substitute for medical examination, diagnosis, or treatment.
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    I have stated all my known medical conditions, and I take it upon myself to keep the therapist updated on my health. I release the therapist and the business from any liability for harm that may result from this treatment.
+                  </p>
+                </div>
               </div>
             </Section>
 
-            {/* ── NEW: DIGITAL SIGNATURE ── */}
-            <Section title="Digital Signature" note="Type your full name to sign">
-              <div>
-                <input
-                  className="wv-in"
+            {/* ── DRAWN DIGITAL SIGNATURE SECTION ── */}
+            <Section title="Digital Waiver & Signature" note="Please sign inside the box below">
+              <div style={{ position: 'relative', width: '100%', maxWidth: 500 }}>
+                {/* The Canvas Element for Drawing */}
+                <canvas
+                  ref={canvasRef}
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
                   style={{
-                    display: 'block', width: '100%', height: 60,
-                    padding: '10px 15px', backgroundColor: 'transparent',
-                    border: 'none', borderBottom: '2px solid rgba(26,26,26,0.2)',
-                    borderRadius: 0, fontSize: 32, color: BLACK,
-                    fontFamily: "'Caveat', cursive", // Beautiful cursive signature font
-                    boxSizing: 'border-box', outline: 'none',
-                    transition: 'border-color 180ms ease'
+                    border: '1px solid rgba(197,143,59,0.5)',
+                    borderRadius: 12,
+                    backgroundColor: '#fafafa',
+                    width: '100%',
+                    height: 200,
+                    touchAction: 'none', // Prevents page scrolling while signing on mobile
+                    cursor: 'crosshair',
+                    boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.02)'
                   }}
-                  value={signature}
-                  onChange={e => setSignature(e.target.value)}
-                  placeholder="Sign your name here..."
-                  required
                 />
+
+                {/* Clear Signature Button */}
+                <button
+                  type="button"
+                  onClick={clearSignature}
+                  style={{
+                    position: 'absolute', top: 12, right: 12,
+                    fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
+                    padding: '6px 12px', borderRadius: 6,
+                    backgroundColor: 'rgba(26,26,26,0.05)', color: BLACK,
+                    border: 'none', cursor: 'pointer', transition: 'all 0.2s'
+                  }}
+                >
+                  CLEAR
+                </button>
               </div>
             </Section>
 
