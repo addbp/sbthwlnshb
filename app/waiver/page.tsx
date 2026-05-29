@@ -1,8 +1,5 @@
 'use client'
 
-// app/waiver/page.tsx  —  Finalized Master Intake & Waiver
-// UNIFIED, FIXED UI, FONT MATCHED & SELECTABLE OPTIONS
-
 export const dynamic = 'force-dynamic'
 
 import { useState, useRef, FormEvent } from 'react'
@@ -22,7 +19,7 @@ const INPUT: React.CSSProperties = {
   display: 'block', width: '100%', height: 54,
   padding: '0 15px',
   backgroundColor: WHITE, backgroundImage: 'none',
-  border: '1px solid rgba(26,26,26,0.14)',
+  border: '1px solid rgba(197,143,59,0.4)', // Gold border to match old style
   borderRadius: 10, fontSize: 16, color: BLACK,
   fontFamily: BODY, lineHeight: 1,
   boxSizing: 'border-box', outline: 'none',
@@ -35,33 +32,13 @@ const LABEL: React.CSSProperties = {
   color: 'rgba(26,26,26,0.50)', marginBottom: 7, fontFamily: BODY,
 }
 
-// Unified Chip Styling (Matches Health Conditions to Body Focus List)
-const OPTION_CHIP: React.CSSProperties = {
-  padding: '14px 16px', borderRadius: 10,
-  fontSize: 14, fontWeight: 600, fontFamily: BODY,
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  cursor: 'pointer', transition: 'all 150ms ease',
-}
-
 // ─────────────────────────────────────────────────────────────
-// DATA SETS (Abs, Glutes, Thighs Removed)
+// DATA SETS (Abs, Glutes, Thighs Removed per your request)
 // ─────────────────────────────────────────────────────────────
-const FRONT_ZONES = [
-  { id: 'Neck & Cervical', top: '10%', left: '40%', width: '20%', height: '10%' },
-  { id: 'Deltoids (Shoulders)', top: '22%', left: '20%', width: '60%', height: '12%' },
-  { id: 'Pectorals (Chest)', top: '35%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Biceps & Triceps (Arms)', top: '35%', left: '15%', width: '15%', height: '25%' },
-  { id: 'Forearms & Hands', top: '60%', left: '10%', width: '15%', height: '20%' },
-  { id: 'Feet & Ankles', top: '85%', left: '30%', width: '40%', height: '10%' },
-]
-
-const BACK_ZONES = [
-  { id: 'Neck & Cervical', top: '10%', left: '40%', width: '20%', height: '10%' },
-  { id: 'Trapezius (Upper Back)', top: '22%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Deltoids (Shoulders)', top: '22%', left: '20%', width: '60%', height: '12%' },
-  { id: 'Lats & Rhomboids (Upper Back)', top: '38%', left: '30%', width: '40%', height: '15%' },
-  { id: 'Lumbar (Lower Back)', top: '55%', left: '35%', width: '30%', height: '15%' },
-  { id: 'Calves', top: '70%', left: '30%', width: '40%', height: '15%' },
+const BODY_AREAS = [
+  'Neck & Cervical', 'Trapezius (Upper Back)', 'Deltoids (Shoulders)',
+  'Lats & Rhomboids (Upper Back)', 'Lumbar (Lower Back)', 'Pectorals (Chest)',
+  'Biceps & Triceps (Arms)', 'Forearms & Hands', 'Calves', 'Feet & Ankles'
 ]
 
 const HEALTH_CONDITIONS_LIST = [
@@ -105,7 +82,6 @@ export default function WaiverPage() {
   const [name, setName] = useState('')
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set())
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
-  const [view, setView] = useState<'FRONT' | 'BACK'>('BACK')
 
   const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -137,7 +113,6 @@ export default function WaiverPage() {
     const conditionsArray = Array.from(selectedConditions).join(', ')
 
     try {
-      // ── MATCHES THE DB COLUMNS PERFECTLY ──
       const { error } = await supabase.from('waivers').insert({
         client_name: name.trim(),
         focus_areas: areasArray || 'None',
@@ -154,8 +129,6 @@ export default function WaiverPage() {
     }
   }
 
-  const activeZones = view === 'FRONT' ? FRONT_ZONES : BACK_ZONES
-
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
       <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
@@ -168,11 +141,14 @@ export default function WaiverPage() {
     <>
       <style>{`
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
-        .wv-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
+        
+        /* Grid click animation */
+        .click-card:active { transform: scale(0.97); }
+        .click-img:active { transform: scale(1.05); }
       `}</style>
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
-        <div style={{ maxWidth: 800, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ maxWidth: 860, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
           <div style={{ textAlign: 'center', marginBottom: 12 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.20em', color: GOLD, margin: '0 0 10px', textTransform: 'uppercase' }}>Client Consent</p>
@@ -181,101 +157,101 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+            {/* ── OLD CLIENT DETAILS STYLE ── */}
             <Section title="Client Details">
               <div>
-                <label style={LABEL}>Full Name *</label>
-                <input className="wv-in" style={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="Enter your full name" required />
-              </div>
-            </Section>
-
-            {/* ── INTERACTIVE BODY MAP SECTION (Visual HUD only, data sloted to strings) ── */}
-            <Section title="Body Focus Areas" note="Tap diagram to select zones">
-              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-
-                {/* 3D HUD schematic Graphic */}
-                <div style={{ flex: '1 1 250px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
-                  <div style={{ display: 'flex', backgroundColor: '#f5f5f5', borderRadius: 8, padding: 4 }}>
-                    <button type="button" onClick={() => setView('FRONT')} style={{ padding: '6px 16px', fontSize: 12, fontWeight: 700, borderRadius: 6, border: 'none', backgroundColor: view === 'FRONT' ? WHITE : 'transparent', color: view === 'FRONT' ? BLACK : '#888', cursor: 'pointer', boxShadow: view === 'FRONT' ? '0 2px 6px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>FRONT</button>
-                    <button type="button" onClick={() => setView('BACK')} style={{ padding: '6px 16px', fontSize: 12, fontWeight: 700, borderRadius: 6, border: 'none', backgroundColor: view === 'BACK' ? WHITE : 'transparent', color: view === 'BACK' ? BLACK : '#888', cursor: 'pointer', boxShadow: view === 'BACK' ? '0 2px 6px rgba(0,0,0,0.05)' : 'none', transition: 'all 0.2s' }}>BACK</button>
-                  </div>
-
-                  <div style={{ position: 'relative', width: 220, height: 400, backgroundColor: '#FAFAFA', border: '1px solid #EAEAEA', borderRadius: 12, perspective: '1000px', overflow: 'hidden' }}>
-                    {/* Simplified schematic layers create a visual fit/muscular tone silhouette */}
-                    <div style={{ position: 'absolute', top: '10%', left: '40%', width: '20%', height: '15%', backgroundColor: '#EAEAEA', borderRadius: '40%' }} /> {/* Head/Neck */}
-                    <div style={{ position: 'absolute', top: '25%', left: '25%', width: '50%', height: '40%', backgroundColor: '#D9D9D9', borderRadius: '20%' }} /> {/* Torso */}
-                    <div style={{ position: 'absolute', top: '25%', left: '10%', width: '15%', height: '45%', backgroundColor: '#D9D9D9', borderRadius: '20px' }} /> {/* L Arm */}
-                    <div style={{ position: 'absolute', top: '25%', right: '10%', width: '15%', height: '45%', backgroundColor: '#D9D9D9', borderRadius: '20px' }} /> {/* R Arm */}
-                    <div style={{ position: 'absolute', top: '60%', left: '25%', width: '22%', height: '35%', backgroundColor: '#EAEAEA', borderRadius: '15px' }} /> {/* L Leg */}
-                    <div style={{ position: 'absolute', top: '60%', right: '25%', width: '22%', height: '35%', backgroundColor: '#EAEAEA', borderRadius: '15px' }} /> {/* R Leg */}
-
-                    {/* Interactive Hotspots */}
-                    {activeZones.map((zone) => {
-                      const isSelected = selectedAreas.has(zone.id)
-                      return (
-                        <button
-                          key={zone.id} type="button" onClick={() => toggleArea(zone.id)} title={zone.id}
-                          style={{
-                            position: 'absolute', top: zone.top, left: zone.left, width: zone.width, height: zone.height,
-                            backgroundColor: isSelected ? 'rgba(197,143,59,0.7)' : 'rgba(26,26,26,0.1)',
-                            border: `2px solid ${isSelected ? GOLD : 'transparent'}`, borderRadius: '12px', cursor: 'pointer',
-                            backdropFilter: 'blur(2px)', transform: isSelected ? 'scale(1.15) translateZ(20px)' : 'scale(1) translateZ(0)',
-                            boxShadow: isSelected ? '0 10px 20px rgba(197,143,59,0.3)' : 'none',
-                            transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)', zIndex: isSelected ? 10 : 1
-                          }}
-                        />
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Selected Areas List (Font EXACTLY matches Health Conditions below) */}
-                <div style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', margin: '0 0 8px' }}>Selected Focus Areas:</p>
-                  {Array.from(selectedAreas).length === 0 ? (
-                    <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>Tap diagram to select areas.</p>
-                  ) : (
-                    Array.from(selectedAreas).map(area => (
-                      <div key={area} onClick={() => toggleArea(area)} style={{ ...OPTION_CHIP, ...{ padding: '14px 16px', backgroundColor: 'rgba(197,143,59,0.1)', border: '1px solid rgba(197,143,59,0.4)', borderRadius: 10, color: BLACK, cursor: 'pointer' } }}>
-                        {area}
-                        <span style={{ color: GOLD }}>✕</span>
-                      </div>
-                    ))
-                  )}
+                <label style={LABEL}>FULL NAME *</label>
+                <div style={{ position: 'relative' }}>
+                  <input className="wv-in" style={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="Enter your full name" required />
+                  <span style={{ position: 'absolute', right: 15, top: '50%', transform: 'translateY(-50%)', color: '#888' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  </span>
                 </div>
               </div>
             </Section>
 
-            {/* ── HEALTH CONDITIONS SECTION (FIXED CLICKABILITY, Font Matched) ── */}
-            <Section title="Health Conditions" note="Please select all that apply">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-                {HEALTH_CONDITIONS_LIST.map(cond => {
-                  const isSelected = selectedConditions.has(cond)
+            {/* ── NEW MUSCULAR ANATOMY DIAGRAM ── */}
+            <Section title="Anatomical Reference" note="For visual guidance">
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0', overflow: 'hidden', borderRadius: 12, backgroundColor: '#fdfdfd', border: '1px solid rgba(0,0,0,0.05)' }}>
+                {/* IMPORTANT: Save your muscular diagram image in the 'public' folder as 'anatomy.jpg' 
+                  If you don't have it yet, this will gracefully show a placeholder.
+                */}
+                <img
+                  src="/anatomy.jpg"
+                  alt="Muscular Anatomy Reference"
+                  className="click-img"
+                  style={{ maxWidth: '100%', height: 'auto', maxHeight: 350, objectFit: 'contain', cursor: 'pointer', transition: 'transform 0.3s ease' }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = 'https://via.placeholder.com/800x350/F9F4EB/C58F3B?text=Please+upload+anatomy.jpg+to+public+folder';
+                  }}
+                />
+              </div>
+            </Section>
+
+            {/* ── OLD BODY FOCUS AREAS GRID ── */}
+            <Section title="Body Focus Areas" note="Select the specific muscular zones you would like the therapist to focus on:">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+                {BODY_AREAS.map(area => {
+                  const isSelected = selectedAreas.has(area)
                   return (
-                    <button
-                      key={cond} type="button" onClick={() => toggleCondition(cond)}
+                    <div
+                      key={area} onClick={() => toggleArea(area)} className="click-card"
                       style={{
-                        ...OPTION_CHIP,
-                        ...{
-                          backgroundColor: isSelected ? 'rgba(197,143,59,0.1)' : WHITE,
-                          border: `1.5px solid ${isSelected ? GOLD : 'rgba(26,26,26,0.13)'}`,
-                          color: isSelected ? BLACK : 'rgba(26,26,26,0.75)',
-                          boxShadow: isSelected ? '0 2px 8px rgba(197,143,59,0.15)' : 'none'
-                        }
+                        padding: '16px 20px',
+                        backgroundColor: isSelected ? 'rgba(197,143,59,0.05)' : WHITE,
+                        border: `1px solid ${isSelected ? GOLD : 'rgba(26,26,26,0.1)'}`,
+                        borderRadius: 12,
+                        fontSize: 14, fontWeight: 600, fontFamily: BODY,
+                        color: isSelected ? BLACK : 'rgba(26,26,26,0.8)',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        cursor: 'pointer', transition: 'all 0.2s ease',
+                        boxShadow: isSelected ? '0 4px 12px rgba(197,143,59,0.1)' : '0 2px 5px rgba(0,0,0,0.02)'
                       }}
                     >
-                      {cond}
-                      {/* Custom Checkbox UI */}
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {isSelected && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                      {area}
+                      {/* Empty Circle UI (Old Style) */}
+                      <div style={{ width: 20, height: 20, borderRadius: '50%', border: `1.5px solid ${isSelected ? GOLD : '#ddd'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {isSelected && <div style={{ width: 8, height: 8, backgroundColor: WHITE, borderRadius: '50%' }} />}
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
             </Section>
 
-            <button type="submit" disabled={loading} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}>
-              {loading ? 'Submitting...' : 'Confirm & Sign Waiver'}
+            {/* ── HEALTH CONDITIONS SECTION (Fixed, Checkbox UI) ── */}
+            <Section title="Health Conditions" note="Please select all that apply">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+                {HEALTH_CONDITIONS_LIST.map(cond => {
+                  const isSelected = selectedConditions.has(cond)
+                  return (
+                    <div
+                      key={cond} onClick={() => toggleCondition(cond)} className="click-card"
+                      style={{
+                        padding: '16px 20px',
+                        backgroundColor: isSelected ? 'rgba(197,143,59,0.05)' : WHITE,
+                        border: `1px solid ${isSelected ? GOLD : 'rgba(26,26,26,0.1)'}`,
+                        borderRadius: 12,
+                        fontSize: 14, fontWeight: 600, fontFamily: BODY,
+                        color: isSelected ? BLACK : 'rgba(26,26,26,0.8)',
+                        display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: 12,
+                        cursor: 'pointer', transition: 'all 0.2s ease',
+                        boxShadow: isSelected ? '0 4px 12px rgba(197,143,59,0.1)' : '0 2px 5px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      {/* Square Checkbox UI */}
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${isSelected ? GOLD : '#ccc'}`, backgroundColor: isSelected ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {isSelected && <svg width="12" height="12" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                      </div>
+                      {cond}
+                    </div>
+                  )
+                })}
+              </div>
+            </Section>
+
+            <button type="submit" disabled={loading} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease' }}>
+              {loading ? 'Submitting...' : 'Submit Waiver'}
             </button>
 
           </form>
