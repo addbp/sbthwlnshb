@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── SAFE CURRENCY PARSER ───
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
   if (!val) return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
@@ -42,6 +43,7 @@ interface ClientRecord {
   totalVisits: number;
   totalSpend: number;
   lastVisitDate: Date | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   history: any[];
 }
 
@@ -62,6 +64,7 @@ export default function ClientsPage() {
     setLoading(true)
     const PAGE = 1000
     let from = 0
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawData: any[] = []
 
     // Fetch all bookings to aggregate client data
@@ -120,7 +123,10 @@ export default function ClientsPage() {
   useEffect(() => { setCurrentPage(1) }, [search])
 
   const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
-  const totalSystemLifetimeValue = clients.reduce((sum, c) => sum + c.totalSpend, 0)
+
+  // ─── NEW LOGIC: RETURNING VS NEW CLIENTS ───
+  const returningClientsCount = clients.filter(c => c.totalVisits >= 2 && c.name.toLowerCase() !== 'guest').length
+  const newClientsCount = clients.filter(c => c.totalVisits === 1 && c.name.toLowerCase() !== 'guest').length
 
   // Pagination Logic
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -135,12 +141,11 @@ export default function ClientsPage() {
 
   return (
     <>
-      {/* ─── CLIENT PROFILE MODAL ─── */}
+      {/* ─── CLIENT PROFILE MODAL (PRESERVED) ─── */}
       {selectedClient && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, backgroundColor: 'rgba(26,26,26,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
           <div style={{ width: '100%', maxWidth: 600, backgroundColor: '#FDFCF8', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif", maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
 
-            {/* Modal Header */}
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(197,143,59,0.2)', backgroundColor: '#1A1A1A', color: '#FDFCF8', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: '#C58F3B', textTransform: 'uppercase', margin: '0 0 6px' }}>Client Profile</p>
@@ -149,10 +154,7 @@ export default function ClientsPage() {
               <button onClick={() => setSelectedClient(null)} style={{ background: 'none', border: 'none', color: '#C58F3B', fontSize: 28, cursor: 'pointer', lineHeight: 1 }}>&times;</button>
             </div>
 
-            {/* Modal Body */}
             <div style={{ padding: '24px', overflowY: 'auto' }}>
-
-              {/* Stats Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
                 <div style={{ padding: '16px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12 }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#7A6E65', margin: '0 0 4px', textTransform: 'uppercase' }}>Total Visits</p>
@@ -168,7 +170,6 @@ export default function ClientsPage() {
                 </div>
               </div>
 
-              {/* Data Sections */}
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Waiver Data</h3>
                 <div style={{ padding: '16px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)' }}>
@@ -221,15 +222,15 @@ export default function ClientsPage() {
           </button>
         </div>
 
-        {/* KPIs */}
+        {/* ─── NEW KPIS: RETURNING VS NEW CLIENTS ─── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(240px,100%),1fr))', gap: 12 }}>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total Unique Clients</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{loading ? '...' : clients.length.toLocaleString()}</p>
+          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #C58F3B' }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Returning/Regular Clients</p>
+            <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{loading ? '...' : returningClientsCount.toLocaleString()}</p>
           </div>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total System Lifetime Value</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>₱{loading ? '...' : totalSystemLifetimeValue.toLocaleString()}</p>
+          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #3D7A4A' }}>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3D7A4A', margin: '0 0 8px' }}>New Clients</p>
+            <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{loading ? '...' : newClientsCount.toLocaleString()}</p>
           </div>
         </div>
 
