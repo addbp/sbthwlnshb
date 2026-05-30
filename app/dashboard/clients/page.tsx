@@ -225,7 +225,7 @@ export default function ClientsPage() {
         {/* ─── NEW KPIS: RETURNING VS NEW CLIENTS ─── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(240px,100%),1fr))', gap: 12 }}>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #C58F3B' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Returning/Regular Clients</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Regular Clients</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{loading ? '...' : returningClientsCount.toLocaleString()}</p>
           </div>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #3D7A4A' }}>
