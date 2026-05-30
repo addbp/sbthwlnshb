@@ -4,7 +4,11 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
+// ─── PIN CODE SETTING (CHANGE THIS TO YOUR PREFERRED 6-DIGIT CODE) ───
+const OWNER_PIN = '123456'
+
 // ─── SAFE CURRENCY PARSER ───
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
   if (!val) return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
@@ -53,6 +57,11 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
 
+  // ─── PIN SECURITY STATE ───
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState(false)
+
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
@@ -73,28 +82,33 @@ export default function PaymentsPage() {
       if (error || !data || data.length === 0) break
 
       data.forEach((r, i) => {
-        all.push({
-          _key: `pay-${from}-${i}`,
-          parsedDate: parseImportDate(r.date),
-          client: String(r.client_name || 'Guest'),
-          service: String(r.service || '—'),
-          amount: parseCurrency(r.service_amount),
-          received: parseCurrency(r.received_payment),
-          modeOfPayment: String(r.payment_method || '—').toUpperCase(),
-          clientType: '—' // Will be calculated dynamically below
-        })
+        const received = parseCurrency(r.received_payment)
+        const amount = parseCurrency(r.service_amount)
+
+        // STRICT FILTER: Only count rows that actually have a transaction amount
+        if (received > 0 || amount > 0) {
+          all.push({
+            _key: `pay-${from}-${i}`,
+            parsedDate: parseImportDate(r.date),
+            client: String(r.client_name || 'Guest'),
+            service: String(r.service || '—'),
+            amount: amount,
+            received: received,
+            modeOfPayment: String(r.payment_method || '—').toUpperCase(),
+            clientType: '—'
+          })
+        }
       })
       if (data.length < PAGE) break
       from += PAGE
     }
 
-    // 2. Sort OLDEST to NEWEST to simulate the exact timeline of the spa
+    // 2. Sort OLDEST to NEWEST to simulate timeline
     all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
 
-    // 3. Scan the database timeline to dynamically calculate NEW vs RETURNING clients
+    // 3. Scan timeline to calculate NEW vs RETURNING clients
     const visitCounter = new Map<string, number>()
     all.forEach(p => {
-      // Use lowercase trim to match names perfectly (e.g., "John" matches "john ")
       const nameKey = p.client.toLowerCase().trim()
       if (!nameKey || nameKey === 'guest' || nameKey === '—') {
         p.clientType = 'WALK-IN / GUEST'
@@ -110,7 +124,7 @@ export default function PaymentsPage() {
       visitCounter.set(nameKey, visits + 1)
     })
 
-    // 4. Sort NEWEST to OLDEST for the dashboard display view
+    // 4. Sort NEWEST to OLDEST for the dashboard view
     all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
 
     setPayments(all)
@@ -134,6 +148,18 @@ export default function PaymentsPage() {
     transition: 'opacity 200ms ease'
   })
 
+  // PIN Unlock Handler
+  const handlePinSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pinInput === OWNER_PIN) {
+      setIsUnlocked(true)
+      setPinError(false)
+    } else {
+      setPinError(true)
+      setPinInput('')
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
@@ -147,25 +173,49 @@ export default function PaymentsPage() {
         </button>
       </div>
 
-      {/* KPIs */}
+      {/* ─── KPIS WITH PIN LOCK ─── */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <div style={{ backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.2)', borderRadius: 14, padding: '24px', minWidth: 220, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+
+        {/* Total Received Card (Locked/Unlocked) */}
+        <div style={{ flex: '1 1 250px', backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.2)', borderRadius: 14, padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', position: 'relative', overflow: 'hidden' }}>
           <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: '0 0 8px', letterSpacing: '0.05em' }}>Total Received</p>
-          <p style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
-            {loading ? '...' : `₱${totalReceived.toLocaleString()}`}
-          </p>
+
+          {isUnlocked ? (
+            <p style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
+              {loading ? '...' : `₱${totalReceived.toLocaleString()}`}
+            </p>
+          ) : (
+            <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(26,26,26,0.95)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <form onSubmit={handlePinSubmit} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                <input
+                  type="password"
+                  maxLength={6}
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value)}
+                  placeholder="ENTER PIN"
+                  style={{ width: 100, height: 30, backgroundColor: 'transparent', border: 'none', borderBottom: `1px solid ${pinError ? '#ff4d4f' : '#C58F3B'}`, color: '#fff', fontSize: 14, textAlign: 'center', outline: 'none', letterSpacing: '0.2em' }}
+                />
+                <button type="submit" style={{ display: 'none' }}></button>
+              </form>
+              {pinError && <span style={{ fontSize: 9, color: '#ff4d4f', marginTop: 4, position: 'absolute', bottom: 10 }}>INCORRECT PIN</span>}
+            </div>
+          )}
         </div>
-        <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '24px', minWidth: 220, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+
+        {/* Total Transactions Card */}
+        <div style={{ flex: '1 1 250px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
           <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>Total Transactions</p>
           <p style={{ fontSize: 32, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>
             {loading ? '...' : totalTransactions.toLocaleString()}
           </p>
         </div>
+
       </div>
 
       {loading ? (
         <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
-          Scanning timeline to map New vs Returning clients...
+          Scanning timeline to map real transactions...
         </div>
       ) : (
         <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
@@ -191,8 +241,10 @@ export default function PaymentsPage() {
                         {p.modeOfPayment}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 16px' }}>
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', minWidth: 140 }}>
                       <span style={{
+                        display: 'inline-block',
+                        whiteSpace: 'nowrap',
                         padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em',
                         backgroundColor: p.clientType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
                         color: p.clientType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'

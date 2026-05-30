@@ -1,5 +1,4 @@
 'use client'
-
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useCallback, useEffect, useRef } from 'react'
@@ -75,7 +74,12 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   const all: Sale[] = []
 
   // 1. Fetch Live Operations Data
-  const { data: liveData } = await supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(1000)
+  const { data: liveData } = await supabase
+    .from('bookings')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1000)
+
   if (liveData) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     liveData.forEach((r: any) => {
@@ -95,7 +99,8 @@ async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   }
 
   // 2. Fetch Historical Data (Pulls ALL 10,000+ records)
-  let from = 0; const PAGE = 1000;
+  let from = 0;
+  const PAGE = 1000;
   for (; ;) {
     const { data } = await supabase
       .from('bookings_import')
@@ -255,7 +260,9 @@ export default function OverviewPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                    {['Date', 'Status', 'Client', 'Service', 'Therapist', 'Revenue'].map(h => <th key={h} style={{ padding: '12px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>)}
+                    {['Date', 'Status', 'Client', 'Service', 'Therapist', 'Revenue'].map(h => (
+                      <th key={h} style={{ padding: '12px 16px', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -264,7 +271,11 @@ export default function OverviewPage() {
                       <td style={{ padding: '12px 16px', color: '#666', whiteSpace: 'nowrap' }}>{fmtDateShort(s.date)}</td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={{
-                          padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                          padding: '4px 8px',
+                          borderRadius: 6,
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
                           backgroundColor: s.status.toLowerCase() === 'completed' ? 'rgba(61,122,74,0.1)' : s.status.toLowerCase() === 'ongoing' ? 'rgba(197,143,59,0.1)' : '#f5f5f5',
                           color: s.status.toLowerCase() === 'completed' ? '#3D7A4A' : s.status.toLowerCase() === 'ongoing' ? '#C58F3B' : '#666'
                         }}>
@@ -277,7 +288,11 @@ export default function OverviewPage() {
                       <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{s.revenue.toLocaleString()}</td>
                     </tr>
                   ))}
-                  {paginatedSales.length === 0 && <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No bookings found for the selected date range.</td></tr>}
+                  {paginatedSales.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No bookings found for the selected date range.</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
