@@ -4,9 +4,6 @@ export const dynamic = 'force-dynamic'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-// ─── PIN CODE SETTING (CHANGE THIS TO YOUR PREFERRED 6-DIGIT CODE) ───
-const OWNER_PIN = '123456'
-
 // ─── SAFE CURRENCY PARSER ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
@@ -57,7 +54,8 @@ export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
 
-  // ─── PIN SECURITY STATE ───
+  // ─── DYNAMIC PIN SECURITY STATE ───
+  const [dbPin, setDbPin] = useState('123456') // Default fallback
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
@@ -72,7 +70,13 @@ export default function PaymentsPage() {
     let from = 0
     const all: PaymentRecord[] = []
 
-    // 1. Fetch entire database history
+    // 1. Fetch the live PIN code from Supabase
+    const { data: pinData } = await supabase.from('admin_settings').select('pin').single()
+    if (pinData && pinData.pin) {
+      setDbPin(pinData.pin)
+    }
+
+    // 2. Fetch entire payment history
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
@@ -103,10 +107,10 @@ export default function PaymentsPage() {
       from += PAGE
     }
 
-    // 2. Sort OLDEST to NEWEST to simulate timeline
+    // 3. Sort OLDEST to NEWEST to simulate timeline
     all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
 
-    // 3. Scan timeline to calculate NEW vs RETURNING clients
+    // 4. Scan timeline to calculate NEW vs RETURNING clients
     const visitCounter = new Map<string, number>()
     all.forEach(p => {
       const nameKey = p.client.toLowerCase().trim()
@@ -124,7 +128,7 @@ export default function PaymentsPage() {
       visitCounter.set(nameKey, visits + 1)
     })
 
-    // 4. Sort NEWEST to OLDEST for the dashboard view
+    // 5. Sort NEWEST to OLDEST for the dashboard view
     all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
 
     setPayments(all)
@@ -148,10 +152,10 @@ export default function PaymentsPage() {
     transition: 'opacity 200ms ease'
   })
 
-  // PIN Unlock Handler
+  // PIN Unlock Handler (Checks against Supabase Database PIN)
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (pinInput === OWNER_PIN) {
+    if (pinInput === dbPin) {
       setIsUnlocked(true)
       setPinError(false)
     } else {
@@ -173,7 +177,7 @@ export default function PaymentsPage() {
         </button>
       </div>
 
-      {/* ─── KPIS WITH PIN LOCK ─── */}
+      {/* ─── KPIS WITH DATABASE PIN LOCK ─── */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
 
         {/* Total Received Card (Locked/Unlocked) */}

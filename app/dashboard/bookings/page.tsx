@@ -67,27 +67,35 @@ export default function BookingsPage() {
     const PAGE = 1000
     const all: Booking[] = []
 
-    // ─── 1. FETCH LIVE BOOKINGS CONTINUOUSLY (NO LIMIT) ───
+    // ─── 1. FETCH LIVE BOOKINGS CONTINUOUSLY (UNIVERSAL SCAN) ───
     let liveFrom = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings')
-        .select('id, appointment_date, created_at, client_name, service_name, service, therapist_name, therapist, price, amount, received_payment, category, payment_method')
+        .select('*') // Selects absolutely everything to prevent missed columns
         .range(liveFrom, liveFrom + PAGE - 1)
 
       if (error || !data || data.length === 0) break
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data.forEach(r => {
+        const rawDate = r.appointment_date || r.date || r.created_at || r.booking_date;
+        const rawClient = r.client_name || r.name || r.full_name || 'Guest';
+        const rawService = r.service_name || r.service || r.treatment || '—';
+        const rawTherapist = r.therapist_name || r.therapist || r.staff || '—';
+        const rawRev = r.received_payment || r.service_amount || r.amount || r.price || r.total || 0;
+        const rawPay = r.payment_method || r.mode_of_payment || '—';
+
         all.push({
           _key: `live-${r.id}-${liveFrom}`,
-          date: String(r.appointment_date || r.created_at || ''),
-          parsedDate: parseImportDate(r.appointment_date || r.created_at),
-          client: String(r.client_name || 'Guest'),
-          service: String(r.service_name || r.service || '—'),
-          therapist: String(r.therapist_name || r.therapist || '—'),
-          revenue: parseCurrency(r.price || r.amount || r.received_payment),
+          date: String(rawDate || ''),
+          parsedDate: parseImportDate(rawDate),
+          client: String(rawClient).trim(),
+          service: String(rawService).trim(),
+          therapist: String(rawTherapist).trim(),
+          revenue: parseCurrency(rawRev),
           category: String(r.category || 'Live Booking'),
-          payMethod: String(r.payment_method || '—').toUpperCase(),
+          payMethod: String(rawPay).toUpperCase(),
           customerType: '—'
         })
       })
@@ -95,27 +103,35 @@ export default function BookingsPage() {
       liveFrom += PAGE
     }
 
-    // ─── 2. FETCH HISTORICAL BOOKINGS CONTINUOUSLY (NO LIMIT) ───
+    // ─── 2. FETCH HISTORICAL BOOKINGS CONTINUOUSLY (UNIVERSAL SCAN) ───
     let histFrom = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        .select('date, client_name, service, therapist, received_payment, service_amount, category, payment_method')
+        .select('*') // Selects absolutely everything
         .range(histFrom, histFrom + PAGE - 1)
 
       if (error || !data || data.length === 0) break
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data.forEach((r, i) => {
+        const rawDate = r.date || r.appointment_date || r.created_at;
+        const rawClient = r.client_name || r.name || 'Guest';
+        const rawService = r.service || r.service_name || '—';
+        const rawTherapist = r.therapist || r.therapist_name || '—';
+        const rawRev = r.received_payment || r.service_amount || r.amount || r.price || 0;
+        const rawPay = r.payment_method || r.mode_of_payment || '—';
+
         all.push({
           _key: `hist-${histFrom}-${i}`,
-          date: String(r.date || ''),
-          parsedDate: parseImportDate(r.date),
-          client: String(r.client_name || 'Guest'),
-          service: String(r.service || '—'),
-          therapist: String(r.therapist || '—'),
-          revenue: parseCurrency(r.received_payment || r.service_amount),
+          date: String(rawDate || ''),
+          parsedDate: parseImportDate(rawDate),
+          client: String(rawClient).trim(),
+          service: String(rawService).trim(),
+          therapist: String(rawTherapist).trim(),
+          revenue: parseCurrency(rawRev),
           category: String(r.category || '—'),
-          payMethod: String(r.payment_method || '—').toUpperCase(),
+          payMethod: String(rawPay).toUpperCase(),
           customerType: '—'
         })
       })
@@ -128,7 +144,7 @@ export default function BookingsPage() {
 
     // Pass 1: Count total visits per client
     all.forEach(p => {
-      const nameKey = p.client.toLowerCase().trim()
+      const nameKey = p.client.toLowerCase()
       if (nameKey && nameKey !== 'guest' && nameKey !== '—') {
         visitCounter.set(nameKey, (visitCounter.get(nameKey) || 0) + 1)
       }
@@ -136,7 +152,7 @@ export default function BookingsPage() {
 
     // Pass 2: Assign tags based on total count
     all.forEach(p => {
-      const nameKey = p.client.toLowerCase().trim()
+      const nameKey = p.client.toLowerCase()
       if (!nameKey || nameKey === 'guest' || nameKey === '—') {
         p.customerType = 'WALK-IN'
       } else {
@@ -176,9 +192,15 @@ export default function BookingsPage() {
 
   // Button Style for Pagination
   const btnStyle = (disabled: boolean): React.CSSProperties => ({
-    padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase',
-    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A', color: disabled ? '#aaa' : '#C58F3B',
-    border: 'none', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer',
+    padding: '6px 12px',
+    fontSize: 12,
+    fontWeight: 600,
+    textTransform: 'uppercase',
+    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A',
+    color: disabled ? '#aaa' : '#C58F3B',
+    border: 'none',
+    borderRadius: 6,
+    cursor: disabled ? 'not-allowed' : 'pointer',
     transition: 'opacity 200ms ease'
   })
 
@@ -258,10 +280,15 @@ export default function BookingsPage() {
                     </td>
                     <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
                     <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
-                    {/* ─── ADDED NOWRAP TO THIS CELL TO PREVENT BREAKING ─── */}
-                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', minWidth: 140 }}>
                       <span style={{
-                        padding: '4px 8px', borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap',
+                        display: 'inline-block',
+                        whiteSpace: 'nowrap',
+                        padding: '4px 8px',
+                        borderRadius: 6,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
                         backgroundColor: b.customerType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
                         color: b.customerType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
                       }}>

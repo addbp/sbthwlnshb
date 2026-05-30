@@ -70,7 +70,7 @@ const NAV_MAIN = [
   },
   {
     href: '/dashboard/reports',
-    label: 'Reports',
+    label: 'Waivers', // <--- CHANGED FROM REPORTS
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
         <path d="M11 2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-4-5z" stroke="#C58F3B" strokeWidth="1.5" />
@@ -219,6 +219,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           {/* Brand — logo only */}
           <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/sabbath-logo.png" alt="Sabbath Logo" style={{ width: 72, height: 72, objectFit: 'contain' }} />
           </div>
 
@@ -314,7 +315,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <h1 style={{ flex: 1, fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.3rem,2.5vw,1.8rem)', fontWeight: 400, color: '#1A1A1A', margin: 0, letterSpacing: '0.01em' }}>
               {NAV_MAIN.find(i => isActive(i.href))?.label ?? 'Dashboard'}
             </h1>
-            {/* "All Branches" completely removed here */}
           </header>
 
           {/* Page content */}

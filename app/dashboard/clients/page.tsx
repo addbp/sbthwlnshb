@@ -38,6 +38,13 @@ function formatDateToDDMMMYY(d: Date | null): string {
   return `${dd}-${mmm}-${yy}`;
 }
 
+interface WaiverData {
+  focus_areas: string;
+  health_conditions: string;
+  signature: string;
+  date_signed: Date | null;
+}
+
 interface ClientRecord {
   name: string;
   totalVisits: number;
@@ -45,6 +52,7 @@ interface ClientRecord {
   lastVisitDate: Date | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   history: any[];
+  waiver: WaiverData | null;
 }
 
 export default function ClientsPage() {
@@ -63,51 +71,112 @@ export default function ClientsPage() {
   const loadClients = useCallback(async () => {
     setLoading(true)
     const PAGE = 1000
-    let from = 0
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawData: any[] = []
+    const allBookings: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allWaivers: any[] = []
 
-    // Fetch all bookings to aggregate client data
+    // 1. Fetch HISTORICAL Bookings
+    let fromHist = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
         .select('date, client_name, service, received_payment, service_amount, therapist')
-        .range(from, from + PAGE - 1)
+        .range(fromHist, fromHist + PAGE - 1)
 
       if (error || !data || data.length === 0) break
-      rawData.push(...data)
+      allBookings.push(...data)
       if (data.length < PAGE) break
-      from += PAGE
+      fromHist += PAGE
     }
 
-    // Aggregate into unique clients
+    // 2. Fetch LIVE Bookings
+    let fromLive = 0
+    for (; ;) {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('appointment_date, created_at, client_name, service_name, service, price, amount, received_payment, therapist_name, therapist')
+        .range(fromLive, fromLive + PAGE - 1)
+
+      if (error || !data || data.length === 0) break
+      allBookings.push(...data)
+      if (data.length < PAGE) break
+      fromLive += PAGE
+    }
+
+    // 3. Fetch ALL WAIVERS
+    let fromWaiver = 0
+    for (; ;) {
+      const { data, error } = await supabase
+        .from('waivers')
+        .select('*')
+        .range(fromWaiver, fromWaiver + PAGE - 1)
+
+      if (error || !data || data.length === 0) break
+      allWaivers.push(...data)
+      if (data.length < PAGE) break
+      fromWaiver += PAGE
+    }
+
+    // 4. Aggregate Data into Unified Client Profiles
     const clientMap = new Map<string, ClientRecord>()
 
-    rawData.forEach(r => {
-      const name = String(r.client_name || 'Guest').trim()
-      if (!name) return
-
-      const rev = parseCurrency(r.received_payment || r.service_amount)
-      const d = parseImportDate(r.date)
-
-      if (!clientMap.has(name)) {
-        clientMap.set(name, {
-          name,
+    const getClient = (rawName: string) => {
+      const name = String(rawName).trim()
+      const key = name.toLowerCase()
+      if (!clientMap.has(key)) {
+        clientMap.set(key, {
+          name: name, // Preserve original capitalization
           totalVisits: 0,
           totalSpend: 0,
-          lastVisitDate: d,
-          history: []
+          lastVisitDate: null,
+          history: [],
+          waiver: null
         })
       }
+      return clientMap.get(key)!
+    }
 
-      const client = clientMap.get(name)!
+    // Process Bookings
+    allBookings.forEach(r => {
+      const name = r.client_name || r.name || 'Guest'
+      if (name.toLowerCase() === 'guest' || name === '—') return // Skip generic guests
+
+      const client = getClient(name)
+      const rawDate = r.date || r.appointment_date || r.created_at
+      const d = parseImportDate(rawDate)
+      const rev = parseCurrency(r.received_payment || r.service_amount || r.price || r.amount)
+
       client.totalVisits += 1
       client.totalSpend += rev
-      client.history.push({ date: d, service: r.service, revenue: rev, therapist: r.therapist })
+      client.history.push({
+        date: d,
+        service: r.service || r.service_name || 'Massage Service',
+        revenue: rev,
+        therapist: r.therapist || r.therapist_name || 'Assigned Therapist'
+      })
 
-      // Update last visit if this record is newer
       if (d && (!client.lastVisitDate || d.getTime() > client.lastVisitDate.getTime())) {
         client.lastVisitDate = d
+      }
+    })
+
+    // Process Waivers (Attach to matching client profile)
+    allWaivers.forEach(w => {
+      const name = w.client_name
+      if (!name || name.toLowerCase() === 'guest' || name === '—') return
+
+      const client = getClient(name) // Grabs existing client, or creates them if they signed waiver but no booking yet
+      const d = parseImportDate(w.date_signed)
+
+      // Only keep the most recent waiver
+      if (!client.waiver || (d && client.waiver.date_signed && d.getTime() > client.waiver.date_signed.getTime())) {
+        client.waiver = {
+          focus_areas: w.focus_areas || 'None',
+          health_conditions: w.health_conditions || 'None',
+          signature: w.signature || '',
+          date_signed: d
+        }
       }
     })
 
@@ -124,9 +193,8 @@ export default function ClientsPage() {
 
   const filtered = clients.filter(c => c.name.toLowerCase().includes(search.toLowerCase()))
 
-  // ─── NEW LOGIC: RETURNING VS NEW CLIENTS ───
-  const returningClientsCount = clients.filter(c => c.totalVisits >= 2 && c.name.toLowerCase() !== 'guest').length
-  const newClientsCount = clients.filter(c => c.totalVisits === 1 && c.name.toLowerCase() !== 'guest').length
+  const returningClientsCount = clients.filter(c => c.totalVisits >= 2).length
+  const newClientsCount = clients.filter(c => c.totalVisits === 1).length
 
   // Pagination Logic
   const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage))
@@ -141,10 +209,10 @@ export default function ClientsPage() {
 
   return (
     <>
-      {/* ─── CLIENT PROFILE MODAL (PRESERVED) ─── */}
+      {/* ─── CLIENT PROFILE MODAL ─── */}
       {selectedClient && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 999, backgroundColor: 'rgba(26,26,26,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ width: '100%', maxWidth: 600, backgroundColor: '#FDFCF8', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif", maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: '100%', maxWidth: 650, backgroundColor: '#FDFCF8', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif", maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
 
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(197,143,59,0.2)', backgroundColor: '#1A1A1A', color: '#FDFCF8', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -170,38 +238,67 @@ export default function ClientsPage() {
                 </div>
               </div>
 
+              {/* ─── CONNECTED WAIVER DATA DISPLAY ─── */}
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Waiver Data</h3>
-                <div style={{ padding: '16px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)' }}>
-                  <p style={{ fontSize: 13, color: '#666', margin: 0, fontStyle: 'italic' }}>No active digital waiver found for this client on file. A new waiver will be required upon next visit.</p>
-                </div>
-              </div>
 
-              <div style={{ marginBottom: 24 }}>
-                <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Future Bookings</h3>
-                <p style={{ fontSize: 13, color: '#666', margin: 0 }}>No upcoming appointments scheduled.</p>
+                {selectedClient.waiver ? (
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 250px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12, padding: '16px' }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 4 }}>Declared Health Conditions</span>
+                        <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 600 }}>{selectedClient.waiver.health_conditions}</span>
+                      </div>
+                      <div>
+                        <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 4 }}>Body Focus Areas</span>
+                        <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 600 }}>{selectedClient.waiver.focus_areas}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ flex: '1 1 200px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12, padding: '16px' }}>
+                      <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 8 }}>Digital Signature</span>
+                      <div style={{ backgroundColor: '#fafafa', border: '1px dashed #ccc', borderRadius: 8, padding: '10px', textAlign: 'center', height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {selectedClient.waiver.signature ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={selectedClient.waiver.signature} alt="Client Signature" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                        ) : (
+                          <span style={{ fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>No signature</span>
+                        )}
+                      </div>
+                      <p style={{ margin: '8px 0 0', fontSize: 9, textAlign: 'right', color: '#666', fontWeight: 600 }}>SIGNED: {formatDateToDDMMMYY(selectedClient.waiver.date_signed)}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '16px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)' }}>
+                    <p style={{ fontSize: 13, color: '#666', margin: 0, fontStyle: 'italic' }}>No active digital waiver found for this client on file. A new waiver will be required upon next visit.</p>
+                  </div>
+                )}
               </div>
 
               <div>
-                <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Past History (Top 5)</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ color: '#C58F3B', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.1em' }}>
-                      <th style={{ padding: '8px 0' }}>Date</th>
-                      <th style={{ padding: '8px 0' }}>Service</th>
-                      <th style={{ padding: '8px 0' }}>Therapist</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedClient.history.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)).slice(0, 5).map((h, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                        <td style={{ padding: '12px 0', color: '#1A1A1A', fontWeight: 600 }}>{formatDateToDDMMMYY(h.date)}</td>
-                        <td style={{ padding: '12px 0', color: '#666' }}>{h.service}</td>
-                        <td style={{ padding: '12px 0', color: '#666' }}>{h.therapist}</td>
+                <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Past History</h3>
+                {selectedClient.history.length > 0 ? (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ color: '#C58F3B', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.1em' }}>
+                        <th style={{ padding: '8px 0' }}>Date</th>
+                        <th style={{ padding: '8px 0' }}>Service</th>
+                        <th style={{ padding: '8px 0' }}>Therapist</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {selectedClient.history.sort((a, b) => (b.date?.getTime() || 0) - (a.date?.getTime() || 0)).slice(0, 10).map((h, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+                          <td style={{ padding: '12px 0', color: '#1A1A1A', fontWeight: 600, whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(h.date)}</td>
+                          <td style={{ padding: '12px 0', color: '#666' }}>{h.service}</td>
+                          <td style={{ padding: '12px 0', color: '#666' }}>{h.therapist}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p style={{ fontSize: 13, color: '#666', fontStyle: 'italic' }}>No past bookings recorded yet.</p>
+                )}
               </div>
 
             </div>
@@ -222,10 +319,10 @@ export default function ClientsPage() {
           </button>
         </div>
 
-        {/* ─── NEW KPIS: RETURNING VS NEW CLIENTS ─── */}
+        {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(240px,100%),1fr))', gap: 12 }}>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #C58F3B' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Regular Clients</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Returning/Regular Clients</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{loading ? '...' : returningClientsCount.toLocaleString()}</p>
           </div>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #3D7A4A' }}>
@@ -237,7 +334,7 @@ export default function ClientsPage() {
         <input type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name..." style={{ height: 44, width: '100%', maxWidth: 400, padding: '0 16px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 15, outline: 'none' }} />
 
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Aggregating 10,000+ records to build client profiles...</div>
+          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Aggregating databases to build unified client profiles...</div>
         ) : (
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
             <div style={{ overflowX: 'auto', minHeight: 400 }}>
