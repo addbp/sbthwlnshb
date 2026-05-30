@@ -131,6 +131,7 @@ export default function WaiverPage() {
         const tables = ['bookings', 'bookings_import', 'client', 'clients'];
 
         const fetchPaginated = async (tableName: string) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let allTableData: any[] = [];
           let start = 0;
           const step = 1000;
@@ -164,6 +165,7 @@ export default function WaiverPage() {
 
         results.forEach((res) => {
           if (res.status === 'fulfilled' && res.value) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             res.value.forEach((item: any) => {
               const rawName = item.client_name || item.full_name || item.name || "";
               const rawDate = item.created_at || item.booking_date || item.date || item.updated_at;
@@ -265,9 +267,9 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim() || !agreed || !signature) {
-      return alert("Please complete Name, Acknowledgement, and Signature.")
-    }
+    if (!name.trim()) return alert("Please enter your full name.")
+    if (!agreed) return alert("Please acknowledge the consent terms.")
+    if (!signature) return alert("Please draw your signature in the box.")
 
     setLoading(true)
     try {
@@ -440,12 +442,13 @@ export default function WaiverPage() {
               </div>
             </Section>
 
+            {/* ─── NEW COMPREHENSIVE LEGAL ACKNOWLEDGEMENT ─── */}
             <Section title="Acknowledgement">
-              <div style={{ display: 'flex', gap: 14, cursor: 'pointer' }} onClick={() => setAgreed(!agreed)}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ display: 'flex', gap: 14, cursor: 'pointer', alignItems: 'flex-start' }} onClick={() => setAgreed(!agreed)}>
+                <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
                   {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}
                 </div>
-                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.7)', lineHeight: 1.6 }}>
+                <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.85)', lineHeight: 1.6, textAlign: 'justify' }}>
                   I understand that the treatment is for relaxation and wellness only, and not a form of medical treatment. I confirm that I have disclosed all relevant medical conditions, and I take full responsibility for any undisclosed or unknown conditions that may be affected during or after the treatment. I acknowledge that Sabbath Spa and its staff shall not be held liable for any injury, allergic reaction, illness, or other medical issue that may occur during or after the session. I agree that any complaints must be made within 24 hours of service. I also understand that Sabbath Spa may refuse or stop service at any time for health or safety reasons, or in the event of inappropriate behavior. I agree to communicate immediately if I feel any discomfort so that the pressure or strokes can be adjusted. I understand that any inappropriate, illicit, or sexually suggestive motion will result in the immediate termination of the session. I also agree to refrain from consuming alcohol, drugs, or smoking before or during my appointment. I authorize Sabbath Spa to collect, use, store, and process my personal data for service, records, and communication, including the use of trusted third-party platforms and tools (such as AI-assisted systems), in accordance with the Data Privacy Act of 2012.
                 </p>
               </div>
