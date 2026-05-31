@@ -240,17 +240,25 @@ export default function BookingPage() {
   // ─── FILTER SOFT GEL AND CATEGORIZE SERVICES ───
   const validServices = dbServices.filter(s => s.name.toUpperCase() !== 'SOFT GEL')
 
-  const massageServices = validServices
-    .filter(s => s.category?.toLowerCase().includes('massage') || s.category?.toLowerCase().includes('therapy') || s.category?.toLowerCase().includes('body'))
-    .sort(popularitySort)
+  // Enforce these specific keywords to always map to Le Nails
+  const NAIL_KEYWORDS = [
+    'SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED',
+    'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH',
+    'ACCENT', 'POLISH', 'NAIL ART', 'GEL REMOVAL'
+  ]
 
-  const nailServices = validServices
-    .filter(s => s.category?.toLowerCase().includes('nail') || s.category?.toLowerCase().includes('le') || s.category?.toLowerCase().includes('hands') || s.category?.toLowerCase().includes('feet'))
-    .sort(popularitySort)
+  const isNailService = (s: ServiceItem) => {
+    const cat = s.category?.toLowerCase() || '';
+    const nameUpper = s.name.toUpperCase();
+    // Check strict name keywords
+    if (NAIL_KEYWORDS.some(keyword => nameUpper.includes(keyword))) return true;
+    // Check fallback category mapping
+    if (cat.includes('nail') || cat.includes('le') || cat.includes('hands') || cat.includes('feet')) return true;
+    return false;
+  }
 
-  const assignedIds = new Set([...massageServices.map(s => s.id), ...nailServices.map(s => s.id)])
-  const unassigned = validServices.filter(s => !assignedIds.has(s.id)).sort(popularitySort)
-  massageServices.push(...unassigned)
+  const nailServices = validServices.filter(isNailService).sort(popularitySort)
+  const massageServices = validServices.filter(s => !isNailService(s)).sort(popularitySort)
 
   const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
