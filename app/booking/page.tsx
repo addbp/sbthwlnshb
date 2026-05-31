@@ -237,16 +237,19 @@ export default function BookingPage() {
     return 0;
   }
 
-  const massageServices = dbServices
+  // ─── FILTER SOFT GEL AND CATEGORIZE SERVICES ───
+  const validServices = dbServices.filter(s => s.name.toUpperCase() !== 'SOFT GEL')
+
+  const massageServices = validServices
     .filter(s => s.category?.toLowerCase().includes('massage') || s.category?.toLowerCase().includes('therapy') || s.category?.toLowerCase().includes('body'))
     .sort(popularitySort)
 
-  const nailServices = dbServices
+  const nailServices = validServices
     .filter(s => s.category?.toLowerCase().includes('nail') || s.category?.toLowerCase().includes('le') || s.category?.toLowerCase().includes('hands') || s.category?.toLowerCase().includes('feet'))
     .sort(popularitySort)
 
   const assignedIds = new Set([...massageServices.map(s => s.id), ...nailServices.map(s => s.id)])
-  const unassigned = dbServices.filter(s => !assignedIds.has(s.id)).sort(popularitySort)
+  const unassigned = validServices.filter(s => !assignedIds.has(s.id)).sort(popularitySort)
   massageServices.push(...unassigned)
 
   const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
@@ -259,7 +262,7 @@ export default function BookingPage() {
     })
   }
 
-  const selectedServices = dbServices.filter(s => selectedIds.has(s.id))
+  const selectedServices = validServices.filter(s => selectedIds.has(s.id))
   const totalAmount = selectedServices.reduce((a, s) => a + Number(s.price || 0), 0)
 
   const availableTimeSlots = date === getTodayStr() ? TIME_SLOTS.filter(t => {
@@ -286,7 +289,7 @@ export default function BookingPage() {
     }
   }, [date, availableTimeSlots, time]);
 
-  // EMAIL IS NOW REQUIRED (Added Regex Check)
+  // EMAIL IS NOW REQUIRED
   const validation = {
     name: name.trim().length < 2,
     mobile: mobile.trim().length < 7,
@@ -429,7 +432,7 @@ export default function BookingPage() {
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected · ${fmt(totalAmount)} total` : 'Choose one or more'}>
               {servicesLoad ? (
                 <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.5)', fontStyle: 'italic' }}>Loading live services from database...</p>
-              ) : dbServices.length === 0 ? (
+              ) : validServices.length === 0 ? (
                 <div style={{ backgroundColor: 'rgba(139,58,58,0.05)', padding: 16, borderRadius: 8, border: '1px solid rgba(139,58,58,0.2)' }}>
                   <p style={{ color: '#8B3A3A', fontSize: 14, margin: 0, fontWeight: 600 }}>No services found in database.</p>
                 </div>
@@ -503,6 +506,7 @@ export default function BookingPage() {
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
 
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={selectedPaymentMethodObj.qrImage}
                     alt={`QR Code for ${selectedPaymentMethodObj.label}`}
