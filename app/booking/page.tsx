@@ -250,9 +250,7 @@ export default function BookingPage() {
   const isNailService = (s: ServiceItem) => {
     const cat = s.category?.toLowerCase() || '';
     const nameUpper = s.name.toUpperCase();
-    // Check strict name keywords
     if (NAIL_KEYWORDS.some(keyword => nameUpper.includes(keyword))) return true;
-    // Check fallback category mapping
     if (cat.includes('nail') || cat.includes('le') || cat.includes('hands') || cat.includes('feet')) return true;
     return false;
   }
@@ -297,7 +295,6 @@ export default function BookingPage() {
     }
   }, [date, availableTimeSlots, time]);
 
-  // EMAIL IS NOW REQUIRED
   const validation = {
     name: name.trim().length < 2,
     mobile: mobile.trim().length < 7,
@@ -318,10 +315,6 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
-    let contactInfoString = `📱 Mobile: ${mobile.trim()}`;
-    if (email.trim()) contactInfoString += `\n✉️ Email: ${email.trim()}`;
-    const combinedNotes = `${contactInfoString}\n\n📝 Notes: ${notes.trim() || 'None'}`;
-
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
         client_name: name.trim(),
@@ -334,7 +327,7 @@ export default function BookingPage() {
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: combinedNotes,
+        notes: notes.trim() || 'None', // ─── FIX: NOTES ARE NO LONGER CLUTTERED WITH EMAIL/MOBILE ───
       })
       if (dbErr) throw new Error(dbErr.message)
 
