@@ -369,7 +369,7 @@ export default function BookingPage() {
 
       <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
         <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>✉️</span> A confirmation receipt has been sent to <span style={{ color: GOLD }}>{email}</span>
+          <span>✉️</span> Please check your inbox for the receipt <span style={{ color: GOLD }}>{email}</span>
         </p>
         <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
         <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: '0 0 8px', lineHeight: 1.5 }}>
