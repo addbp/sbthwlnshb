@@ -106,23 +106,34 @@ export default function WaiverPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
+  // ─── SIGNATURE MODAL STATE ───
+  const [showSignatureModal, setShowSignatureModal] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
 
+  // Initialize Canvas when the modal opens & lock background scrolling
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (canvas) {
-      const rect = canvas.getBoundingClientRect()
-      canvas.width = rect.width; canvas.height = 200
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        ctx.strokeStyle = BLACK;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round'
+    if (showSignatureModal && canvasRef.current) {
+      const canvas = canvasRef.current
+      const container = canvas.parentElement
+      if (container) {
+        const rect = container.getBoundingClientRect()
+        canvas.width = rect.width
+        canvas.height = rect.height
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.strokeStyle = BLACK
+          ctx.lineWidth = 3
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+        }
       }
+      document.body.style.overflow = 'hidden' // Locks background scrolling
+    } else {
+      document.body.style.overflow = 'auto' // Unlocks when closed
     }
-  }, [])
+    return () => { document.body.style.overflow = 'auto' }
+  }, [showSignatureModal])
 
   // ── UNLIMITED PAGINATION SCRAPER ──
   useEffect(() => {
@@ -225,9 +236,10 @@ export default function WaiverPage() {
     })
   }
 
+  // ─── DRAWING LOGIC FOR MODAL ───
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getCoords = (e: any, rect: DOMRect) => {
-    const isTouch = e.touches
+    const isTouch = e.touches && e.touches.length > 0
     const clientX = isTouch ? e.touches[0].clientX : e.clientX
     const clientY = isTouch ? e.touches[0].clientY : e.clientY
     return { x: clientX - rect.left, y: clientY - rect.top }
@@ -251,25 +263,32 @@ export default function WaiverPage() {
 
   const stopDrawing = () => {
     setIsDrawing(false)
-    if (canvasRef.current) {
-      setSignature(canvasRef.current.toDataURL('image/png'))
-    }
   }
 
-  const clearSignature = () => {
+  const handleClearCanvas = () => {
     const canvas = canvasRef.current
     if (canvas) {
       const ctx = canvas.getContext('2d')
       if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
-      setSignature('')
     }
+  }
+
+  const handleSaveSignature = () => {
+    if (canvasRef.current) {
+      setSignature(canvasRef.current.toDataURL('image/png'))
+    }
+    setShowSignatureModal(false)
+  }
+
+  const handleClearMainSignature = () => {
+    setSignature('')
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!name.trim()) return alert("Please enter your full name.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
-    if (!signature) return alert("Please draw your signature in the box.")
+    if (!signature) return alert("Please draw your signature.")
 
     setLoading(true)
     try {
@@ -303,9 +322,13 @@ export default function WaiverPage() {
       <style>{`
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        
+        /* The signature modal uses full screen bounds */
+        .signature-modal { position: fixed; inset: 0; background-color: ${BG}; z-index: 9999; display: flex; flex-direction: column; }
       `}</style>
 
+      {/* ── HISTORY MODAL ── */}
       {showHistoryModal && (
         <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
           <div style={{ backgroundColor: WHITE, width: '100%', maxWidth: 500, borderRadius: 20, padding: 30, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }} onClick={e => e.stopPropagation()}>
@@ -321,6 +344,47 @@ export default function WaiverPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FULL SCREEN SIGNATURE MODAL ── */}
+      {showSignatureModal && (
+        <div className="signature-modal">
+          <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Draw Your Signature</h3>
+            <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
+          </div>
+
+          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed ${GOLD}`, overflow: 'hidden' }}>
+            <canvas
+              ref={canvasRef}
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+              style={{
+                width: '100%',
+                height: '100%',
+                cursor: 'crosshair',
+                touchAction: 'none' /* CRITICAL: Prevents mobile scrolling while drawing */
+              }}
+            />
+          </div>
+
+          <div style={{ padding: '20px', display: 'flex', gap: 12, backgroundColor: WHITE, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>
+              Undo
+            </button>
+            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>
+              Save
+            </button>
           </div>
         </div>
       )}
@@ -442,7 +506,6 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* ─── NEW COMPREHENSIVE LEGAL ACKNOWLEDGEMENT ─── */}
             <Section title="Acknowledgement">
               <div style={{ display: 'flex', gap: 14, cursor: 'pointer', alignItems: 'flex-start' }} onClick={() => setAgreed(!agreed)}>
                 <div style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${agreed ? GOLD : '#ccc'}`, backgroundColor: agreed ? GOLD : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
@@ -457,40 +520,29 @@ export default function WaiverPage() {
             <Section title="Signature & Date" note="Please sign and verify the date">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
-                  <canvas
-                    ref={canvasRef}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    style={{
-                      border: '1px solid #ddd',
-                      borderRadius: 12,
-                      backgroundColor: '#fafafa',
-                      width: '100%',
-                      height: 200,
-                      cursor: 'crosshair'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={clearSignature}
-                    style={{
-                      float: 'right',
-                      marginTop: 8,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '6px 12px',
-                      cursor: 'pointer',
-                      border: 'none',
-                      background: 'transparent'
-                    }}
-                  >
-                    CLEAR SIGNATURE
-                  </button>
+
+                  {/* COMPACT VIEW OF SIGNATURE */}
+                  {signature ? (
+                    <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={signature} alt="Client Signature" style={{ width: '100%', height: 160, objectFit: 'contain', display: 'block', backgroundColor: '#fafafa' }} />
+                      <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                        <button type="button" onClick={() => setShowSignatureModal(true)} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: BLACK }}>RE-SIGN</button>
+                        <div style={{ width: 1, backgroundColor: 'rgba(0,0,0,0.05)' }} />
+                        <button type="button" onClick={handleClearMainSignature} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#C83232' }}>REMOVE</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowSignatureModal(true)}
+                      style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed ${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}
+                    >
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth="1.5"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
+                    </button>
+                  )}
+
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={LABEL}>Date Signed</label>
