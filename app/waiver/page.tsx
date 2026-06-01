@@ -352,7 +352,7 @@ export default function WaiverPage() {
       {showSignatureModal && (
         <div className="signature-modal">
           <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Draw Your Signature</h3>
+            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Please Draw Your Signature</h3>
             <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
           </div>
 
