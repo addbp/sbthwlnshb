@@ -206,13 +206,21 @@ export default function BookingPage() {
         }
 
         if (svRes.data && svRes.data.length > 0) {
-          const mappedServices = svRes.data.map(s => ({
-            id: String(s.id),
-            name: String(s.service_name || s.name || s.service || 'Unnamed Service'),
-            duration: String(s.duration || '60 min'),
-            price: Number(s.price || s.amount || 0),
-            category: String(s.category || s.type || 'Massage')
-          }))
+          const mappedServices = svRes.data.map(s => {
+            let rawName = String(s.service_name || s.name || s.service || 'Unnamed Service');
+
+            // CAPITALIZE GEL POLISH & RHINESTONES
+            if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
+            if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
+
+            return {
+              id: String(s.id),
+              name: rawName,
+              duration: String(s.duration || '60 min'),
+              price: Number(s.price || s.amount || 0),
+              category: String(s.category || s.type || 'Massage')
+            };
+          })
           setDbServices(mappedServices)
         }
       } catch (err) {
@@ -315,8 +323,12 @@ export default function BookingPage() {
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
 
+    // ─── GENERATE A TRUE UUID FOR SUPABASE ───
+    const generatedBookingId = crypto.randomUUID();
+
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
+        booking_id: generatedBookingId, // Passes strict uuid validation
         client_name: name.trim(),
         client_mobile: mobile.trim(),
         client_email: email.trim(),
@@ -327,8 +339,9 @@ export default function BookingPage() {
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: notes.trim() || 'None', // ─── FIX: NOTES ARE NO LONGER CLUTTERED WITH EMAIL/MOBILE ───
+        notes: notes.trim() || 'None',
       })
+
       if (dbErr) throw new Error(dbErr.message)
 
       // ── TRIGGER EMAIL CONFIRMATION IN BACKGROUND ──
