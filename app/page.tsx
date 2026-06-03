@@ -35,9 +35,16 @@ const NAV_ITEMS = [
   {
     key: 'membership',
     href: '/membership',
-    title: 'Membership',
+    title: 'Upgrade to Member',
     desc: 'Exclusive discounts · VIP packages · Priority booking',
     icon: <IconCrown />,
+  },
+  {
+    key: 'sabasu',
+    href: '/sabasu',
+    title: 'SABASU Cafe',
+    desc: 'Order coffee, pasta & pastries to your room',
+    icon: <IconCafe />,
   },
 ] as const
 
@@ -84,6 +91,16 @@ function IconCrown() {
   )
 }
 
+function IconCafe() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <path d="M18 8H4v7a6 6 0 0 0 6 6h2a6 6 0 0 0 6-6V8z" stroke="#C58F3B" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M18 10h2a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3h-2" stroke="#C58F3B" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 3v2M10 2v3M14 3v2" stroke="#C58F3B" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────────────────────
@@ -120,7 +137,8 @@ export default function Home() {
         .anim-nav-1   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 480ms both; }
         .anim-nav-2   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 560ms both; }
         .anim-nav-3   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 640ms both; }
-        .anim-footer  { animation: dissolve  800ms ease                        740ms both; }
+        .anim-nav-4   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 720ms both; }
+        .anim-footer  { animation: dissolve  800ms ease                        820ms both; }
 
         /* ── Nav link — dark text on light background ── */
         .nav-link {
