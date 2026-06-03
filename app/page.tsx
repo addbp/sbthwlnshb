@@ -32,6 +32,13 @@ const NAV_ITEMS = [
     desc: 'Health intake form · Liability waiver',
     icon: <IconFileText />,
   },
+  {
+    key: 'membership',
+    href: '/membership',
+    title: 'Membership',
+    desc: 'Exclusive discounts · VIP packages · Priority booking',
+    icon: <IconCrown />,
+  },
 ] as const
 
 // ─────────────────────────────────────────────────────────────
@@ -69,6 +76,14 @@ function IconFileText() {
   )
 }
 
+function IconCrown() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <path d="M3 20L5 8L10 14L13 4L16 14L21 8L23 20H3Z" stroke="#C58F3B" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────────────────────
@@ -99,12 +114,13 @@ export default function Home() {
         }
 
         .anim-logo    { animation: slideDown 680ms cubic-bezier(0.22,1,0.36,1) 60ms  both; }
-        .anim-tagline { animation: dissolve  700ms ease                         240ms both; }
-        .anim-divider { animation: dissolve  600ms ease                         340ms both; }
+        .anim-tagline { animation: dissolve  700ms ease                        240ms both; }
+        .anim-divider { animation: dissolve  600ms ease                        340ms both; }
         .anim-nav-0   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 400ms both; }
         .anim-nav-1   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 480ms both; }
         .anim-nav-2   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 560ms both; }
-        .anim-footer  { animation: dissolve  800ms ease                         660ms both; }
+        .anim-nav-3   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 640ms both; }
+        .anim-footer  { animation: dissolve  800ms ease                        740ms both; }
 
         /* ── Nav link — dark text on light background ── */
         .nav-link {

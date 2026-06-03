@@ -1,7 +1,7 @@
 'use client'
 
 // app/booking/page.tsx  —  Phase 2 Booking Engine
-// STRICT LIVE DATABASE CONNECTION
+// STRICT LIVE DATABASE CONNECTION (Memberships + Live Discounts + Smart Therapists)
 
 export const dynamic = 'force-dynamic'
 
@@ -50,36 +50,19 @@ const LABEL: React.CSSProperties = {
 // TYPES & CONSTANTS
 // ─────────────────────────────────────────────────────────────
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string }
-interface Therapist { id: string; name: string; status: string }
+interface Therapist { id: string; name: string; status: string; role: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
 const PAYMENT_METHODS = [
-  {
-    key: 'gcash', label: 'GCash',
-    qrImage: '/qr-gcash.png',
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-  },
-  {
-    key: 'maya', label: 'Maya',
-    qrImage: '/qr-maya.png',
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-  },
-  {
-    key: 'bank', label: 'Bank Transfer (QRPh)',
-    qrImage: '/qr-qrph.png',
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-  },
-  {
-    key: 'mastercard', label: 'Visa / Mastercard',
-    qrImage: '/qr-visa.png',
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="7.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /><circle cx="12.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /></svg>
-  },
-  {
-    key: 'cash', label: 'Cash',
-    qrImage: null,
-    icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-  },
+  { key: 'gcash', label: 'GCash', qrImage: '/qr-gcash.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
+  { key: 'maya', label: 'Maya', qrImage: '/qr-maya.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
+  { key: 'bank', label: 'Bank Transfer', qrImage: '/qr-qrph.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> },
+  { key: 'cash', label: 'Cash', qrImage: null, icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg> },
 ]
 
 const TIME_SLOTS = [
@@ -90,14 +73,7 @@ const TIME_SLOTS = [
   '11:00 PM', '11:30 PM', '12:00 AM'
 ]
 
-const TOP_SERVICES = [
-  'COMBINATION',
-  'SWEDISH',
-  'SABBATH SIGNATURE',
-  'VENTOSA',
-  'AROMATHERAPY',
-  'HOT STONE'
-]
+const TOP_SERVICES = ['COMBINATION', 'SWEDISH', 'SABBATH SIGNATURE', 'VENTOSA', 'AROMATHERAPY', 'HOT STONE']
 
 // ─────────────────────────────────────────────────────────────
 // COMPONENTS
@@ -125,7 +101,9 @@ function Row2({ children }: { children: React.ReactNode }) {
   return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 14, alignItems: 'end' }}>{children}</div>
 }
 
-function ServiceChip({ item, selected, onToggle }: { item: ServiceItem; selected: boolean; onToggle: () => void }) {
+function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: ServiceItem; selected: boolean; onToggle: () => void; discountPct?: number }) {
+  const actualPrice = discountPct > 0 ? item.price * (1 - discountPct / 100) : item.price;
+
   return (
     <button type="button" onClick={onToggle} style={{
       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, padding: '13px 15px',
@@ -140,7 +118,16 @@ function ServiceChip({ item, selected, onToggle }: { item: ServiceItem; selected
         </span>
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
-      <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY }}>{item.duration} · {fmt(item.price)}</span>
+      <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY }}>
+        {item.duration} · {discountPct > 0 ? (
+          <>
+            <s style={{ opacity: 0.6, marginRight: 4 }}>{fmt(item.price)}</s>
+            <strong style={{ color: GOLD }}>{fmt(actualPrice)}</strong>
+          </>
+        ) : (
+          fmt(item.price)
+        )}
+      </span>
     </button>
   )
 }
@@ -171,6 +158,17 @@ export default function BookingPage() {
   const [servicesLoad, setServicesLoad] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  // Database Arrays for Logic (Limits strictly disabled)
+  const [dbDiscounts, setDbDiscounts] = useState<Discount[]>([])
+  const [activeMemberships, setActiveMemberships] = useState<Membership[]>([])
+
+  // Auto-detected Membership State
+  const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
+
+  // Promo/Discount States
+  const [promoInput, setPromoInput] = useState('')
+  const [appliedPromo, setAppliedPromo] = useState<Discount | null>(null)
+
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
   const [time, setTime] = useState('')
@@ -196,23 +194,31 @@ export default function BookingPage() {
 
     async function loadData() {
       try {
-        const [thRes, svRes] = await Promise.all([
-          supabase.from('staff').select('*').order('name', { ascending: true }),
-          supabase.from('services').select('*')
+        // Force unlimited fetch using .limit(10000) safety nets
+        const [thRes, svRes, discRes, memRes] = await Promise.all([
+          supabase.from('staff').select('*').order('name', { ascending: true }).limit(10000),
+          supabase.from('services').select('*').limit(10000),
+          supabase.from('discounts').select('*').eq('active', true).limit(10000),
+          supabase.from('memberships').select('*').eq('status', 'Active').limit(10000)
         ])
 
         if (thRes.data) {
-          setTherapists(thRes.data.map(t => ({ id: String(t.id), name: t.name || t.therapist_name || 'Staff', status: t.status })))
+          setTherapists(thRes.data.map(t => ({
+            id: String(t.id),
+            name: t.name || t.therapist_name || 'Staff',
+            status: t.status,
+            role: t.role || t.specialty || 'Massage Therapist'
+          })))
         }
+
+        if (discRes.data) setDbDiscounts(discRes.data as Discount[])
+        if (memRes.data) setActiveMemberships(memRes.data as Membership[])
 
         if (svRes.data && svRes.data.length > 0) {
           const mappedServices = svRes.data.map(s => {
             let rawName = String(s.service_name || s.name || s.service || 'Unnamed Service');
-
-            // CAPITALIZE GEL POLISH & RHINESTONES
             if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
-
             return {
               id: String(s.id),
               name: rawName,
@@ -233,22 +239,30 @@ export default function BookingPage() {
     loadData()
   }, [supabase, getTodayStr])
 
-  const popularitySort = (a: ServiceItem, b: ServiceItem) => {
-    const aUpper = a.name.toUpperCase();
-    const bUpper = b.name.toUpperCase();
-    const aIndex = TOP_SERVICES.findIndex(t => aUpper.includes(t));
-    const bIndex = TOP_SERVICES.findIndex(t => bUpper.includes(t));
+  // ─── LIVE AUTO-DETECT MEMBERSHIP ───
+  useEffect(() => {
+    if (!mobile && !email) {
+      setDetectedMembership(null);
+      return;
+    }
+    const found = activeMemberships.find(m =>
+      (email && m.client_email && m.client_email.toLowerCase() === email.toLowerCase()) ||
+      (mobile && m.client_mobile && mobile.length >= 10 && m.client_mobile.includes(mobile))
+    );
+    setDetectedMembership(found || null);
+  }, [mobile, email, activeMemberships])
 
+  const popularitySort = (a: ServiceItem, b: ServiceItem) => {
+    const aUpper = a.name.toUpperCase(); const bUpper = b.name.toUpperCase();
+    const aIndex = TOP_SERVICES.findIndex(t => aUpper.includes(t)); const bIndex = TOP_SERVICES.findIndex(t => bUpper.includes(t));
     if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
-    if (aIndex !== -1) return -1;
-    if (bIndex !== -1) return 1;
+    if (aIndex !== -1) return -1; if (bIndex !== -1) return 1;
     return 0;
   }
 
-  // ─── FILTER SOFT GEL AND CATEGORIZE SERVICES ───
+  // ─── SERVICE & THERAPIST FILTERING ───
   const validServices = dbServices.filter(s => s.name.toUpperCase() !== 'SOFT GEL')
 
-  // Enforce these specific keywords to always map to Le Nails
   const NAIL_KEYWORDS = [
     'SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED',
     'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH',
@@ -266,8 +280,6 @@ export default function BookingPage() {
   const nailServices = validServices.filter(isNailService).sort(popularitySort)
   const massageServices = validServices.filter(s => !isNailService(s)).sort(popularitySort)
 
-  const filteredTherapists = therapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
-
   function toggleService(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -277,30 +289,60 @@ export default function BookingPage() {
   }
 
   const selectedServices = validServices.filter(s => selectedIds.has(s.id))
-  const totalAmount = selectedServices.reduce((a, s) => a + Number(s.price || 0), 0)
+
+  // ─── SMART THERAPIST FILTERING ───
+  let allowedTherapists = therapists;
+  if (selectedServices.length > 0) {
+    const hasMassage = selectedServices.some(s => !isNailService(s));
+    const hasNails = selectedServices.some(isNailService);
+
+    allowedTherapists = therapists.filter(t => {
+      const role = t.role.toLowerCase();
+      const isMassageTech = role.includes('massage') || role.includes('therapist');
+      const isNailTech = role.includes('nail');
+
+      if (hasMassage && hasNails) return isMassageTech || isNailTech;
+      if (hasMassage) return isMassageTech;
+      if (hasNails) return isNailTech;
+      return true; // Fallback
+    });
+  }
+  const filteredTherapists = allowedTherapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
+
+  // ─── DYNAMIC PRICING AND DISCOUNT CALCULATOR ───
+  const rawNailSubtotal = selectedServices.filter(isNailService).reduce((a, s) => a + Number(s.price || 0), 0)
+  const rawMassageSubtotal = selectedServices.filter(s => !isNailService(s)).reduce((a, s) => a + Number(s.price || 0), 0)
+
+  // 1. Calculate Nail Auto-Discount based on Membership Tier
+  let nailDiscountPercentage = 0;
+  if (detectedMembership) {
+    const tier = detectedMembership.membership_tier.toUpperCase();
+    if (tier === 'PLATINUM' || tier === 'VIP') nailDiscountPercentage = 10;
+    else if (tier === 'BASIC' || tier === 'GOLD') nailDiscountPercentage = 5;
+  }
+  const membershipNailDeduction = rawNailSubtotal * (nailDiscountPercentage / 100);
+  const subtotalAfterMembership = (rawNailSubtotal - membershipNailDeduction) + rawMassageSubtotal;
+
+  // 2. Apply Custom Promo Code / Database Discount to the remaining total
+  let promoDeduction = 0;
+  if (appliedPromo) {
+    promoDeduction = subtotalAfterMembership * (Number(appliedPromo.discount_percentage) / 100);
+  }
+
+  const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
   const availableTimeSlots = date === getTodayStr() ? TIME_SLOTS.filter(t => {
     const match = t.match(/(\d+):(\d+)\s(AM|PM)/);
     if (!match) return true;
-    let h = parseInt(match[1]);
-    const m = parseInt(match[2]);
-    const ampm = match[3];
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-
-    const now = new Date();
-    const currH = now.getHours();
-    const currM = now.getMinutes();
-
-    if (h > currH) return true;
-    if (h === currH && m > currM) return true;
+    let h = parseInt(match[1]); const m = parseInt(match[2]); const ampm = match[3];
+    if (ampm === 'PM' && h !== 12) h += 12; if (ampm === 'AM' && h === 12) h = 0;
+    const now = new Date(); const currH = now.getHours(); const currM = now.getMinutes();
+    if (h > currH) return true; if (h === currH && m > currM) return true;
     return false;
   }) : TIME_SLOTS;
 
   useEffect(() => {
-    if (time && !availableTimeSlots.includes(time)) {
-      setTime('');
-    }
+    if (time && !availableTimeSlots.includes(time)) setTime('');
   }, [date, availableTimeSlots, time]);
 
   const validation = {
@@ -315,6 +357,25 @@ export default function BookingPage() {
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
+  // ─── APPLY PROMO LOGIC ───
+  function handleApplyPromo() {
+    if (!promoInput.trim()) {
+      setAppliedPromo(null);
+      return;
+    }
+    const match = dbDiscounts.find(d =>
+      d.name.toLowerCase() === promoInput.trim().toLowerCase() ||
+      (d.code && d.code.toLowerCase() === promoInput.trim().toLowerCase())
+    );
+    if (match) {
+      setAppliedPromo(match);
+    } else {
+      alert("Invalid or expired promo code.");
+      setAppliedPromo(null);
+      setPromoInput('');
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
@@ -322,46 +383,43 @@ export default function BookingPage() {
     setLoading(true); setSubmitError(null)
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
-
-    // ─── GENERATE A TRUE UUID FOR SUPABASE ───
     const generatedBookingId = crypto.randomUUID();
+
+    let trackingNotes = notes.trim();
+    if (detectedMembership) trackingNotes += `\n\n[SYSTEM: ${detectedMembership.membership_tier} MEMBERSHIP DETECTED - ${nailDiscountPercentage}% OFF NAILS APPLIED]`;
+    if (appliedPromo) trackingNotes += `\n[SYSTEM: PROMO CODE '${appliedPromo.name}' - ${appliedPromo.discount_percentage}% OFF APPLIED]`;
 
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
-        booking_id: generatedBookingId, // Passes strict uuid validation
+        booking_id: generatedBookingId,
         client_name: name.trim(),
         client_mobile: mobile.trim(),
         client_email: email.trim(),
         service_name: selectedServices.map(s => s.name).join(', '),
-        price: totalAmount,
+        price: finalTotalAmount,
         therapist_name: selectedTherapist?.name ?? null,
         appointment_date: date,
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: notes.trim() || 'None',
+        notes: trackingNotes.trim() || 'None',
       })
 
       if (dbErr) throw new Error(dbErr.message)
 
-      // ── TRIGGER EMAIL CONFIRMATION IN BACKGROUND ──
       try {
         await fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: name.trim(),
-            email: email.trim(),
-            date: date,
-            time: time,
+            name: name.trim(), email: email.trim(), date: date, time: time,
             services: selectedServices.map(s => s.name).join(', '),
-            totalAmount: totalAmount
+            totalAmount: finalTotalAmount
           })
         })
       } catch (e) {
         console.error("Email notification skipped", e)
       }
-
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed.')
@@ -370,7 +428,6 @@ export default function BookingPage() {
 
   const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
 
-  // ── UPDATED SUCCESS SCREEN ──
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
       <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
@@ -404,7 +461,6 @@ export default function BookingPage() {
       <style>{`
         .bk-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .bk-in:hover:not(:focus){border-color:rgba(197,143,59,0.45)!important;}
-        
         .svc-scroll::-webkit-scrollbar { width: 6px; }
         .svc-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
@@ -443,7 +499,23 @@ export default function BookingPage() {
               </Row2>
             </Section>
 
-            <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected · ${fmt(totalAmount)} total` : 'Choose one or more'}>
+            <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
+
+              {/* ── LIVE MEMBERSHIP DETECTOR BANNER ── */}
+              {detectedMembership && (
+                <div style={{ backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.3)', padding: '16px 20px', borderRadius: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', backgroundColor: GOLD, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontSize: 20 }}>👑</div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: BLACK, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>
+                      {detectedMembership.membership_tier} Member Detected
+                    </div>
+                    <div style={{ fontSize: 12, color: '#666', lineHeight: 1.4 }}>
+                      Automatically applying <strong>{nailDiscountPercentage}% OFF</strong> to all Le Nails services.
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {servicesLoad ? (
                 <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.5)', fontStyle: 'italic' }}>Loading live services from database...</p>
               ) : validServices.length === 0 ? (
@@ -465,7 +537,15 @@ export default function BookingPage() {
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
-                        {nailServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
+                        {nailServices.map(s => (
+                          <ServiceChip
+                            key={s.id}
+                            item={s}
+                            selected={selectedIds.has(s.id)}
+                            onToggle={() => toggleService(s.id)}
+                            discountPct={nailDiscountPercentage} // Passes visual discount natively to the chip!
+                          />
+                        ))}
                       </div>
                     </div>
                   )}
@@ -483,23 +563,21 @@ export default function BookingPage() {
                     <option value="">Select time…</option>
                     {availableTimeSlots.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
-                  {date === getTodayStr() && availableTimeSlots.length === 0 && (
-                    <p style={{ fontSize: 12, color: '#8B3A3A', marginTop: 8, fontWeight: 600 }}>No remaining time slots for today.</p>
-                  )}
                 </Field>
               </Row2>
+
+              {/* SMART THERAPIST DROPDOWN */}
               <Field label={therapistLoad ? 'Therapist (loading…)' : `Therapist`}>
-                <input
-                  className="bk-in"
-                  style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }}
-                  placeholder="Search for a therapist..."
-                  value={therapistSearch}
-                  onChange={e => setTherapistSearch(e.target.value)}
-                />
+                <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a therapist..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
                   <option value="">Choose your therapist (optional)…</option>
                   {filteredTherapists.map(t => <option key={t.id} value={t.id}>{t.name}{t.status ? ` (${t.status})` : ''}</option>)}
                 </select>
+                {selectedServices.length > 0 && (
+                  <p style={{ fontSize: 11, color: '#666', fontStyle: 'italic', marginTop: 8, marginBottom: 0 }}>
+                    Showing specific staff for selected services.
+                  </p>
+                )}
               </Field>
             </Section>
 
@@ -519,19 +597,48 @@ export default function BookingPage() {
               {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
                 <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
                   <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
-
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={selectedPaymentMethodObj.qrImage}
-                    alt={`QR Code for ${selectedPaymentMethodObj.label}`}
-                    style={{ width: '100%', maxWidth: 350, height: 'auto', objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8 }}
-                  />
+                  <img src={selectedPaymentMethodObj.qrImage} alt={`QR Code for ${selectedPaymentMethodObj.label}`} style={{ width: '100%', maxWidth: 350, height: 'auto', objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8 }} />
+                </div>
+              )}
+            </Section>
 
-                  <div style={{ marginTop: 16, padding: '12px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8 }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: '#3D7A4A', margin: '0 0 4px 0' }}>Transaction Receipt Required</p>
-                    <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.7)', margin: 0, lineHeight: 1.4 }}>
-                      Please save a screenshot of your successful transfer and <strong>present it at the front desk</strong> upon checking in.
-                    </p>
+            {/* ─── LIVE DATABASE PROMO CODES ─── */}
+            <Section title="Discounts & Promos" note="Type or select an option">
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input
+                    list="db-discounts"
+                    className="bk-in"
+                    style={{ ...INPUT, backgroundImage: 'none' }}
+                    value={promoInput}
+                    onChange={e => {
+                      setPromoInput(e.target.value);
+                      if (!e.target.value) setAppliedPromo(null);
+                    }}
+                    placeholder="e.g. Senior, PWD, VIP Discount..."
+                  />
+                  <datalist id="db-discounts">
+                    {dbDiscounts.map(d => (
+                      <option key={d.id} value={d.name} />
+                    ))}
+                  </datalist>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyPromo}
+                  style={{ padding: '0 24px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}
+                >
+                  Apply
+                </button>
+              </div>
+
+              {appliedPromo && (
+                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 16, color: '#3D7A4A' }}>✓</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#3D7A4A', textTransform: 'uppercase' }}>{appliedPromo.name} APPLIED</div>
+                    <div style={{ fontSize: 12, color: '#2A2A2A' }}>{appliedPromo.discount_percentage}% off remaining total</div>
                   </div>
                 </div>
               )}
@@ -549,7 +656,7 @@ export default function BookingPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button type="submit" disabled={loading || !isValid} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading || !isValid ? 'not-allowed' : 'pointer', opacity: loading || !isValid ? 0.4 : 1, transition: 'opacity 200ms ease' }}>
-                {loading ? 'Sending request…' : `Confirm Booking${totalAmount > 0 ? ` · ${fmt(totalAmount)}` : ''}`}
+                {loading ? 'Sending request…' : `Confirm Booking · ${fmt(finalTotalAmount)}`}
               </button>
             </div>
 
