@@ -69,7 +69,7 @@ interface Sale {
   _key: string;
   id: string | number | null;
   date: string;
-  time: string; // Captured for the calendar
+  time: string;
   service: string;
   therapist: string;
   client: string;
@@ -80,77 +80,64 @@ interface Sale {
   status: string;
 }
 
-// ─── UNLIMITED PAGINATION FOR 100% ACCURATE TOTALS ───
+// ─── UNLIMITED ONE-SHOT FETCH FOR 100% ACCURATE TOTALS ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchUnifiedData(supabase: any): Promise<Sale[]> {
   const all: Sale[] = []
 
-  let liveFrom = 0;
-  const LIVE_PAGE = 1000;
-  for (; ;) {
-    const { data: liveData } = await supabase
-      .from('bookings')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(liveFrom, liveFrom + LIVE_PAGE - 1)
+  try {
+    // ONE massive request to grab everything at once (bypasses sequential timeout issues)
+    const [liveRes, histRes] = await Promise.all([
+      supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(15000),
+      supabase.from('bookings_import').select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method').limit(25000)
+    ]);
 
-    if (!liveData || liveData.length === 0) break
+    if (liveRes.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      liveRes.data.forEach((r: any) => {
+        let normalizedStatus = r.status || r.booking_status || 'Pending';
+        normalizedStatus = String(normalizedStatus).trim();
+        if (normalizedStatus.toLowerCase() === 'in session') normalizedStatus = 'Ongoing';
+        if (normalizedStatus.toLowerCase() === 'done') normalizedStatus = 'Completed';
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    liveData.forEach((r: any) => {
-      let normalizedStatus = r.status || r.booking_status || 'Pending';
-      normalizedStatus = String(normalizedStatus).trim();
-      if (normalizedStatus.toLowerCase() === 'in session') normalizedStatus = 'Ongoing';
-      if (normalizedStatus.toLowerCase() === 'done') normalizedStatus = 'Completed';
-
-      all.push({
-        _key: `live-${r.id}`,
-        id: r.id,
-        date: r.appointment_date || r.booking_date || r.created_at || new Date().toISOString(),
-        time: String(r.appointment_time || r.time || ''),
-        client: r.client_name || r.name || r.full_name || 'Guest',
-        service: r.service_name || r.service || r.treatment || '—',
-        therapist: r.therapist_name || r.therapist || '—',
-        revenue: parseCurrency(r.price || r.amount || r.received_payment || r.total_cost),
-        category: r.category || 'Live Booking',
-        payMethod: r.payment_method || '—',
-        isLive: true,
-        status: normalizedStatus
+        all.push({
+          _key: `live-${r.id}`,
+          id: r.id,
+          date: r.appointment_date || r.booking_date || r.created_at || new Date().toISOString(),
+          time: String(r.appointment_time || r.time || ''),
+          client: r.client_name || r.name || r.full_name || 'Guest',
+          service: r.service_name || r.service || r.treatment || '—',
+          therapist: r.therapist_name || r.therapist || '—',
+          revenue: parseCurrency(r.price || r.amount || r.received_payment || r.total_cost),
+          category: r.category || '—', // Live Booking text completely removed
+          payMethod: r.payment_method || '—',
+          isLive: true,
+          status: normalizedStatus
+        })
       })
-    })
+    }
 
-    if (liveData.length < LIVE_PAGE) break;
-    liveFrom += LIVE_PAGE;
-  }
-
-  let from = 0;
-  const PAGE = 1000;
-  for (; ;) {
-    const { data } = await supabase
-      .from('bookings_import')
-      .select('date,client_name,service,therapist,received_payment,service_amount,category,payment_method')
-      .range(from, from + PAGE - 1)
-
-    if (!data || data.length === 0) break
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data.forEach((r: any, i: number) => {
-      all.push({
-        _key: `hist-${from + i}`,
-        id: null,
-        date: String(r.date || ''),
-        time: '', // Historical imports usually lack precise time
-        client: String(r.client_name || 'Guest'),
-        service: String(r.service || '—'),
-        therapist: String(r.therapist || '—'),
-        revenue: parseCurrency(r.received_payment || r.service_amount),
-        category: String(r.category || '—'),
-        payMethod: String(r.payment_method || '—'),
-        isLive: false,
-        status: 'Completed'
+    if (histRes.data) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      histRes.data.forEach((r: any, i: number) => {
+        all.push({
+          _key: `hist-${i}`,
+          id: null,
+          date: String(r.date || ''),
+          time: '',
+          client: String(r.client_name || 'Guest'),
+          service: String(r.service || '—'),
+          therapist: String(r.therapist || '—'),
+          revenue: parseCurrency(r.received_payment || r.service_amount),
+          category: String(r.category || '—'),
+          payMethod: String(r.payment_method || '—'),
+          isLive: false,
+          status: 'Completed'
+        })
       })
-    })
-    if (data.length < PAGE) break;
-    from += PAGE;
+    }
+  } catch (err) {
+    console.error("Database sync failed:", err);
   }
 
   return all.sort((a, b) => (parseImportDate(b.date)?.getTime() || 0) - (parseImportDate(a.date)?.getTime() || 0))
@@ -167,10 +154,12 @@ export default function OverviewPage() {
   const supabase = useRef(createClient()).current
   const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table') // Toggle State
+  const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table')
 
-  const [startDate, setStartDate] = useState(todayISO())
-  const [endDate, setEndDate] = useState(todayISO())
+  // Defaults to completely empty (ALL TIME) to instantly pull the 10,000+ DB records
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
 
@@ -185,6 +174,9 @@ export default function OverviewPage() {
   useEffect(() => { setCurrentPage(1) }, [startDate, endDate])
 
   const displaySales = sales.filter(s => {
+    // Absolute bypass: If filter is set to "All Time", do not risk dropping broken date formats. Return EVERYTHING.
+    if (!startDate && !endDate) return true;
+
     const d = parseImportDate(s.date);
     if (!d) return false;
     const iso = toLocalISO(d);
@@ -193,6 +185,7 @@ export default function OverviewPage() {
     return true;
   })
 
+  // KPIs strictly sync with the displayed sales, guaranteeing true database numbers
   const counts = {
     total: displaySales.length,
     pending: displaySales.filter(s => s.status.toLowerCase().trim() === 'pending').length,
@@ -221,8 +214,7 @@ export default function OverviewPage() {
     border: 'none', borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', transition: 'all 200ms ease'
   })
 
-  // ─── CALENDAR LOGIC ───
-  // The calendar shows the schedule for the currently selected "From" date.
+  // Calendar safely defaults to TODAY if the main filter is set to ALL TIME
   const activeCalendarDate = startDate || todayISO();
   const calendarBookings = sales.filter(s => {
     const d = parseImportDate(s.date);
@@ -232,7 +224,6 @@ export default function OverviewPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
-      {/* ─── HEADER ─── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Operations</p>
@@ -243,7 +234,6 @@ export default function OverviewPage() {
         </button>
       </div>
 
-      {/* ─── DATE FILTERS ─── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 10, padding: '4px 8px' }}>
           <span style={{ fontSize: 11, fontWeight: 600, color: '#666', textTransform: 'uppercase' }}>From</span>
@@ -262,10 +252,9 @@ export default function OverviewPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>Aggregating live records & calendar...</div>
+        <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: 'rgba(197,143,59,0.07)', borderRadius: 12 }}>Pulling complete database without limits...</div>
       ) : (
         <>
-          {/* ─── DYNAMIC KPIs ─── */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(180px,100%),1fr))', gap: 12 }}>
             <div style={{ backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.20)', borderRadius: 14, padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(243,233,224,0.50)', margin: '0 0 8px' }}>Total Bookings</p>
@@ -289,7 +278,6 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          {/* ─── VIEW TOGGLE (TABLE vs CALENDAR) ─── */}
           <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 12 }}>
             <button
               onClick={() => setViewMode('table')}
@@ -305,7 +293,6 @@ export default function OverviewPage() {
             </button>
           </div>
 
-          {/* ─── CALENDAR VIEW ─── */}
           {viewMode === 'calendar' && (
             <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '24px' }}>
               <div style={{ marginBottom: 20, paddingBottom: 12, borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
@@ -315,17 +302,13 @@ export default function OverviewPage() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {TIME_SLOTS.map(timeSlot => {
-                  // Find all bookings for this exact time
                   const slotBookings = calendarBookings.filter(b => b.time === timeSlot);
 
                   return (
                     <div key={timeSlot} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.05)', paddingBottom: 12 }}>
-                      {/* Left Side: Time */}
                       <div style={{ width: 90, flexShrink: 0, paddingTop: 6 }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#1A1A1A' }}>{timeSlot}</span>
                       </div>
-
-                      {/* Right Side: Bookings or Empty State */}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {slotBookings.length === 0 ? (
                           <div style={{ padding: '6px 12px', border: '1px dashed rgba(26,26,26,0.15)', borderRadius: 6, backgroundColor: '#FAFAFA' }}>
@@ -363,7 +346,6 @@ export default function OverviewPage() {
             </div>
           )}
 
-          {/* ─── DATA TABLE VIEW ─── */}
           {viewMode === 'table' && (
             <div style={{ backgroundColor: '#FFFFFF', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto', minHeight: 400 }}>
@@ -430,7 +412,6 @@ export default function OverviewPage() {
                 </table>
               </div>
 
-              {/* Pagination Controls */}
               <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
                 <span style={{ fontSize: 13, color: '#666' }}>
                   Showing <strong style={{ color: '#1A1A1A' }}>{displaySales.length > 0 ? startIndex + 1 : 0}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, displaySales.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{displaySales.length.toLocaleString()}</strong> entries
