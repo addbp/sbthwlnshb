@@ -49,6 +49,8 @@ interface ClientRecord {
   name: string;
   totalVisits: number;
   totalSpend: number;
+  membershipTier: string;
+  remainingMassages: string;
   lastVisitDate: Date | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   history: any[];
@@ -75,6 +77,8 @@ export default function ClientsPage() {
     const allBookings: any[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allWaivers: any[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allMemberships: any[] = []
 
     // 1. Fetch HISTORICAL Bookings
     let fromHist = 0
@@ -118,7 +122,22 @@ export default function ClientsPage() {
       fromWaiver += PAGE
     }
 
-    // 4. Aggregate Data into Unified Client Profiles
+    // 4. Fetch ALL ACTIVE MEMBERSHIPS (Unlimited Fetch Logic)
+    let fromMem = 0
+    for (; ;) {
+      const { data, error } = await supabase
+        .from('memberships')
+        .select('client_name, membership_tier, remaining_massages')
+        .eq('status', 'Active')
+        .range(fromMem, fromMem + PAGE - 1)
+
+      if (error || !data || data.length === 0) break
+      allMemberships.push(...data)
+      if (data.length < PAGE) break
+      fromMem += PAGE
+    }
+
+    // 5. Aggregate Data into Unified Client Profiles
     const clientMap = new Map<string, ClientRecord>()
 
     const getClient = (rawName: string) => {
@@ -129,6 +148,8 @@ export default function ClientsPage() {
           name: name, // Preserve original capitalization
           totalVisits: 0,
           totalSpend: 0,
+          membershipTier: 'N/A', // Default to Non-Member
+          remainingMassages: '—', // Default to blank
           lastVisitDate: null,
           history: [],
           waiver: null
@@ -159,6 +180,16 @@ export default function ClientsPage() {
       if (d && (!client.lastVisitDate || d.getTime() > client.lastVisitDate.getTime())) {
         client.lastVisitDate = d
       }
+    })
+
+    // Process Memberships (Attach to matching client profile)
+    allMemberships.forEach(m => {
+      const name = m.client_name
+      if (!name || name.toLowerCase() === 'guest' || name === '—') return
+
+      const client = getClient(name)
+      client.membershipTier = (m.membership_tier || 'N/A').toUpperCase()
+      client.remainingMassages = m.remaining_massages || '—'
     })
 
     // Process Waivers (Attach to matching client profile)
@@ -216,7 +247,9 @@ export default function ClientsPage() {
 
             <div style={{ padding: '24px', borderBottom: '1px solid rgba(197,143,59,0.2)', backgroundColor: '#1A1A1A', color: '#FDFCF8', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: '#C58F3B', textTransform: 'uppercase', margin: '0 0 6px' }}>Client Profile</p>
+                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: '#C58F3B', textTransform: 'uppercase', margin: '0 0 6px' }}>
+                  Client Profile {selectedClient.membershipTier !== 'N/A' && <span style={{ backgroundColor: '#C58F3B', color: '#1A1A1A', padding: '2px 6px', borderRadius: 4, marginLeft: 8 }}>{selectedClient.membershipTier}</span>}
+                </p>
                 <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 28, margin: 0, color: '#FDFCF8' }}>{selectedClient.name}</h2>
               </div>
               <button onClick={() => setSelectedClient(null)} style={{ background: 'none', border: 'none', color: '#C58F3B', fontSize: 28, cursor: 'pointer', lineHeight: 1 }}>&times;</button>
@@ -341,7 +374,7 @@ export default function ClientsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                    {['Name', 'Total Visits', 'Total Spend', 'Last Visit'].map(h => (
+                    {['Name', 'Total Visits', 'Total Spend', 'Membership', 'Remaining', 'Last Visit'].map(h => (
                       <th key={h} style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -359,10 +392,28 @@ export default function ClientsPage() {
                       </td>
                       <td style={{ padding: '14px 20px', color: '#666' }}>{c.totalVisits}</td>
                       <td style={{ padding: '14px 20px', fontWeight: 700, color: '#1A1A1A' }}>₱{c.totalSpend.toLocaleString()}</td>
+
+                      {/* NEW MEMBERSHIP TIER COLUMN */}
+                      <td style={{ padding: '14px 20px' }}>
+                        <span style={{
+                          padding: '4px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap',
+                          backgroundColor: c.membershipTier !== 'N/A' ? 'rgba(197,143,59,0.15)' : '#f5f5f5',
+                          color: c.membershipTier !== 'N/A' ? '#1A1A1A' : '#888',
+                          border: c.membershipTier !== 'N/A' ? '1px solid rgba(197,143,59,0.4)' : '1px solid transparent'
+                        }}>
+                          {c.membershipTier}
+                        </span>
+                      </td>
+
+                      {/* NEW REMAINING MASSAGES COLUMN */}
+                      <td style={{ padding: '14px 20px', color: c.remainingMassages !== '—' ? '#3D7A4A' : '#666', fontWeight: c.remainingMassages !== '—' ? 700 : 400 }}>
+                        {c.remainingMassages}
+                      </td>
+
                       <td style={{ padding: '14px 20px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(c.lastVisitDate)}</td>
                     </tr>
                   ))}
-                  {paginatedClients.length === 0 && <tr><td colSpan={4} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No clients found.</td></tr>}
+                  {paginatedClients.length === 0 && <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No clients found.</td></tr>}
                 </tbody>
               </table>
             </div>
