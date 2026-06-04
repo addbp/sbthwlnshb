@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 5 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Interactive Descriptions + Packages)
+// app/booking/page.tsx  —  Phase 6 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Printable Receipts)
 
 export const dynamic = 'force-dynamic'
 
@@ -127,8 +127,6 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
           `${item.duration} · ${fmt(item.price)}`
         )}
       </span>
-
-      {/* ─── DESCRIPTION ONLY SHOWS WHEN SELECTED ─── */}
       {selected && item.description && (
         <div style={{ marginTop: 8, padding: '10px 12px', backgroundColor: WHITE, borderRadius: 6, border: '1px solid rgba(197,143,59,0.15)', width: '100%', boxSizing: 'border-box' }}>
           <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.65)', lineHeight: 1.5, fontFamily: BODY, display: 'block' }}>
@@ -177,7 +175,6 @@ export default function BookingPage() {
 
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
 
-  // Custom Dynamic Dropdown States (Defaults to None)
   const [discountMode, setDiscountMode] = useState<string>('none')
   const [customDiscountVal, setCustomDiscountVal] = useState<string>('')
 
@@ -253,11 +250,9 @@ export default function BookingPage() {
             if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
 
-            // ─── PERFECT DESCRIPTION & PACKAGE MAPPER ───
             let desc = '';
             const upName = rawName.toUpperCase();
 
-            // Packages & Combos Mapping
             if (upName === 'PACKAGE A') desc = "Mani, Pedi, Foot Spa";
             else if (upName === 'PACKAGE B') desc = "ManiGel ORLY, Pedi, Foot Spa";
             else if (upName === 'PACKAGE C') desc = "ManiGel CUCCIO, Pedi, Foot Massage";
@@ -267,8 +262,6 @@ export default function BookingPage() {
             else if (upName.includes('PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE') || (upName.includes('WELLNESS SUITE') && upName.includes('MASSAGE'))) desc = "Duration: 3 hours inclusions: Private Shower, Jacuzzi, Sauna and 60 minutes Regular Massage (Swedish, Foot Reflexology or Shiatsu).";
             else if (upName.includes('PRIVATE WELLNESS SUITE')) desc = "A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session. Includes: Private Shower, Sauna session (4 pax max), Jacuzzi bath experience (for 2).";
             else if (upName.includes('BODY SCRUBS WITH REGULAR MASSAGE')) desc = "Duration: 2 ½ hours. 20 minutes scalp massage - Cream bath or oil scalp massage. 40 minutes - A full-body exfoliation treatment using natural scrubs to remove dead skin cells, leaving the skin smooth and refreshed. 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu.";
-
-            // Standard Massage Mapping
             else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
               if (upName.includes('SABBATH SIGNATURE MASSAGE')) desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
               else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
@@ -327,7 +320,6 @@ export default function BookingPage() {
     return 0;
   }
 
-  // ─── STRICT EXCLUSION FILTER (REMOVES SAUNA, SHOWER, ETC) ───
   const isExcluded = (name: string) => {
     const n = name.toUpperCase();
     return n === 'SOFT GEL' ||
@@ -357,7 +349,6 @@ export default function BookingPage() {
     return false;
   }
 
-  // ─── CATEGORY ORGANIZATION ───
   const packageServices = allAvailableServices.filter(s => {
     const n = s.name.toUpperCase();
     return n.startsWith('PACKAGE') || n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE');
@@ -373,7 +364,7 @@ export default function BookingPage() {
     const n = s.name.toUpperCase();
     if (n.startsWith('PACKAGE') || n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE')) return false;
     if (isNailService(s)) return false;
-    if (s.category === 'Custom') return false; // Render custom separately
+    if (s.category === 'Custom') return false;
     return true;
   }).sort(popularitySort);
 
@@ -420,7 +411,6 @@ export default function BookingPage() {
   }
   const filteredTherapists = allowedTherapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
-  // ─── DYNAMIC PRICING ENGINE ───
   const rawNailSubtotal = selectedServices.filter(isNailService).reduce((a, s) => a + Number(s.price || 0), 0)
   const rawMassageSubtotal = selectedServices.filter(s => !isNailService(s)).reduce((a, s) => a + Number(s.price || 0), 0)
 
@@ -433,7 +423,6 @@ export default function BookingPage() {
   const membershipNailDeduction = rawNailSubtotal * (nailDiscountPercentage / 100);
   const subtotalAfterMembership = (rawNailSubtotal - membershipNailDeduction) + rawMassageSubtotal;
 
-  // Global Dropdown Application Evaluator
   let promoDeduction = 0;
   let appliedPromoText = '';
 
@@ -546,33 +535,101 @@ export default function BookingPage() {
   const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
   const formatMiStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
   const displayFullName = `${firstName.trim()}${formatMiStr} ${lastName.trim()}`;
+  const selectedTherapistDisplay = therapists.find(t => t.id === therapistId)?.name || 'Unassigned';
 
+  // ─── FINAL SUCCESS / PRINT VIEW ───
   if (submitted) return (
-    <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
-      <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
-      <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
+    <>
+      <style>{`
+        @media print {
+          @page { margin: 0; size: auto; }
+          body { margin: 1cm; background: #FFF !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+        }
+        .print-only { display: none; }
+      `}</style>
 
-      <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-        Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
-      </p>
+      {/* STANDARD ONSCREEN CONFIRMATION */}
+      <div className="no-print" style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
+        <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
+        <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
-      <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-        <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>✉️</span> Please check your inbox for the receipt <span style={{ color: GOLD }}>{email}</span>
+        <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
+          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
         </p>
-        <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
-        <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: '0 0 8px', lineHeight: 1.5 }}>
-          <strong style={{ color: BLACK }}>Important:</strong> Sabbath Spa will confirm your appointment 1 hour before your check-in via SMS or Call.
-        </p>
-        <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: 0, lineHeight: 1.5 }}>
-          For immediate concerns, please contact us at <strong style={{ color: BLACK }}>0917 199 7772</strong>.
-        </p>
+
+        <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+          <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>✉️</span> Please check your inbox for the receipt <span style={{ color: GOLD }}>{email}</span>
+          </p>
+          <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
+          <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: '0 0 8px', lineHeight: 1.5 }}>
+            <strong style={{ color: BLACK }}>Important:</strong> Sabbath Spa will confirm your appointment 1 hour before your check-in via SMS or Call.
+          </p>
+          <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: 0, lineHeight: 1.5 }}>
+            For immediate concerns, please contact us at <strong style={{ color: BLACK }}>0917 199 7772</strong>.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button onClick={() => window.print()} style={{ height: 50, padding: '0 32px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
+            Print Receipt
+          </button>
+          <button onClick={() => window.location.reload()} style={{ height: 50, padding: '0 32px', backgroundColor: 'transparent', color: BLACK, border: '1px solid rgba(26,26,26,0.2)', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
+            Book Another Session
+          </button>
+        </div>
       </div>
 
-      <button onClick={() => window.location.reload()} style={{ height: 50, padding: '0 32px', backgroundColor: 'transparent', color: BLACK, border: '1px solid rgba(26,26,26,0.2)', borderRadius: 10, fontSize: 12, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
-        Book Another Session
-      </button>
-    </div>
+      {/* HIDDEN POS PRINT TEMPLATE */}
+      <div className="print-only" style={{ padding: '20px', maxWidth: '400px', margin: '0 auto', color: '#000', fontFamily: 'monospace', fontSize: '14px', lineHeight: 1.5 }}>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <h1 style={{ margin: '0 0 5px', fontSize: 22, fontWeight: 'bold' }}>SABBATH SPA</h1>
+          <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Wellness Hub</p>
+          <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Booking Receipt</p>
+        </div>
+
+        <div style={{ marginBottom: 15 }}>
+          <p style={{ margin: 0 }}><strong>Date:</strong> {date}</p>
+          <p style={{ margin: 0 }}><strong>Time:</strong> {time}</p>
+          <p style={{ margin: 0 }}><strong>Client:</strong> {displayFullName}</p>
+          <p style={{ margin: 0 }}><strong>Therapist:</strong> {selectedTherapistDisplay}</p>
+        </div>
+
+        <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '15px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: 10 }}>
+            <span>Item</span>
+            <span>Amount</span>
+          </div>
+
+          {selectedServices.map(s => (
+            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+              <span style={{ paddingRight: 10 }}>{s.name}</span>
+              <span>{fmt(s.price)}</span>
+            </div>
+          ))}
+
+          {promoDeduction > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontStyle: 'italic' }}>
+              <span>Discount ({appliedPromoText})</span>
+              <span>-{fmt(promoDeduction)}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 18 }}>
+          <span>Total:</span>
+          <span>{fmt(finalTotalAmount)}</span>
+        </div>
+
+        <div style={{ marginTop: 30, textAlign: 'center' }}>
+          <p style={{ margin: 0, textTransform: 'uppercase', fontSize: 12 }}>Payment Method: {selectedPaymentMethodObj?.label}</p>
+          <p style={{ margin: '15px 0 0', fontSize: 12 }}>Thank you for choosing Sabbath Spa!</p>
+          <p style={{ margin: 0, fontSize: 10 }}>Have a blessed and relaxing day.</p>
+        </div>
+      </div>
+    </>
   )
 
   return (
@@ -652,7 +709,6 @@ export default function BookingPage() {
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                  {/* DEDICATED PACKAGES & COMBOS CATEGORY */}
                   {packageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Wellness Suites</div>
@@ -688,7 +744,6 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {/* Render Ad-Hoc Custom Services */}
                   {customServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Custom Services</div>
@@ -698,7 +753,6 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {/* Custom Service Input Generator */}
                   <div style={{ marginTop: 10, padding: 16, backgroundColor: 'rgba(26,26,26,0.02)', borderRadius: 12, border: '1px dashed rgba(26,26,26,0.2)' }}>
                     <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#666', marginBottom: 12 }}>Add Custom Service</p>
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -764,7 +818,7 @@ export default function BookingPage() {
               )}
             </Section>
 
-            {/* ─── DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
+            {/* ─── EXPANDED DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
             <Section title="Discounts & Promos" note="Select active promo options directly">
               <Field label="Choose Available Discount">
                 <div style={{ display: 'flex', gap: 10 }}>
