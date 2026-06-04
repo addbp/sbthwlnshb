@@ -33,7 +33,8 @@ const INPUT: React.CSSProperties = {
   fontSize: 16,
   color: BLACK,
   fontFamily: BODY,
-  outline: 'none'
+  outline: 'none',
+  boxSizing: 'border-box'
 }
 
 const LABEL: React.CSSProperties = {
@@ -91,7 +92,11 @@ export default function WaiverPage() {
   }
   const supabase = supabaseRef.current
 
-  const [name, setName] = useState('')
+  // Separate Explicit Form States
+  const [firstName, setFirstName] = useState('')
+  const [middleInitial, setMiddleInitial] = useState('')
+  const [lastName, setLastName] = useState('')
+
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set())
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
   const [agreed, setAgreed] = useState(false)
@@ -106,10 +111,23 @@ export default function WaiverPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
-  // ─── SIGNATURE MODAL STATE ───
+  // Signature Canvas States
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
+
+  const autoCapitalize = (val: string) => {
+    if (!val) return '';
+    return val.charAt(0).toUpperCase() + val.slice(1);
+  }
+
+  // Derived tracking calculations based on the structural split inputs
+  const currentFullName = useMemo(() => {
+    const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
+    return `${firstName.trim()}${miStr} ${lastName.trim()}`.trim();
+  }, [firstName, middleInitial, lastName])
+
+  const normalizedInput = currentFullName.toLowerCase()
 
   // Initialize Canvas when the modal opens & lock background scrolling
   useEffect(() => {
@@ -128,9 +146,9 @@ export default function WaiverPage() {
           ctx.lineJoin = 'round'
         }
       }
-      document.body.style.overflow = 'hidden' // Locks background scrolling
+      document.body.style.overflow = 'hidden'
     } else {
-      document.body.style.overflow = 'auto' // Unlocks when closed
+      document.body.style.overflow = 'auto'
     }
     return () => { document.body.style.overflow = 'auto' }
   }, [showSignatureModal])
@@ -204,8 +222,6 @@ export default function WaiverPage() {
     fetchAllRecords()
   }, [supabase])
 
-  const normalizedInput = name.trim().toLowerCase()
-
   const matchingHistory = useMemo(() => {
     return normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : []
   }, [allRecords, normalizedInput])
@@ -213,10 +229,37 @@ export default function WaiverPage() {
   const isReturningClient = matchingHistory.length > 0
 
   const dropdownOptions = useMemo(() => {
-    if (!normalizedInput || normalizedInput.length < 2) return []
+    // Search based on either typed first name or last name fields
+    const searchString = (firstName.trim() || lastName.trim()).toLowerCase();
+    if (!searchString || searchString.length < 2) return []
     const names = Array.from(new Set(allRecords.map(r => r.display_name)))
-    return names.filter(n => n.toLowerCase().includes(normalizedInput) && n.toLowerCase() !== normalizedInput).slice(0, 5)
-  }, [allRecords, normalizedInput])
+    return names.filter(n => n.toLowerCase().includes(searchString) && n.toLowerCase() !== normalizedInput).slice(0, 5)
+  }, [allRecords, firstName, lastName, normalizedInput])
+
+  // Custom Split Logic to map selected Autocomplete string perfectly back to explicit states
+  const handleSelectAutocompleteName = (fullName: string) => {
+    const tokens = fullName.trim().split(/\s+/);
+    if (tokens.length === 1) {
+      setFirstName(autoCapitalize(tokens[0]));
+      setMiddleInitial('');
+      setLastName('');
+    } else if (tokens.length === 2) {
+      setFirstName(autoCapitalize(tokens[0]));
+      setMiddleInitial('');
+      setLastName(autoCapitalize(tokens[1]));
+    } else {
+      setFirstName(autoCapitalize(tokens[0]));
+      const possibleMI = tokens[1].replace('.', '');
+      if (possibleMI.length === 1) {
+        setMiddleInitial(possibleMI.toUpperCase());
+        setLastName(tokens.slice(2).map(autoCapitalize).join(' '));
+      } else {
+        setMiddleInitial('');
+        setLastName(tokens.slice(1).map(autoCapitalize).join(' '));
+      }
+    }
+    setShowDropdown(false);
+  }
 
   const toggleArea = (id: string) => {
     setSelectedAreas(prev => {
@@ -286,14 +329,15 @@ export default function WaiverPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return alert("Please enter your full name.")
+    if (!firstName.trim() || !lastName.trim()) return alert("Please fill out your first and last name completely.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
     if (!signature) return alert("Please draw your signature.")
 
     setLoading(true)
     try {
       const { error } = await supabase.from('waivers').insert({
-        client_name: name.trim(),
+        id: crypto.randomUUID(),
+        client_name: currentFullName,
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
         signature: signature,
@@ -323,8 +367,6 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        
-        /* The signature modal uses full screen bounds */
         .signature-modal { position: fixed; inset: 0; background-color: ${BG}; z-index: 9999; display: flex; flex-direction: column; }
       `}</style>
 
@@ -370,7 +412,7 @@ export default function WaiverPage() {
                 width: '100%',
                 height: '100%',
                 cursor: 'crosshair',
-                touchAction: 'none' /* CRITICAL: Prevents mobile scrolling while drawing */
+                touchAction: 'none'
               }}
             />
           </div>
@@ -398,28 +440,65 @@ export default function WaiverPage() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
-                <label style={LABEL}>Full Name *</label>
-                <input
-                  className="wv-in"
-                  style={INPUT}
-                  value={name}
-                  onChange={e => { setName(e.target.value); setShowDropdown(true) }}
-                  onFocus={() => setShowDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-                  placeholder="Search for name..."
-                  required
-                  autoComplete="off"
-                />
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, alignItems: 'start' }}>
+                  <div>
+                    <label style={LABEL}>First Name *</label>
+                    <input
+                      className="wv-in"
+                      style={INPUT}
+                      value={firstName}
+                      onChange={e => { setFirstName(autoCapitalize(e.target.value)); setShowDropdown(true) }}
+                      onFocus={() => setShowDropdown(true)}
+                      placeholder="Maria"
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ ...LABEL, textAlign: 'center' }}>M.I.</label>
+                    <input
+                      className="wv-in"
+                      maxLength={1}
+                      style={{ ...INPUT, textAlign: 'center' }}
+                      value={middleInitial}
+                      onChange={e => { setMiddleInitial(e.target.value.toUpperCase()); setShowDropdown(true) }}
+                      onFocus={() => setShowDropdown(true)}
+                      placeholder="A"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <label style={LABEL}>Last Name *</label>
+                    <input
+                      className="wv-in"
+                      style={INPUT}
+                      value={lastName}
+                      onChange={e => { setLastName(autoCapitalize(e.target.value)); setShowDropdown(true) }}
+                      onFocus={() => setShowDropdown(true)}
+                      placeholder="Santos"
+                      required
+                      autoComplete="off"
+                    />
+                  </div>
+                </div>
+
                 {showDropdown && dropdownOptions.length > 0 && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50 }}>
                     {dropdownOptions.map(n => (
-                      <div key={n} className="dropdown-item" onClick={() => { setName(n); setShowDropdown(false); }} style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}>{n}</div>
+                      <div
+                        key={n}
+                        className="dropdown-item"
+                        onMouseDown={() => handleSelectAutocompleteName(n)}
+                        style={{ padding: '14px 15px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 14 }}
+                      >
+                        {n}
+                      </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              {name.trim().length > 1 && dataLoaded && (
+              {currentFullName.length > 2 && dataLoaded && (
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
@@ -520,8 +599,6 @@ export default function WaiverPage() {
             <Section title="Signature & Date" note="Please sign and verify the date">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
-
-                  {/* COMPACT VIEW OF SIGNATURE */}
                   {signature ? (
                     <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -542,7 +619,6 @@ export default function WaiverPage() {
                       <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
                     </button>
                   )}
-
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={LABEL}>Date Signed</label>

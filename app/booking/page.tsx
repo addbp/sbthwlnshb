@@ -51,9 +51,7 @@ const LABEL: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string }
 interface Therapist { id: string; name: string; status: string; role: string }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
@@ -62,6 +60,7 @@ const PAYMENT_METHODS = [
   { key: 'gcash', label: 'GCash', qrImage: '/qr-gcash.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
   { key: 'maya', label: 'Maya', qrImage: '/qr-maya.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
   { key: 'bank', label: 'Bank Transfer', qrImage: '/qr-qrph.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> },
+  { key: 'mastercard', label: 'Visa / Mastercard', qrImage: '/qr-visa.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="7.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /><circle cx="12.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /></svg> },
   { key: 'cash', label: 'Cash', qrImage: null, icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg> },
 ]
 
@@ -102,6 +101,7 @@ function Row2({ children }: { children: React.ReactNode }) {
 }
 
 function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: ServiceItem; selected: boolean; onToggle: () => void; discountPct?: number }) {
+  const isGiftCert = item.name.toUpperCase().includes('GIFT CERT');
   const actualPrice = discountPct > 0 ? item.price * (1 - discountPct / 100) : item.price;
 
   return (
@@ -119,13 +119,15 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
       <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY }}>
-        {item.duration} · {discountPct > 0 ? (
+        {isGiftCert ? (
+          <span>Exclusive Item</span>
+        ) : discountPct > 0 ? (
           <>
             <s style={{ opacity: 0.6, marginRight: 4 }}>{fmt(item.price)}</s>
             <strong style={{ color: GOLD }}>{fmt(actualPrice)}</strong>
           </>
         ) : (
-          fmt(item.price)
+          `${item.duration} · ${fmt(item.price)}`
         )}
       </span>
     </button>
@@ -150,7 +152,10 @@ export default function BookingPage() {
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [middleInitial, setMiddleInitial] = useState('')
+  const [lastName, setLastName] = useState('')
+
   const [mobile, setMobile] = useState('')
   const [email, setEmail] = useState('')
 
@@ -158,14 +163,10 @@ export default function BookingPage() {
   const [servicesLoad, setServicesLoad] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
-  // Database Arrays for Logic (Limits strictly disabled)
   const [dbDiscounts, setDbDiscounts] = useState<Discount[]>([])
   const [activeMemberships, setActiveMemberships] = useState<Membership[]>([])
 
-  // Auto-detected Membership State
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
-
-  // Promo/Discount States
   const [promoInput, setPromoInput] = useState('')
   const [appliedPromo, setAppliedPromo] = useState<Discount | null>(null)
 
@@ -181,6 +182,11 @@ export default function BookingPage() {
   const [payMethod, setPayMethod] = useState('')
   const [notes, setNotes] = useState('')
 
+  const autoCapitalize = (val: string) => {
+    if (!val) return '';
+    return val.charAt(0).toUpperCase() + val.slice(1);
+  }
+
   const getTodayStr = useCallback(() => {
     const d = new Date();
     const year = d.getFullYear();
@@ -194,7 +200,6 @@ export default function BookingPage() {
 
     async function loadData() {
       try {
-        // Force unlimited fetch using .limit(10000) safety nets
         const [thRes, svRes, discRes, memRes] = await Promise.all([
           supabase.from('staff').select('*').order('name', { ascending: true }).limit(10000),
           supabase.from('services').select('*').limit(10000),
@@ -239,7 +244,6 @@ export default function BookingPage() {
     loadData()
   }, [supabase, getTodayStr])
 
-  // ─── LIVE AUTO-DETECT MEMBERSHIP ───
   useEffect(() => {
     if (!mobile && !email) {
       setDetectedMembership(null);
@@ -260,7 +264,6 @@ export default function BookingPage() {
     return 0;
   }
 
-  // ─── SERVICE & THERAPIST FILTERING ───
   const validServices = dbServices.filter(s => s.name.toUpperCase() !== 'SOFT GEL')
 
   const NAIL_KEYWORDS = [
@@ -290,7 +293,6 @@ export default function BookingPage() {
 
   const selectedServices = validServices.filter(s => selectedIds.has(s.id))
 
-  // ─── SMART THERAPIST FILTERING ───
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
     const hasMassage = selectedServices.some(s => !isNailService(s));
@@ -304,26 +306,23 @@ export default function BookingPage() {
       if (hasMassage && hasNails) return isMassageTech || isNailTech;
       if (hasMassage) return isMassageTech;
       if (hasNails) return isNailTech;
-      return true; // Fallback
+      return true;
     });
   }
   const filteredTherapists = allowedTherapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
-  // ─── DYNAMIC PRICING AND DISCOUNT CALCULATOR ───
   const rawNailSubtotal = selectedServices.filter(isNailService).reduce((a, s) => a + Number(s.price || 0), 0)
   const rawMassageSubtotal = selectedServices.filter(s => !isNailService(s)).reduce((a, s) => a + Number(s.price || 0), 0)
 
-  // 1. Calculate Nail Auto-Discount based on Membership Tier
   let nailDiscountPercentage = 0;
   if (detectedMembership) {
     const tier = detectedMembership.membership_tier.toUpperCase();
-    if (tier === 'PLATINUM' || tier === 'VIP') nailDiscountPercentage = 10;
+    if (tier === 'VIP') nailDiscountPercentage = 10;
     else if (tier === 'BASIC' || tier === 'GOLD') nailDiscountPercentage = 5;
   }
   const membershipNailDeduction = rawNailSubtotal * (nailDiscountPercentage / 100);
   const subtotalAfterMembership = (rawNailSubtotal - membershipNailDeduction) + rawMassageSubtotal;
 
-  // 2. Apply Custom Promo Code / Database Discount to the remaining total
   let promoDeduction = 0;
   if (appliedPromo) {
     promoDeduction = subtotalAfterMembership * (Number(appliedPromo.discount_percentage) / 100);
@@ -346,7 +345,8 @@ export default function BookingPage() {
   }, [date, availableTimeSlots, time]);
 
   const validation = {
-    name: name.trim().length < 2,
+    firstName: firstName.trim().length < 2,
+    lastName: lastName.trim().length < 2,
     mobile: mobile.trim().length < 7,
     email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
@@ -357,20 +357,17 @@ export default function BookingPage() {
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
-  // ─── APPLY PROMO LOGIC ───
-  function handleApplyPromo() {
-    if (!promoInput.trim()) {
+  const handleDropdownPromoChange = (selectedName: string) => {
+    if (!selectedName) {
       setAppliedPromo(null);
+      setPromoInput('');
       return;
     }
-    const match = dbDiscounts.find(d =>
-      d.name.toLowerCase() === promoInput.trim().toLowerCase() ||
-      (d.code && d.code.toLowerCase() === promoInput.trim().toLowerCase())
-    );
+    const match = dbDiscounts.find(d => d.name === selectedName);
     if (match) {
       setAppliedPromo(match);
+      setPromoInput(selectedName);
     } else {
-      alert("Invalid or expired promo code.");
       setAppliedPromo(null);
       setPromoInput('');
     }
@@ -385,14 +382,13 @@ export default function BookingPage() {
     const selectedTherapist = therapists.find(t => t.id === therapistId)
     const generatedBookingId = crypto.randomUUID();
 
-    let trackingNotes = notes.trim();
-    if (detectedMembership) trackingNotes += `\n\n[SYSTEM: ${detectedMembership.membership_tier} MEMBERSHIP DETECTED - ${nailDiscountPercentage}% OFF NAILS APPLIED]`;
-    if (appliedPromo) trackingNotes += `\n[SYSTEM: PROMO CODE '${appliedPromo.name}' - ${appliedPromo.discount_percentage}% OFF APPLIED]`;
+    const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
+    const constructedFullName = `${firstName.trim()}${miStr} ${lastName.trim()}`;
 
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
         booking_id: generatedBookingId,
-        client_name: name.trim(),
+        client_name: constructedFullName,
         client_mobile: mobile.trim(),
         client_email: email.trim(),
         service_name: selectedServices.map(s => s.name).join(', '),
@@ -402,7 +398,7 @@ export default function BookingPage() {
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: trackingNotes.trim() || 'None',
+        notes: notes.trim() || 'None',
       })
 
       if (dbErr) throw new Error(dbErr.message)
@@ -412,7 +408,7 @@ export default function BookingPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: name.trim(), email: email.trim(), date: date, time: time,
+            name: constructedFullName, email: email.trim(), date: date, time: time,
             services: selectedServices.map(s => s.name).join(', '),
             totalAmount: finalTotalAmount
           })
@@ -427,6 +423,8 @@ export default function BookingPage() {
   }
 
   const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
+  const formatMiStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
+  const displayFullName = `${firstName.trim()}${formatMiStr} ${lastName.trim()}`;
 
   if (submitted) return (
     <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
@@ -434,7 +432,7 @@ export default function BookingPage() {
       <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
       <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-        Thank you, <strong style={{ color: BLACK }}>{name}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
+        Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
       </p>
 
       <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -478,9 +476,17 @@ export default function BookingPage() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} noValidate>
 
             <Section title="Client Information">
-              <Field label="Full Name *">
-                <input className="bk-in" style={{ ...INPUT, ...eb(validation.name) }} value={name} onChange={e => setName(e.target.value)} placeholder="Maria Santos" />
-              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, alignItems: 'start' }}>
+                <Field label="First Name *">
+                  <input className="bk-in" style={{ ...INPUT, ...eb(validation.firstName) }} value={firstName} onChange={e => setFirstName(autoCapitalize(e.target.value))} placeholder="Maria" />
+                </Field>
+                <Field label="M.I.">
+                  <input className="bk-in" maxLength={1} style={{ ...INPUT, textAlign: 'center' }} value={middleInitial} onChange={e => setMiddleInitial(e.target.value.toUpperCase())} placeholder="A" />
+                </Field>
+                <Field label="Last Name *">
+                  <input className="bk-in" style={{ ...INPUT, ...eb(validation.lastName) }} value={lastName} onChange={e => setLastName(autoCapitalize(e.target.value))} placeholder="Santos" />
+                </Field>
+              </div>
               <Row2>
                 <Field label="Mobile Number *">
                   <input
@@ -543,7 +549,7 @@ export default function BookingPage() {
                             item={s}
                             selected={selectedIds.has(s.id)}
                             onToggle={() => toggleService(s.id)}
-                            discountPct={nailDiscountPercentage} // Passes visual discount natively to the chip!
+                            discountPct={nailDiscountPercentage}
                           />
                         ))}
                       </div>
@@ -566,7 +572,6 @@ export default function BookingPage() {
                 </Field>
               </Row2>
 
-              {/* SMART THERAPIST DROPDOWN */}
               <Field label={therapistLoad ? 'Therapist (loading…)' : `Therapist`}>
                 <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a therapist..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
@@ -603,42 +608,28 @@ export default function BookingPage() {
               )}
             </Section>
 
-            {/* ─── LIVE DATABASE PROMO CODES ─── */}
-            <Section title="Discounts & Promos" note="Type or select an option">
-              <div style={{ display: 'flex', gap: 10 }}>
-                <div style={{ flex: 1, position: 'relative' }}>
-                  <input
-                    list="db-discounts"
-                    className="bk-in"
-                    style={{ ...INPUT, backgroundImage: 'none' }}
-                    value={promoInput}
-                    onChange={e => {
-                      setPromoInput(e.target.value);
-                      if (!e.target.value) setAppliedPromo(null);
-                    }}
-                    placeholder="e.g. Senior, PWD, VIP Discount..."
-                  />
-                  <datalist id="db-discounts">
-                    {dbDiscounts.map(d => (
-                      <option key={d.id} value={d.name} />
-                    ))}
-                  </datalist>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleApplyPromo}
-                  style={{ padding: '0 24px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 10, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}
+            {/* ─── CHOOSE ACTIVE DROPDOWN DISCOUNTS SELECTION ─── */}
+            <Section title="Discounts & Promos" note="Select active promo options directly">
+              <Field label="Choose Available Discount">
+                <select
+                  className="bk-in"
+                  style={SELECT}
+                  value={promoInput}
+                  onChange={e => handleDropdownPromoChange(e.target.value)}
                 >
-                  Apply
-                </button>
-              </div>
+                  <option value="">No promo code selected…</option>
+                  {dbDiscounts.map(d => (
+                    <option key={d.id} value={d.name}>{d.name} ({d.discount_percentage}% OFF)</option>
+                  ))}
+                </select>
+              </Field>
 
               {appliedPromo && (
-                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ padding: '12px 16px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                   <span style={{ fontSize: 16, color: '#3D7A4A' }}>✓</span>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#3D7A4A', textTransform: 'uppercase' }}>{appliedPromo.name} APPLIED</div>
-                    <div style={{ fontSize: 12, color: '#2A2A2A' }}>{appliedPromo.discount_percentage}% off remaining total</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#3D7A4A', textTransform: 'uppercase' }}>{appliedPromo.name} APPLIED SUCCESSFULLY</div>
+                    <div style={{ fontSize: 12, color: '#2A2A2A' }}>{appliedPromo.discount_percentage}% deduction applied to total checkout cost</div>
                   </div>
                 </div>
               )}

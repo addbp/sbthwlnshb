@@ -1,7 +1,7 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 // ─── SAFE CURRENCY PARSER ───
@@ -38,286 +38,279 @@ function formatDateToDDMMMYY(d: Date | null): string {
   return `${dd}-${mmm}-${yy}`;
 }
 
-interface Booking {
+interface BookingRow {
   _key: string;
-  date: string;
+  parsedDate: Date | null;
   client: string;
   service: string;
   therapist: string;
-  revenue: number;
-  category: string;
-  payMethod: string;
-  customerType: string;
-  parsedDate: Date | null;
+  category: 'SABBATH' | 'LE NAILS';
+  amount: number;
+  paymentMethod: string;
+  clientType: string;
 }
 
-export default function BookingsPage() {
-  const supabase = useRef(createClient()).current
-  const [bookings, setBookings] = useState<Booking[]>([])
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('All')
+const NAIL_KEYWORDS = [
+  'MANICURE', 'PEDICURE', 'FOOT SPA', 'FOOT MASSAGE', 'FOOT PARAFFIN', 'HAND PARAFFIN',
+  'MANIGEL', 'ORLY', 'GEL POLISH', 'RHINESTONES', 'NAIL ART', 'GEL REMOVAL', 'POLISH', 'NAILS'
+];
 
-  // Pagination State
+export default function BookingsDashboardPage() {
+  const supabase = useRef(createClient()).current
+  const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'ALL' | 'SABBATH' | 'LE NAILS'>('ALL')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Pagination Configuration
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
 
-  const loadBookings = useCallback(async () => {
+  const loadBookingsEngine = useCallback(async () => {
     setLoading(true)
-    const PAGE = 1000
-    const all: Booking[] = []
+    const PAGE_SIZE = 1000
+    const unifiedTimeline: BookingRow[] = []
 
-    // ─── 1. FETCH LIVE BOOKINGS CONTINUOUSLY (UNIVERSAL SCAN) ───
-    let liveFrom = 0
-    for (; ;) {
-      const { data, error } = await supabase
-        .from('bookings')
-        .select('*') // Selects absolutely everything to prevent missed columns
-        .range(liveFrom, liveFrom + PAGE - 1)
+    try {
+      // 1. Unroll Historical Data Stream (Limitless execution bounds)
+      let fromHist = 0
+      for (; ;) {
+        const { data, error } = await supabase
+          .from('bookings_import')
+          .select('date, client_name, service, received_payment, service_amount, therapist, payment_method')
+          .range(fromHist, fromHist + PAGE_SIZE - 1)
 
-      if (error || !data || data.length === 0) break
+        if (error || !data || data.length === 0) break
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data.forEach(r => {
-        const rawDate = r.appointment_date || r.date || r.created_at || r.booking_date;
-        const rawClient = r.client_name || r.name || r.full_name || 'Guest';
-        const rawService = r.service_name || r.service || r.treatment || '—';
-        const rawTherapist = r.therapist_name || r.therapist || r.staff || '—';
-        const rawRev = r.received_payment || r.service_amount || r.amount || r.price || r.total || 0;
-        const rawPay = r.payment_method || r.mode_of_payment || '—';
+        data.forEach((r, idx) => {
+          const serviceName = String(r.service || '—');
+          const upperService = serviceName.toUpperCase();
 
-        all.push({
-          _key: `live-${r.id}-${liveFrom}`,
-          date: String(rawDate || ''),
-          parsedDate: parseImportDate(rawDate),
-          client: String(rawClient).trim(),
-          service: String(rawService).trim(),
-          therapist: String(rawTherapist).trim(),
-          revenue: parseCurrency(rawRev),
-          category: String(r.category || 'Live Booking'),
-          payMethod: String(rawPay).toUpperCase(),
-          customerType: '—'
+          // Determine clean structural category mapping
+          const isNail = NAIL_KEYWORDS.some(k => upperService.includes(k));
+          const categoryValue = isNail ? 'LE NAILS' : 'SABBATH';
+
+          // Strictly enforce uppercase formatting for all memberships
+          const displayService = (upperService.includes('MEMBERSHIP') || upperService.includes('PLATINUM') || upperService.includes('GOLD') || upperService.includes('BASIC') || upperService.includes('VIP'))
+            ? upperService
+            : serviceName;
+
+          unifiedTimeline.push({
+            _key: `hist-${fromHist}-${idx}`,
+            parsedDate: parseImportDate(r.date),
+            client: String(r.client_name || 'Guest'),
+            service: displayService,
+            therapist: String(r.therapist || '—').toUpperCase(),
+            category: categoryValue,
+            amount: parseCurrency(r.received_payment || r.service_amount),
+            paymentMethod: String(r.payment_method || 'CASH').toUpperCase(),
+            clientType: '—'
+          })
         })
-      })
-      if (data.length < PAGE) break
-      liveFrom += PAGE
-    }
+        if (data.length < PAGE_SIZE) break
+        fromHist += PAGE_SIZE
+      }
 
-    // ─── 2. FETCH HISTORICAL BOOKINGS CONTINUOUSLY (UNIVERSAL SCAN) ───
-    let histFrom = 0
-    for (; ;) {
-      const { data, error } = await supabase
-        .from('bookings_import')
-        .select('*') // Selects absolutely everything
-        .range(histFrom, histFrom + PAGE - 1)
+      // 2. Unroll Live POS/Kiosk Data Stream
+      let fromLive = 0
+      for (; ;) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('appointment_date, created_at, client_name, service_name, service, price, amount, received_payment, therapist_name, payment_method')
+          .range(fromLive, fromLive + PAGE_SIZE - 1)
 
-      if (error || !data || data.length === 0) break
+        if (error || !data || data.length === 0) break
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data.forEach((r, i) => {
-        const rawDate = r.date || r.appointment_date || r.created_at;
-        const rawClient = r.client_name || r.name || 'Guest';
-        const rawService = r.service || r.service_name || '—';
-        const rawTherapist = r.therapist || r.therapist_name || '—';
-        const rawRev = r.received_payment || r.service_amount || r.amount || r.price || 0;
-        const rawPay = r.payment_method || r.mode_of_payment || '—';
+        data.forEach((r, idx) => {
+          const serviceName = String(r.service_name || r.service || '—');
+          const upperService = serviceName.toUpperCase();
 
-        all.push({
-          _key: `hist-${histFrom}-${i}`,
-          date: String(rawDate || ''),
-          parsedDate: parseImportDate(rawDate),
-          client: String(rawClient).trim(),
-          service: String(rawService).trim(),
-          therapist: String(rawTherapist).trim(),
-          revenue: parseCurrency(rawRev),
-          category: String(r.category || '—'),
-          payMethod: String(rawPay).toUpperCase(),
-          customerType: '—'
+          // Fixed the category column matching matrix completely
+          const isNail = NAIL_KEYWORDS.some(k => upperService.includes(k));
+          const categoryValue = isNail ? 'LE NAILS' : 'SABBATH';
+
+          // Strictly force matching membership strings into true uppercase
+          const displayService = (upperService.includes('MEMBERSHIP') || upperService.includes('PLATINUM') || upperService.includes('GOLD') || upperService.includes('BASIC') || upperService.includes('VIP'))
+            ? upperService
+            : serviceName;
+
+          unifiedTimeline.push({
+            _key: `live-${fromLive}-${idx}`,
+            parsedDate: parseImportDate(r.appointment_date || r.created_at),
+            client: String(r.client_name || 'Guest'),
+            service: displayService,
+            therapist: String(r.therapist_name || '—').toUpperCase(),
+            category: categoryValue,
+            amount: parseCurrency(r.price || r.amount || r.received_payment),
+            paymentMethod: String(r.payment_method || 'CASH').toUpperCase(),
+            clientType: '—'
+          })
         })
+        if (data.length < PAGE_SIZE) break
+        fromLive += PAGE_SIZE
+      }
+
+      // 3. Sequential Timeline Pass (Calculate Guest Retention Flags)
+      unifiedTimeline.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
+      const historyTracker = new Map<string, number>()
+
+      unifiedTimeline.forEach(row => {
+        const uniqueKey = row.client.toLowerCase().trim()
+        if (!uniqueKey || uniqueKey === 'guest' || uniqueKey === '—') {
+          row.clientType = 'WALK-IN / GUEST'
+          return
+        }
+        const historicalVisits = historyTracker.get(uniqueKey) || 0
+        row.clientType = historicalVisits === 0 ? 'NEW CLIENT' : 'RETURNING CLIENT'
+        historyTracker.set(uniqueKey, historicalVisits + 1)
       })
-      if (data.length < PAGE) break
-      histFrom += PAGE
+
+      // 4. Reverse Sort (Newest entries bubble directly to front row)
+      unifiedTimeline.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
+
+      setBookings(unifiedTimeline)
+    } catch (err) {
+      console.error("Bookings ingestion sub-routine error:", err)
+    } finally {
+      setLoading(false)
     }
-
-    // ─── 3. TWO-PASS SCANNER (ACCURATE TOTAL COUNT LOGIC) ───
-    const visitCounter = new Map<string, number>()
-
-    // Pass 1: Count total visits per client
-    all.forEach(p => {
-      const nameKey = p.client.toLowerCase()
-      if (nameKey && nameKey !== 'guest' && nameKey !== '—') {
-        visitCounter.set(nameKey, (visitCounter.get(nameKey) || 0) + 1)
-      }
-    })
-
-    // Pass 2: Assign tags based on total count
-    all.forEach(p => {
-      const nameKey = p.client.toLowerCase()
-      if (!nameKey || nameKey === 'guest' || nameKey === '—') {
-        p.customerType = 'WALK-IN'
-      } else {
-        const totalVisits = visitCounter.get(nameKey) || 1
-        // 2 or more = Returning, Exactly 1 = New
-        p.customerType = totalVisits >= 2 ? 'RETURNING CLIENT' : 'NEW CLIENT'
-      }
-    })
-
-    // ─── 4. SORT NEWEST TO OLDEST FOR DASHBOARD ───
-    all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
-
-    setBookings(all)
-    setLoading(false)
   }, [supabase])
 
-  useEffect(() => { loadBookings() }, [loadBookings])
+  useEffect(() => { loadBookingsEngine() }, [loadBookingsEngine])
+  useEffect(() => { setCurrentPage(1) }, [activeTab, searchQuery])
 
-  // Reset to page 1 whenever they search or filter
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [search, categoryFilter])
-
-  const uniqueCategories = ['All', ...Array.from(new Set(bookings.map(b => b.category).filter(Boolean)))]
-
-  // Apply Search & Filters
-  const filtered = bookings.filter(b => {
-    const matchesSearch = search === '' || b.client.toLowerCase().includes(search.toLowerCase()) || b.service.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = categoryFilter === 'All' || b.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+  // ─── FILTER MATRIX EXECUTION ───
+  const processedDataRows = bookings.filter(row => {
+    const matchesTab = activeTab === 'ALL' || row.category === activeTab;
+    const matchesSearch = row.client.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      row.service.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesTab && matchesSearch;
   })
 
-  // Pagination Logic
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage))
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const paginatedBookings = filtered.slice(startIndex, startIndex + itemsPerPage)
-
-  // Button Style for Pagination
-  const btnStyle = (disabled: boolean): React.CSSProperties => ({
-    padding: '6px 12px',
-    fontSize: 12,
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    backgroundColor: disabled ? '#f5f5f5' : '#1A1A1A',
-    color: disabled ? '#aaa' : '#C58F3B',
-    border: 'none',
-    borderRadius: 6,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    transition: 'opacity 200ms ease'
-  })
+  const totalPagesCount = Math.max(1, Math.ceil(processedDataRows.length / itemsPerPage))
+  const offsetIndex = (currentPage - 1) * itemsPerPage
+  const viewablePaginatedRows = processedDataRows.slice(offsetIndex, offsetIndex + itemsPerPage)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
+    <>
+      <style>{`
+        .tab-btn { padding: 10px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; border: none; background: transparent; color: #666; cursor: pointer; transition: all 200ms ease; position: relative; }
+        .tab-btn.active { color: #1A1A1A; }
+        .tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 20px; right: 20px; height: 3px; background-color: #C58F3B; border-radius: 2px; }
+        .pos-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+      `}</style>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Reservations</p>
-          <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>All Bookings</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
+
+        {/* Upper Header Control Context */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Data Ledger</p>
+            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Bookings Log</h2>
+          </div>
+          <button onClick={loadBookingsEngine} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
+            {loading ? 'Re-aligning...' : 'Refresh Records'}
+          </button>
         </div>
-        <button onClick={loadBookings} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', cursor: 'pointer' }}>
-          {loading ? 'Loading...' : 'Refresh Data'}
-        </button>
-      </div>
 
-      {/* ─── FILTERS AND SEARCH ─── */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-          {uniqueCategories.map(cat => (
+        {/* Search Input Controller */}
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search by customer or service string..."
+          style={{ height: 44, width: '100%', maxWidth: 400, padding: '0 16px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, outline: 'none' }}
+        />
+
+        {/* ─── EXPLICITLY FILTERED TABS (No Placeholders) ─── */}
+        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.08)', paddingBottom: 0 }}>
+          {(['ALL', 'SABBATH', 'LE NAILS'] as const).map(tabKey => (
             <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                border: '1px solid',
-                backgroundColor: categoryFilter === cat ? '#1A1A1A' : '#fff',
-                color: categoryFilter === cat ? '#C58F3B' : '#666',
-                borderColor: categoryFilter === cat ? '#1A1A1A' : '#ddd',
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600
-              }}
+              key={tabKey}
+              onClick={() => setActiveTab(tabKey)}
+              className={`tab-btn ${activeTab === tabKey ? 'active' : ''}`}
             >
-              {cat}
+              {tabKey}
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search client or service..."
-          style={{
-            height: 40, width: '100%', maxWidth: 300, padding: '0 14px',
-            border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8,
-            fontSize: 14, outline: 'none'
-          }}
-        />
-      </div>
 
-      {loading ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16 }}>
-          Syncing continuous live and historical data...
-        </div>
-      ) : (
-        <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
-          <div style={{ overflowX: 'auto', minHeight: 400 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                  {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
-                    <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedBookings.map((b) => (
-                  <tr key={b._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                    <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(b.parsedDate)}</td>
-                    <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A' }}>{b.client}</td>
-                    <td style={{ padding: '14px 16px', color: '#2A2A2A' }}>{b.service}</td>
-                    <td style={{ padding: '14px 16px', color: '#4A4A4A' }}>{b.therapist}</td>
-                    <td style={{ padding: '14px 16px', color: '#666' }}>
-                      <span style={{ padding: '4px 8px', borderRadius: 4, backgroundColor: '#f5f5f5', fontSize: 11 }}>{b.category}</span>
-                    </td>
-                    <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.revenue.toLocaleString()}</td>
-                    <td style={{ padding: '14px 16px', color: '#666', fontWeight: 600 }}>{b.payMethod}</td>
-                    <td style={{ padding: '14px 16px', whiteSpace: 'nowrap', minWidth: 140 }}>
-                      <span style={{
-                        display: 'inline-block',
-                        whiteSpace: 'nowrap',
-                        padding: '4px 8px',
-                        borderRadius: 6,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.05em',
-                        backgroundColor: b.customerType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
-                        color: b.customerType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
-                      }}>
-                        {b.customerType}
-                      </span>
-                    </td>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
+            Processing limitless tracking pipeline vectors...
+          </div>
+        ) : (
+          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
+            <div style={{ overflowX: 'auto', minHeight: 400 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
+                    {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
+                      <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-                {paginatedBookings.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No records match your search.</td></tr>}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {viewablePaginatedRows.map((r) => (
+                    <tr key={r._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+                      <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(r.parsedDate)}</td>
+                      <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A' }}>{r.client}</td>
 
-          {/* ─── PAGINATION BAR ─── */}
-          <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <span style={{ fontSize: 13, color: '#666' }}>
-              Showing <strong style={{ color: '#1A1A1A' }}>{filtered.length > 0 ? startIndex + 1 : 0}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, filtered.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{filtered.length.toLocaleString()}</strong> entries
-            </span>
+                      {/* Forced Uppercase Membership Column Display Target */}
+                      <td style={{ padding: '14px 16px', color: '#2A2A2A', fontWeight: r.service.includes('MEMBERSHIP') ? 700 : 400 }}>
+                        {r.service}
+                      </td>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
-              <button style={btnStyle(currentPage === 1)} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Prev</button>
-              <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPages}</span>
-              <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Next</button>
-              <button style={btnStyle(currentPage === totalPages)} onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
+                      <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{r.therapist}</td>
+
+                      {/* Clean structural categorization field */}
+                      <td style={{ padding: '14px 16px' }}>
+                        <span style={{
+                          padding: '4px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                          backgroundColor: r.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.05)',
+                          color: r.category === 'LE NAILS' ? '#C58F3B' : '#1A1A1A',
+                          border: r.category === 'LE NAILS' ? '1px solid rgba(197,143,59,0.2)' : '1px solid transparent'
+                        }}>
+                          {r.category}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{r.amount.toLocaleString()}</td>
+                      <td style={{ padding: '14px 16px', color: '#666', fontSize: 12, fontWeight: 600 }}>{r.paymentMethod}</td>
+
+                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                        <span className="pos-badge" style={{
+                          backgroundColor: r.clientType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
+                          color: r.clientType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
+                        }}>
+                          {r.clientType}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {viewablePaginatedRows.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No matching records allocated.</td></tr>}
+                </tbody>
+              </table>
             </div>
+
+            {/* Pagination Controls Footer block */}
+            <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <span style={{ fontSize: 13, color: '#666' }}>
+                Showing <strong style={{ color: '#1A1A1A' }}>{offsetIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(offsetIndex + itemsPerPage, processedDataRows.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{processedDataRows.length.toLocaleString()}</strong> transaction sequences
+              </span>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
+                <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPagesCount}</span>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPagesCount, prev + 1))} disabled={currentPage === totalPagesCount}>Next</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPagesCount)} disabled={currentPage === totalPagesCount}>Last</button>
+              </div>
+            </div>
+
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   )
 }

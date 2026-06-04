@@ -78,74 +78,106 @@ export default function PaymentsPage() {
   const [applyDiscount, setApplyDiscount] = useState(false)
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
 
-  // Pagination
+  // Pagination Configuration
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
 
+  // ─── LIMITLESS PAGINATION UNROLLING ENGINE ───
   const loadPayments = useCallback(async () => {
     setLoading(true)
+    const PAGE_SIZE = 1000
     const all: PaymentRecord[] = []
+    const allMemberships: Membership[] = []
 
     try {
-      // 1. Fetch PIN, Memberships, Live Bookings, and Historical Data without strict limits
-      const [pinRes, memRes, liveRes, histRes] = await Promise.all([
-        supabase.from('admin_settings').select('pin').single(),
-        supabase.from('memberships').select('*').eq('status', 'Active').limit(10000),
-        supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(10000),
-        supabase.from('bookings_import').select('*').limit(15000)
-      ])
+      // 1. Fetch the live administrative security PIN
+      const { data: pinData } = await supabase.from('admin_settings').select('pin').single()
+      if (pinData && pinData.pin) setDbPin(pinData.pin)
 
-      if (pinRes.data?.pin) setDbPin(pinRes.data.pin)
-      if (memRes.data) setActiveMemberships(memRes.data as Membership[])
+      // 2. Fetch ALL Active memberships via limitless pagination unrolling
+      let fromMem = 0
+      for (; ;) {
+        const { data, error } = await supabase
+          .from('memberships')
+          .select('id, client_name, membership_tier, discount_percentage')
+          .eq('status', 'Active')
+          .range(fromMem, fromMem + PAGE_SIZE - 1)
 
-      // 2. Process Live POS Bookings
-      if (liveRes.data) {
-        liveRes.data.forEach((r: any) => {
+        if (error || !data || data.length === 0) break
+        allMemberships.push(...(data as Membership[]))
+        if (data.length < PAGE_SIZE) break
+        fromMem += PAGE_SIZE
+      }
+      setActiveMemberships(allMemberships)
+
+      // 3. Fetch ALL Live Bookings via limitless pagination unrolling
+      let fromLive = 0
+      for (; ;) {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*')
+          .range(fromLive, fromLive + PAGE_SIZE - 1)
+
+        if (error || !data || data.length === 0) break
+
+        data.forEach((r: any) => {
           const originalAmount = parseCurrency(r.amount || r.price);
-          const currentPrice = parseCurrency(r.price); // Price usually stores the final discounted amount
+          const currentPrice = parseCurrency(r.price);
           const received = parseCurrency(r.received_payment);
 
           all.push({
-            _key: `live-${r.id}`,
+            _key: `live-${fromLive}-${r.id}`,
             id: r.id,
             isLive: true,
             parsedDate: parseImportDate(r.appointment_date || r.created_at),
             client: String(r.client_name || 'Guest'),
             service: String(r.service_name || r.service || '—'),
             amount: originalAmount,
-            discounted: currentPrice, // The final calculated price
+            discounted: currentPrice,
             received: received,
             modeOfPayment: String(r.payment_method || '—').toUpperCase(),
             clientType: '—'
           })
         })
+        if (data.length < PAGE_SIZE) break
+        fromLive += PAGE_SIZE
       }
 
-      // 3. Process Historical Imported Data (Read-Only)
-      if (histRes.data) {
-        histRes.data.forEach((r: any, i: number) => {
+      // 4. Fetch ALL Historical Records via limitless pagination unrolling
+      let fromHist = 0
+      for (; ;) {
+        const { data, error } = await supabase
+          .from('bookings_import')
+          .select('date, client_name, service, service_amount, received_payment, payment_method')
+          .range(fromHist, fromHist + PAGE_SIZE - 1)
+
+        if (error || !data || data.length === 0) break
+
+        data.forEach((r: any, i: number) => {
           const received = parseCurrency(r.received_payment)
           const amount = parseCurrency(r.service_amount)
 
           if (received > 0 || amount > 0) {
             all.push({
-              _key: `hist-${i}`,
+              _key: `hist-${fromHist}-${i}`,
               id: null,
               isLive: false,
               parsedDate: parseImportDate(r.date),
               client: String(r.client_name || 'Guest'),
               service: String(r.service || '—'),
               amount: amount,
-              discounted: amount, // Historical doesn't track separate discounts
+              discounted: amount,
               received: received,
               modeOfPayment: String(r.payment_method || '—').toUpperCase(),
               clientType: '—'
             })
           }
         })
+        if (data.length < PAGE_SIZE) break
+        fromHist += PAGE_SIZE
       }
 
-      // 4. Client Type Calculation (New vs Returning)
+      // 5. Timeline Sequence Audit Pass (Calculate Retention Matrix Flags)
       all.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
       const visitCounter = new Map<string, number>()
 
@@ -160,12 +192,12 @@ export default function PaymentsPage() {
         visitCounter.set(nameKey, visits + 1)
       })
 
-      // 5. Final Sort (Newest to Oldest)
+      // 6. Reverse Chronological View Generation Sort
       all.sort((a, b) => (b.parsedDate?.getTime() || 0) - (a.parsedDate?.getTime() || 0))
 
       setPayments(all)
     } catch (error) {
-      console.error("Failed to load payments:", error)
+      console.error("Limitless processing pipeline fault:", error)
     } finally {
       setLoading(false)
     }
@@ -173,9 +205,9 @@ export default function PaymentsPage() {
 
   useEffect(() => { loadPayments() }, [loadPayments])
 
-  // ─── INLINE EDIT HANDLERS (RECEIVED COLUMN) ───
+  // ─── INLINE CASH MANAGEMENT HANDLERS ───
   const startEditingReceived = (p: PaymentRecord) => {
-    if (!p.isLive) return; // Cannot edit historical imports
+    if (!p.isLive) return;
     setEditingReceivedId(p._key);
     setReceivedInput(p.received.toString() || '');
   }
@@ -184,26 +216,21 @@ export default function PaymentsPage() {
     if (!p.id) return;
     const newReceived = parseCurrency(receivedInput);
 
-    // Optimistic UI Update
     setPayments(prev => prev.map(item => item._key === p._key ? { ...item, received: newReceived } : item));
     setEditingReceivedId(null);
 
-    // Database Update
     const { error } = await supabase.from('bookings').update({ received_payment: newReceived }).eq('id', p.id);
-    if (error) alert("Failed to save received amount to database.");
+    if (error) alert("Failed to commit received totals to database instance.");
   }
 
-  // ─── DISCOUNT MODAL HANDLERS (CLIENT COLUMN) ───
+  // ─── DISCOUNT CONTEXT CASHIER MODAL ───
   const openDiscountModal = (p: PaymentRecord) => {
     if (!p.isLive) {
-      alert("Historical records cannot be edited.");
+      alert("Historical data rows are marked static / read-only.");
       return;
     }
-
-    // Auto-Detect Membership by Client Name
-    const foundMem = activeMemberships.find(m => m.client_name.toLowerCase() === p.client.toLowerCase());
+    const foundMem = activeMemberships.find(m => m.client_name.toLowerCase().trim() === p.client.toLowerCase().trim());
     setDetectedMembership(foundMem || null);
-
     setSelectedPayment(p);
     setApplyDiscount(false);
     setIsModalOpen(true);
@@ -213,22 +240,19 @@ export default function PaymentsPage() {
     if (!selectedPayment || !selectedPayment.id) return;
 
     let newDiscountedPrice = selectedPayment.amount;
-
     if (applyDiscount && detectedMembership) {
       const deduction = newDiscountedPrice * (detectedMembership.discount_percentage / 100);
       newDiscountedPrice = newDiscountedPrice - deduction;
     }
 
-    // Optimistic UI Update
     setPayments(prev => prev.map(item => item._key === selectedPayment._key ? { ...item, discounted: newDiscountedPrice } : item));
     setIsModalOpen(false);
 
-    // Database Update
     const { error } = await supabase.from('bookings').update({ price: newDiscountedPrice }).eq('id', selectedPayment.id);
-    if (error) alert("Failed to apply discount to database.");
+    if (error) alert("Failed to modify price column value variables.");
   }
 
-  // ─── CALCULATIONS ───
+  // ─── PAGINATION EVALUATIONS ───
   const totalReceived = payments.reduce((sum, p) => sum + p.received, 0)
   const totalTransactions = payments.length
 
@@ -257,24 +281,24 @@ export default function PaymentsPage() {
   return (
     <>
       <style>{`
-        .pos-input { width: 80px; padding: 4px 8px; border: 2px solid #C58F3B; border-radius: 6px; outline: none; font-weight: bold; text-align: center; }
-        .modal-overlay { position: fixed; inset: 0; z-index: 50; background-color: rgba(10,8,6,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .pos-input { width: 85px; padding: 4px 8px; border: 2px solid #C58F3B; border-radius: 6px; outline: none; font-weight: bold; text-align: center; font-family: inherit; }
+        .modal-overlay { position: fixed; inset: 0; z-index: 999; background-color: rgba(10,8,6,0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
         .client-name:hover { color: #C58F3B; text-decoration: underline; text-underline-offset: 4px; }
         .received-cell:hover { background-color: rgba(197,143,59,0.05); outline: 1px dashed #C58F3B; border-radius: 4px; }
       `}</style>
 
-      {/* ─── DISCOUNT POS MODAL ─── */}
+      {/* ─── CASHIER DISCOUNTS PORTAL POPUP ─── */}
       {isModalOpen && selectedPayment && (
         <div className="modal-overlay">
           <div style={{ backgroundColor: '#F9F4EB', padding: 32, borderRadius: 16, width: '100%', maxWidth: 450, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif" }}>
             <div style={{ paddingBottom: 16, borderBottom: '1px solid rgba(197,143,59,0.2)', marginBottom: 20 }}>
               <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 28, margin: '0 0 4px', color: '#1A1A1A' }}>Apply Discount</h3>
-              <p style={{ fontSize: 13, color: '#666', margin: 0 }}>Review and approve discounts for {selectedPayment.client}.</p>
+              <p style={{ fontSize: 13, color: '#666', margin: 0 }}>Review and approve operational deductions for {selectedPayment.client}.</p>
             </div>
 
             <div style={{ backgroundColor: '#fff', padding: 20, borderRadius: 12, border: '1px solid rgba(26,26,26,0.1)', marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Service</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#666', textTransform: 'uppercase' }}>Service Invoiced</span>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A' }}>{selectedPayment.service}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -288,26 +312,26 @@ export default function PaymentsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                   <span style={{ fontSize: 18 }}>👑</span>
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#3D7A4A', textTransform: 'uppercase' }}>{detectedMembership.membership_tier} Member Found</div>
-                    <div style={{ fontSize: 12, color: '#4A4A4A' }}>Eligible for {detectedMembership.discount_percentage}% OFF</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#3D7A4A', textTransform: 'uppercase' }}>{detectedMembership.membership_tier} Record Located</div>
+                    <div style={{ fontSize: 12, color: '#4A4A4A' }}>Linked discount variable matches: {detectedMembership.discount_percentage}% OFF</div>
                   </div>
                 </div>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 14px', backgroundColor: '#fff', borderRadius: 8, border: '1px solid rgba(61,122,74,0.2)' }}>
                   <input type="checkbox" checked={applyDiscount} onChange={(e) => setApplyDiscount(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
                   <span style={{ fontSize: 14, fontWeight: 600, color: '#1A1A1A' }}>
-                    Approve & Apply {detectedMembership.discount_percentage}% Discount
+                    Execute & Apply {detectedMembership.discount_percentage}% Ledger Deduction
                   </span>
                 </label>
               </div>
             ) : (
               <div style={{ padding: 16, backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, border: '1px dashed rgba(26,26,26,0.15)', textAlign: 'center', marginBottom: 24 }}>
-                <p style={{ fontSize: 13, color: '#666', margin: 0 }}>No active memberships detected for this client.</p>
+                <p style={{ fontSize: 13, color: '#666', margin: 0 }}>No active profiles allocated inside the memberships directory.</p>
               </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, padding: '16px 20px', backgroundColor: '#1A1A1A', borderRadius: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase' }}>Final Amount</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase' }}>Adjusted Balance</span>
               <span style={{ fontSize: 24, fontWeight: 700, color: '#C58F3B' }}>
                 ₱{applyDiscount && detectedMembership
                   ? (selectedPayment.amount - (selectedPayment.amount * (detectedMembership.discount_percentage / 100))).toLocaleString()
@@ -316,35 +340,34 @@ export default function PaymentsPage() {
             </div>
 
             <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => setIsModalOpen(false)} style={{ flex: 1, height: 48, backgroundColor: 'transparent', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 8, color: '#1A1A1A', fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={confirmDiscount} style={{ flex: 1, height: 48, backgroundColor: '#1A1A1A', color: '#C58F3B', border: 'none', borderRadius: 8, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>Confirm Approval</button>
+              <button onClick={() => setIsModalOpen(false)} style={{ flex: 1, height: 48, backgroundColor: 'transparent', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 8, color: '#1A1A1A', fontWeight: 700, textTransform: 'uppercase', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={confirmDiscount} style={{ flex: 1, height: 48, backgroundColor: '#1A1A1A', color: '#C58F3B', border: 'none', borderRadius: 8, fontWeight: 700, textTransform: 'uppercase', fontSize: 12, cursor: 'pointer' }}>Confirm Approval</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── MAIN UI ─── */}
+      {/* ─── PRIMARY WORKSPACE CONTAINER ─── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 36, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Payments Dashboard</h2>
+            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 36, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Payments Ledger</h2>
           </div>
           <button onClick={loadPayments} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', cursor: 'pointer' }}>
-            {loading ? 'Syncing...' : 'Refresh'}
+            {loading ? 'Re-aligning...' : 'Refresh Logs'}
           </button>
         </div>
 
-        {/* ─── KPIS WITH DATABASE PIN LOCK ─── */}
+        {/* ─── INTEL STAT CARDS (WITH PIN SAFE SHROUD) ─── */}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
 
           <div style={{ flex: '1 1 250px', backgroundColor: '#1A1A1A', border: '1px solid rgba(197,143,59,0.2)', borderRadius: 14, padding: '24px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', position: 'relative', overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: 0, letterSpacing: '0.05em' }}>Total Received</p>
+              <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: 0, letterSpacing: '0.05em' }}>Total Net Received</p>
 
-              {/* Privacy Eye Toggle */}
               {isUnlocked && (
-                <button onClick={() => setShowRevenue(!showRevenue)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                <button onClick={() => setShowRevenue(!showRevenue)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
                   {showRevenue ? (
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                   ) : (
@@ -371,7 +394,7 @@ export default function PaymentsPage() {
           </div>
 
           <div style={{ flex: '1 1 250px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>Total Transactions</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>Total Continuous Transactions</p>
             <p style={{ fontSize: 32, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>
               {loading ? '...' : totalTransactions.toLocaleString()}
             </p>
@@ -379,9 +402,10 @@ export default function PaymentsPage() {
 
         </div>
 
+        {/* ─── DATA GRID LEDGER PRESENTATION ─── */}
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
-            Scanning timeline and POS database...
+            Iterating table schemas down to infinite limit variables...
           </div>
         ) : (
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
@@ -399,31 +423,30 @@ export default function PaymentsPage() {
                     <tr key={p._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
                       <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(p.parsedDate)}</td>
 
-                      {/* CLICKABLE CLIENT NAME */}
+                      {/* INTERACTIVE CLIENT PROFILE CROSS-REFERENCE CELL */}
                       <td
                         onClick={() => openDiscountModal(p)}
                         className={p.isLive ? "client-name" : ""}
                         style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A', cursor: p.isLive ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
-                        title={p.isLive ? "Click to apply discounts" : "Historical data cannot be edited"}
+                        title={p.isLive ? "Click to verify user profile deduction rules" : "Historical entity instances cannot be overwritten"}
                       >
-                        {p.client} {p.isLive && <span style={{ fontSize: 10, color: '#C58F3B', marginLeft: 4 }}>+</span>}
+                        {p.client} {p.isLive && <span style={{ fontSize: 10, color: '#C58F3B', marginLeft: 4, fontWeight: 'bold' }}>+</span>}
                       </td>
 
-                      <td style={{ padding: '14px 16px', color: '#2A2A2A', maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.service}</td>
-
+                      <td style={{ padding: '14px 16px', color: '#2A2A2A', maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.service}</td>
                       <td style={{ padding: '14px 16px', color: '#666' }}>₱{p.amount.toLocaleString()}</td>
 
-                      {/* DISCOUNTED COLUMN */}
-                      <td style={{ padding: '14px 16px', fontWeight: 700, color: p.discounted < p.amount ? '#C58F3B' : '#1A1A1A' }}>
+                      {/* COMPUTE LEDGER DISCOUNTS VALUE COLUMN */}
+                      <td style={{ padding: '14px 16px', fontWeight: 700, color: p.discounted < p.amount ? '#C58F3B' : '#888' }}>
                         {p.discounted < p.amount ? `₱${p.discounted.toLocaleString()}` : '—'}
                       </td>
 
-                      {/* QUICK-EDIT RECEIVED COLUMN */}
+                      {/* COMMITTED CASH RECEIVED REGISTER FIELD */}
                       <td
                         onClick={() => startEditingReceived(p)}
                         className={p.isLive ? "received-cell" : ""}
-                        style={{ padding: '14px 16px', fontWeight: 700, color: '#3D7A4A', cursor: p.isLive ? 'pointer' : 'default', transition: 'all 0.2s' }}
-                        title={p.isLive ? "Click to enter cash amount" : ""}
+                        style={{ padding: '14px 16px', fontWeight: 700, color: '#3D7A4A', cursor: p.isLive ? 'pointer' : 'default', transition: 'all 200ms' }}
+                        title={p.isLive ? "Click to input received currency" : ""}
                       >
                         {editingReceivedId === p._key ? (
                           <input
@@ -457,14 +480,15 @@ export default function PaymentsPage() {
                       </td>
                     </tr>
                   ))}
-                  {paginatedPayments.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No payment records found.</td></tr>}
+                  {paginatedPayments.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No active payment sequences detected.</td></tr>}
                 </tbody>
               </table>
             </div>
 
+            {/* Pagination Controls */}
             <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
               <span style={{ fontSize: 13, color: '#666' }}>
-                Showing <strong style={{ color: '#1A1A1A' }}>{startIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, payments.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{payments.length.toLocaleString()}</strong> transactions
+                Showing <strong style={{ color: '#1A1A1A' }}>{startIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(startIndex + itemsPerPage, payments.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{payments.length.toLocaleString()}</strong> rows unrolled
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
