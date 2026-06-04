@@ -35,14 +35,14 @@ const NAV_ITEMS = [
   {
     key: 'membership',
     href: '/membership',
-    title: 'Upgrade to Member',
+    title: 'Membership',
     desc: 'Exclusive discounts · VIP packages · Priority booking',
     icon: <IconCrown />,
   },
   {
     key: 'sabasu',
     href: '/sabasu',
-    title: 'SABASU Cafe',
+    title: 'SABASU',
     desc: 'Order coffee, pasta & pastries to your room',
     icon: <IconCafe />,
   },
