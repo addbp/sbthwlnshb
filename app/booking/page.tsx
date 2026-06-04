@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 3 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts)
+// app/booking/page.tsx  —  Phase 5 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Interactive Descriptions)
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +49,7 @@ const LABEL: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────
 // TYPES & CONSTANTS
 // ─────────────────────────────────────────────────────────────
-interface ServiceItem { id: string; name: string; duration: string; price: number; category: string }
+interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string }
 interface Therapist { id: string; name: string; status: string; role: string }
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
@@ -106,14 +106,14 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
   return (
     <button type="button" onClick={onToggle} style={{
       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, padding: '13px 15px',
-      backgroundColor: selected ? 'rgba(197,143,59,0.10)' : WHITE,
+      backgroundColor: selected ? 'rgba(197,143,59,0.06)' : WHITE,
       border: `1.5px solid ${selected ? GOLD : 'rgba(26,26,26,0.13)'}`,
       borderRadius: 10, cursor: 'pointer', textAlign: 'left', transition: 'all 160ms ease',
-      boxShadow: selected ? '0 2px 10px rgba(197,143,59,0.18)' : 'none', position: 'relative',
+      boxShadow: selected ? '0 2px 10px rgba(197,143,59,0.15)' : 'none', position: 'relative',
     }}>
       {selected && (
         <span style={{ position: 'absolute', top: 8, right: 9, width: 18, height: 18, borderRadius: '50%', backgroundColor: GOLD, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={BLACK} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
         </span>
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
@@ -127,6 +127,15 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
           `${item.duration} · ${fmt(item.price)}`
         )}
       </span>
+
+      {/* Description intelligently unfolds ONLY when the service is selected */}
+      {selected && item.description && (
+        <div style={{ marginTop: 8, padding: '10px 12px', backgroundColor: WHITE, borderRadius: 6, border: '1px solid rgba(197,143,59,0.15)', width: '100%', boxSizing: 'border-box' }}>
+          <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.65)', lineHeight: 1.5, fontFamily: BODY, display: 'block' }}>
+            {item.description}
+          </span>
+        </div>
+      )}
     </button>
   )
 }
@@ -168,7 +177,7 @@ export default function BookingPage() {
 
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
 
-  // Custom Dynamic Dropdown States
+  // Custom Dynamic Dropdown States (Defaults to None)
   const [discountMode, setDiscountMode] = useState<string>('none')
   const [customDiscountVal, setCustomDiscountVal] = useState<string>('')
 
@@ -243,12 +252,36 @@ export default function BookingPage() {
             let rawName = String(s.service_name || s.name || s.service || 'Unnamed Service');
             if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
+
+            // PERFECTED DESCRIPTION MAPPER ENGINE
+            let desc = '';
+            const upName = rawName.toUpperCase();
+            if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
+              if (upName.includes('SABBATH SIGNATURE MASSAGE')) desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
+              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER')) desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
+              else if (upName.includes('THAI MASSAGE')) desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
+              else if (upName.includes('AROMATHERAPY')) desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being.";
+              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding. Benefits: Relieves back pain, leg cramps, and swelling Improves sleep and prepares the body for labor Enhances milk flow and reduces breast discomfort Prevents clogged ducts and engorgement Prenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section.";
+              else if (upName === 'BODY SCRUBS' || upName.includes('BODY SCRUBS -')) desc = "By appointment.Walk-ins accepted if willing to wait. Private room shower use only. Total Duration: 80 minutes (includes shower & dressing). 20 mins: Scalp massage (cream bath or oil-based) 40 mins: Full-body scrub to exfoliate and refresh skin Body Scrubs Options: Coffee Scrub: Detoxifies, firms, and minimize cellulite Oat Scrub: Soothes and nourishes sensitive skin";
+              else if (upName.includes('SWEDISH')) desc = "A relaxing full-body massage using gentle to firm strokes to relieve tension, improve circulation, and promote overall well-being, ideal for stress relief.";
+              else if (upName.includes('SHIATSU')) desc = "A Japanese massage using firm thumb and palm pressure to increase short-term flexibility and significantly reduces muscle pains and soreness.";
+              else if (upName.includes('FOOT REFLEXOLOGY')) desc = "Our exclusive, soothing treatment that gently restores balance through calming pressure and wooden sticks, bringing deep relaxation from the ground up.";
+              else if (upName.includes('FOOT, HEAD, NECK, & SHOULDER') || upName.includes('FOOT, HEAD, NECK')) desc = "Boosts circulation, soothes tired feet, and eases head, neck, and shoulder tension.";
+              else if (upName.includes('GROWTH MASSAGE')) desc = "A gentle massage for kids and pre-teens that relieves stress, supports healthy growth, and encourages natural development.";
+              else if (upName.includes('COMBINATION') && !upName.includes('STONE')) desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
+              else if (upName.includes('SLIMMING')) desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin.";
+              else if (upName.includes('HILOT') || upName.includes('VENTOSA')) desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing.";
+              else if (upName.includes('PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE')) desc = "Private Shower, Jacuzzi, Sauna and 60 minutes Regular Massage";
+              else if (upName.includes('BODY SCRUBS WITH REGULAR MASSAGE')) desc = "20 minutes scalp massage - Cream bath or oil scalp massage. 40 minutes - A full-body exfoliation treatment using natural scrubs. 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu.";
+            }
+
             return {
               id: String(s.id),
               name: rawName,
               duration: String(s.duration || '60 min'),
               price: Number(s.price || s.amount || 0),
-              category: String(s.category || s.type || 'Massage')
+              category: String(s.category || s.type || 'Massage'),
+              description: desc
             };
           })
           setDbServices(mappedServices)
@@ -365,10 +398,17 @@ export default function BookingPage() {
   const membershipNailDeduction = rawNailSubtotal * (nailDiscountPercentage / 100);
   const subtotalAfterMembership = (rawNailSubtotal - membershipNailDeduction) + rawMassageSubtotal;
 
+  // Global Dropdown Application Evaluator
   let promoDeduction = 0;
   let appliedPromoText = '';
 
-  if (discountMode.startsWith('db-')) {
+  if (discountMode === 'senior') {
+    promoDeduction = subtotalAfterMembership * 0.20;
+    appliedPromoText = 'Senior Citizen (20%)';
+  } else if (discountMode === 'pwd') {
+    promoDeduction = subtotalAfterMembership * 0.20;
+    appliedPromoText = 'PWD (20%)';
+  } else if (discountMode.startsWith('db-')) {
     const dbId = discountMode.split('db-')[1];
     const match = dbDiscounts.find(d => String(d.id) === dbId);
     if (match) {
@@ -679,7 +719,7 @@ export default function BookingPage() {
               )}
             </Section>
 
-            {/* ─── DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
+            {/* ─── EXPANDED DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
             <Section title="Discounts & Promos" note="Select active promo options directly">
               <Field label="Choose Available Discount">
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -689,7 +729,9 @@ export default function BookingPage() {
                     value={discountMode}
                     onChange={e => { setDiscountMode(e.target.value); setCustomDiscountVal(''); }}
                   >
-                    <option value="none">No promo code selected...</option>
+                    <option value="none">No Discount</option>
+                    <option value="senior">Senior Citizen (20%)</option>
+                    <option value="pwd">PWD (20%)</option>
                     {dbDiscounts.map(d => (
                       <option key={d.id} value={`db-${d.id}`}>{d.name} ({d.discount_percentage}%)</option>
                     ))}
