@@ -42,7 +42,7 @@ const NAV_ITEMS = [
   {
     key: 'sabasu',
     href: '/sabasu',
-    title: 'SABASU',
+    title: 'Sabasu',
     desc: 'Order coffee, pasta & pastries to your room',
     icon: <IconCafe />,
   },

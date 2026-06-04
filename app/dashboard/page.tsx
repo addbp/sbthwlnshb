@@ -9,12 +9,12 @@ import { createClient } from '@/lib/supabase/client'
 // TYPES & CONSTANTS
 // ─────────────────────────────────────────────────────────────
 interface BookingRecord {
+  uniqueRowKey: string;
   id: string;
-  booking_id?: string;
   client_name: string;
   service_name: string;
   amount: number;
-  price: number; // Stored final/discounted price
+  price: number;
   appointment_date: string;
   appointment_time: string;
   therapist_name: string;
@@ -45,13 +45,12 @@ export default function OverviewDashboard() {
   const [loading, setLoading] = useState(true)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
 
-  // Dynamic Date Filter for the Calendar View (Defaults to Today)
   const [calendarDate, setCalendarDate] = useState(() => {
     const today = new Date()
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
   })
 
-  // ─── DATA ENGINE: SECURE CONTINUOUS SYNCHRONIZATION ───
+  // ─── DATA ENGINE: PULL AND SYNCHRONIZE LEDGER DATA ───
   const refreshDashboardData = useCallback(async () => {
     try {
       const [bookingsRes, staffRes] = await Promise.all([
@@ -60,8 +59,22 @@ export default function OverviewDashboard() {
       ])
 
       if (bookingsRes.data) {
-        setBookings(bookingsRes.data as BookingRecord[])
+        const isolatedRows = bookingsRes.data.map((b: any, index: number) => ({
+          uniqueRowKey: `row-bkg-${b.id || b.booking_id || index}-${index}`,
+          id: String(b.id || b.booking_id || ''),
+          client_name: b.client_name || 'Guest',
+          service_name: b.service_name || b.service || '—',
+          amount: Number(b.amount || 0),
+          price: Number(b.price || b.amount || 0),
+          appointment_date: b.appointment_date || '',
+          appointment_time: b.appointment_time || '',
+          therapist_name: b.therapist_name || 'Unassigned',
+          status: b.status || 'Pending',
+          created_at: b.created_at || ''
+        }))
+        setBookings(isolatedRows)
       }
+
       if (staffRes.data) {
         setStaff(staffRes.data.map(t => ({
           id: t.id,
@@ -70,35 +83,45 @@ export default function OverviewDashboard() {
         })))
       }
     } catch (err) {
-      console.error("Dashboard continuous sync error:", err)
+      console.error("Dashboard ingestion pipeline error:", err)
     } finally {
       setLoading(false)
     }
   }, [supabase])
 
-  // Polling architecture to guarantee information is persistently fresh
+  // ─── REALTIME DATABASE LISTENER SUBSCRIPTION ───
   useEffect(() => {
     refreshDashboardData()
-    const autoSyncInterval = setInterval(refreshDashboardData, 30000) // Auto refresh every 30 seconds
-    return () => clearInterval(autoSyncInterval)
-  }, [refreshDashboardData])
 
-  // ─── LIVE STATUS TRANSACTION CONTROL ───
-  const handleStatusTransition = async (id: string, nextStatus: string) => {
-    // Optimistic UI state manipulation
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status: nextStatus } : b))
+    const realTimeChannel = supabase
+      .channel('realtime-dashboard-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          refreshDashboardData()
+        }
+      )
+      .subscribe()
 
-    // Multi-key database compliance routine
-    const { error } = await supabase.from('bookings').update({ status: nextStatus }).eq('id', id)
+    return () => {
+      supabase.removeChannel(realTimeChannel)
+    }
+  }, [refreshDashboardData, supabase])
+
+  // ─── LIVE STATUS INDIVIDUAL TRANSACTION CONTROL ───
+  const handleStatusTransition = async (targetRowKey: string, dbId: string, nextStatus: string) => {
+    setBookings(prev => prev.map(b => b.uniqueRowKey === targetRowKey ? { ...b, status: nextStatus } : b))
+
+    const { error } = await supabase.from('bookings').update({ status: nextStatus }).eq('id', dbId)
     if (error) {
-      await supabase.from('bookings').update({ status: nextStatus }).eq('booking_id', id)
+      await supabase.from('bookings').update({ status: nextStatus }).eq('booking_id', dbId)
     }
   }
 
-  // ─── CALCULATED KPI METRICS ───
+  // ─── CALCULATED METRICS ───
   const activeTodayBookings = bookings.filter(b => b.appointment_date === calendarDate)
 
-  // Revenue calculations computed precisely from final/discounted price
   const computedLifetimeRevenue = bookings
     .filter(b => b.status === 'Completed')
     .reduce((sum, b) => sum + (Number(b.price || b.amount || 0)), 0)
@@ -111,7 +134,7 @@ export default function OverviewDashboard() {
     if (s === 'COMPLETED') return { backgroundColor: 'rgba(61,122,74,0.1)', color: '#3D7A4A' }
     if (s === 'ONGOING') return { backgroundColor: 'rgba(197,143,59,0.1)', color: '#C58F3B' }
     if (s === 'HOLD') return { backgroundColor: 'rgba(139,58,58,0.1)', color: '#8B3A3A' }
-    return { backgroundColor: '#f5f5f5', color: '#666' } // Pending Default
+    return { backgroundColor: '#f5f5f5', color: '#666' }
   }
 
   return (
@@ -127,41 +150,41 @@ export default function OverviewDashboard() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
 
-        {/* Upper Action Bar */}
+        {/* Top Header Controls */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Workspace</p>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Live Operation Streams</p>
             <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Management Overview</h2>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input type="date" className="date-picker-input" value={calendarDate} onChange={(e) => setCalendarDate(e.target.value)} title="Select date target for matrix calendar evaluation" />
+            <input type="date" className="date-picker-input" value={calendarDate} onChange={(e) => setCalendarDate(e.target.value)} title="Select schedule validation focus day" />
             <button onClick={refreshDashboardData} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
-              {loading ? 'Syncing...' : 'Refresh'}
+              {loading ? 'Refreshing...' : 'Live Synced'}
             </button>
           </div>
         </div>
 
-        {/* Dynamic Connected KPI Cards */}
+        {/* Operational Indicators */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Lifetime Revenue</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Lifetime Gross Revenue</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#3D7A4A', margin: 0 }}>₱{computedLifetimeRevenue.toLocaleString()}</p>
           </div>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Target Day Bookings</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Target Day Appointments</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{activeTodayBookings.length}</p>
           </div>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Ongoing Sessions</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 8px' }}>Active Ongoing Sessions</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#C58F3B', margin: 0 }}>{ongoingSessionsCount}</p>
           </div>
           <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Pending Approvals</p>
+            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#8B3A3A', margin: '0 0 8px' }}>Unresolved Pendings</p>
             <p style={{ fontSize: 28, fontWeight: 700, color: '#8B3A3A', margin: 0 }}>{pendingApprovalsCount}</p>
           </div>
         </div>
 
-        {/* Mode Toggle Controls */}
+        {/* Tab Selection Row */}
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 10 }}>
           <button onClick={() => setViewMode('list')} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'list' ? '#1A1A1A' : 'transparent', color: viewMode === 'list' ? '#C58F3B' : '#666' }}>
             List Track view
@@ -171,9 +194,9 @@ export default function OverviewDashboard() {
           </button>
         </div>
 
-        {/* Primary Data Display */}
+        {/* Primary Views */}
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Synchronizing workspace streams...</div>
+          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Synchronizing workspace data matrices...</div>
         ) : viewMode === 'list' ? (
 
           /* ─── LIVE DATA ENGINE TABLE VIEW ─── */
@@ -189,25 +212,21 @@ export default function OverviewDashboard() {
                 </thead>
                 <tbody>
                   {bookings.map((b) => {
-                    const badge = getStatusBadgeStyle(b.status)
+                    const badgeStyle = getStatusBadgeStyle(b.status)
                     return (
-                      <tr key={b.id || b.booking_id} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+                      <tr key={b.uniqueRowKey} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
                         <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>{b.appointment_date}</td>
                         <td style={{ padding: '16px 20px', fontWeight: 600, color: '#1A1A1A' }}>{b.client_name}</td>
                         <td style={{ padding: '16px 20px', color: '#2A2A2A' }}>{b.service_name}</td>
+                        <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.price.toLocaleString()}</td>
 
-                        {/* Live Revenue calculation column */}
-                        <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1A1A1A' }}>
-                          ₱{Number(b.price || b.amount || 0).toLocaleString()}
-                        </td>
-
-                        {/* Dropdown status update matrix interface (FIXED TYPO HERE) */}
+                        {/* Dropdown status update matrix layout interface */}
                         <td style={{ padding: '16px 20px' }}>
                           <select
                             value={b.status}
-                            onChange={(e) => handleStatusTransition(b.id, e.target.value)}
+                            onChange={(e) => handleStatusTransition(b.uniqueRowKey, b.id, e.target.value)}
                             className="ctrl-select"
-                            style={{ backgroundColor: badge.backgroundColor, color: badge.color, borderColor: badge.color }}
+                            style={{ backgroundColor: badgeStyle.backgroundColor, color: badgeStyle.color, borderColor: badgeStyle.color }}
                           >
                             {STATUS_OPTIONS.map(opt => (
                               <option key={opt} value={opt} style={{ backgroundColor: '#fff', color: '#1A1A1A' }}>{opt}</option>
@@ -227,11 +246,11 @@ export default function OverviewDashboard() {
 
         ) : (
 
-          /* ─── FIXED INTERLOCKING MATRIX DAILY CALENDAR VIEW ─── */
+          /* ─── REALTIME INTERLOCKING TIMELINE MATRIX GRID ─── */
           <div className="grid-scroll" style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
               <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>
-                Timeline Schedule — Row Matrix Verification for: {calendarDate}
+                Timeline Grid Scheduler — Realtime Verification Target Date: {calendarDate}
               </h3>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1400 }}>
@@ -282,7 +301,7 @@ export default function OverviewDashboard() {
                     })}
                   </tr>
                 ))}
-                {staff.length === 0 && <tr><td colSpan={TIME_SLOTS.length + 1} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No therapist profiles located to map workspace timeline grid.</td></tr>}
+                {staff.length === 0 && <tr><td colSpan={TIME_SLOTS.length + 1} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No therapist profiles located to map timeline grid parameters.</td></tr>}
               </tbody>
             </table>
           </div>
