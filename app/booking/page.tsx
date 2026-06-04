@@ -1,7 +1,7 @@
 'use client'
 
 // app/booking/page.tsx  —  Phase 5 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Interactive Descriptions)
+// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Interactive Descriptions + Packages)
 
 export const dynamic = 'force-dynamic'
 
@@ -128,7 +128,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
         )}
       </span>
 
-      {/* Description intelligently unfolds ONLY when the service is selected */}
+      {/* ─── DESCRIPTION ONLY SHOWS WHEN SELECTED ─── */}
       {selected && item.description && (
         <div style={{ marginTop: 8, padding: '10px 12px', backgroundColor: WHITE, borderRadius: 6, border: '1px solid rgba(197,143,59,0.15)', width: '100%', boxSizing: 'border-box' }}>
           <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.65)', lineHeight: 1.5, fontFamily: BODY, display: 'block' }}>
@@ -253,16 +253,29 @@ export default function BookingPage() {
             if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
 
-            // PERFECTED DESCRIPTION MAPPER ENGINE
+            // ─── PERFECT DESCRIPTION & PACKAGE MAPPER ───
             let desc = '';
             const upName = rawName.toUpperCase();
-            if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
+
+            // Packages & Combos Mapping
+            if (upName === 'PACKAGE A') desc = "Mani, Pedi, Foot Spa";
+            else if (upName === 'PACKAGE B') desc = "ManiGel ORLY, Pedi, Foot Spa";
+            else if (upName === 'PACKAGE C') desc = "ManiGel CUCCIO, Pedi, Foot Massage";
+            else if (upName === 'PACKAGE D') desc = "ManiGel CUCCIO, PediGel CUCCIO, Foot Massage";
+            else if (upName === 'PACKAGE E') desc = "Mani, PediGel ORLY, Hand Paraffin";
+            else if (upName === 'PACKAGE F') desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin";
+            else if (upName.includes('PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE') || (upName.includes('WELLNESS SUITE') && upName.includes('MASSAGE'))) desc = "Duration: 3 hours inclusions: Private Shower, Jacuzzi, Sauna and 60 minutes Regular Massage (Swedish, Foot Reflexology or Shiatsu).";
+            else if (upName.includes('PRIVATE WELLNESS SUITE')) desc = "A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session. Includes: Private Shower, Sauna session (4 pax max), Jacuzzi bath experience (for 2).";
+            else if (upName.includes('BODY SCRUBS WITH REGULAR MASSAGE')) desc = "Duration: 2 ½ hours. 20 minutes scalp massage - Cream bath or oil scalp massage. 40 minutes - A full-body exfoliation treatment using natural scrubs to remove dead skin cells, leaving the skin smooth and refreshed. 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu.";
+
+            // Standard Massage Mapping
+            else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
               if (upName.includes('SABBATH SIGNATURE MASSAGE')) desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
-              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER')) desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
-              else if (upName.includes('THAI MASSAGE')) desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
-              else if (upName.includes('AROMATHERAPY')) desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being.";
-              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding. Benefits: Relieves back pain, leg cramps, and swelling Improves sleep and prepares the body for labor Enhances milk flow and reduces breast discomfort Prevents clogged ducts and engorgement Prenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section.";
-              else if (upName === 'BODY SCRUBS' || upName.includes('BODY SCRUBS -')) desc = "By appointment.Walk-ins accepted if willing to wait. Private room shower use only. Total Duration: 80 minutes (includes shower & dressing). 20 mins: Scalp massage (cream bath or oil-based) 40 mins: Full-body scrub to exfoliate and refresh skin Body Scrubs Options: Coffee Scrub: Detoxifies, firms, and minimize cellulite Oat Scrub: Soothes and nourishes sensitive skin";
+              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
+              else if (upName.includes('THAI MASSAGE')) desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements. Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
+              else if (upName.includes('AROMATHERAPY') || upName.includes('HERBAL BALL')) desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being.";
+              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding. Benefits: Relieves back pain, leg cramps, and swelling. Improves sleep and prepares the body for labor. Enhances milk flow and reduces breast discomfort. Prevents clogged ducts and engorgement. Prenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section.";
+              else if (upName === 'BODY SCRUBS' || upName === 'BODY SCRUB' || (upName.includes('BODY SCRUB') && !upName.includes('WITH REGULAR MASSAGE'))) desc = "By appointment. Walk-ins accepted if willing to wait. Private room shower use only. Total Duration: 80 minutes (includes shower & dressing). 20 mins: Scalp massage (cream bath or oil-based) 40 mins: Full-body scrub to exfoliate and refresh skin. Body Scrubs Options: Coffee Scrub: Detoxifies, firms, and minimize cellulite. Oat Scrub: Soothes and nourishes sensitive skin.";
               else if (upName.includes('SWEDISH')) desc = "A relaxing full-body massage using gentle to firm strokes to relieve tension, improve circulation, and promote overall well-being, ideal for stress relief.";
               else if (upName.includes('SHIATSU')) desc = "A Japanese massage using firm thumb and palm pressure to increase short-term flexibility and significantly reduces muscle pains and soreness.";
               else if (upName.includes('FOOT REFLEXOLOGY')) desc = "Our exclusive, soothing treatment that gently restores balance through calming pressure and wooden sticks, bringing deep relaxation from the ground up.";
@@ -271,8 +284,6 @@ export default function BookingPage() {
               else if (upName.includes('COMBINATION') && !upName.includes('STONE')) desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
               else if (upName.includes('SLIMMING')) desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin.";
               else if (upName.includes('HILOT') || upName.includes('VENTOSA')) desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing.";
-              else if (upName.includes('PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE')) desc = "Private Shower, Jacuzzi, Sauna and 60 minutes Regular Massage";
-              else if (upName.includes('BODY SCRUBS WITH REGULAR MASSAGE')) desc = "20 minutes scalp massage - Cream bath or oil scalp massage. 40 minutes - A full-body exfoliation treatment using natural scrubs. 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu.";
             }
 
             return {
@@ -316,10 +327,17 @@ export default function BookingPage() {
     return 0;
   }
 
-  // ─── STRICT EXCLUSION FILTER ───
+  // ─── STRICT EXCLUSION FILTER (REMOVES SAUNA, SHOWER, ETC) ───
   const isExcluded = (name: string) => {
     const n = name.toUpperCase();
-    return n === 'SOFT GEL' || n.includes('GIFT CERTIFICATE') || n.includes('GIFT CERT') || n.includes('MEMBERSHIP');
+    return n === 'SOFT GEL' ||
+      n.includes('GIFT CERTIFICATE') ||
+      n.includes('GIFT CERT') ||
+      n.includes('MEMBERSHIP') ||
+      n === 'SAUNA' ||
+      n === 'SHOWER' ||
+      n === 'JACUZZI' ||
+      n === 'SLIPPERS';
   }
 
   const validServices = dbServices.filter(s => !isExcluded(s.name));
@@ -339,8 +357,25 @@ export default function BookingPage() {
     return false;
   }
 
-  const nailServices = validServices.filter(isNailService).sort(popularitySort)
-  const massageServices = validServices.filter(s => !isNailService(s)).sort(popularitySort)
+  // ─── CATEGORY ORGANIZATION ───
+  const packageServices = allAvailableServices.filter(s => {
+    const n = s.name.toUpperCase();
+    return n.startsWith('PACKAGE') || n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE');
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  const nailServices = allAvailableServices.filter(s => {
+    const n = s.name.toUpperCase();
+    if (n.startsWith('PACKAGE') || n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE')) return false;
+    return isNailService(s);
+  }).sort(popularitySort);
+
+  const massageServices = allAvailableServices.filter(s => {
+    const n = s.name.toUpperCase();
+    if (n.startsWith('PACKAGE') || n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE')) return false;
+    if (isNailService(s)) return false;
+    if (s.category === 'Custom') return false; // Render custom separately
+    return true;
+  }).sort(popularitySort);
 
   function toggleService(id: string) {
     setSelectedIds(prev => {
@@ -617,6 +652,16 @@ export default function BookingPage() {
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+                  {/* DEDICATED PACKAGES & COMBOS CATEGORY */}
+                  {packageServices.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Wellness Suites</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
+                        {packageServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
+                      </div>
+                    </div>
+                  )}
+
                   {massageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Massage Therapy</div>
@@ -719,7 +764,7 @@ export default function BookingPage() {
               )}
             </Section>
 
-            {/* ─── EXPANDED DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
+            {/* ─── DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
             <Section title="Discounts & Promos" note="Select active promo options directly">
               <Field label="Choose Available Discount">
                 <div style={{ display: 'flex', gap: 10 }}>
