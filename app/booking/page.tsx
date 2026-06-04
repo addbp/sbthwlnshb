@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 2 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Memberships + Live Discounts + Smart Therapists)
+// app/booking/page.tsx  —  Phase 3 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts)
 
 export const dynamic = 'force-dynamic'
 
@@ -101,7 +101,6 @@ function Row2({ children }: { children: React.ReactNode }) {
 }
 
 function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: ServiceItem; selected: boolean; onToggle: () => void; discountPct?: number }) {
-  const isGiftCert = item.name.toUpperCase().includes('GIFT CERT');
   const actualPrice = discountPct > 0 ? item.price * (1 - discountPct / 100) : item.price;
 
   return (
@@ -119,9 +118,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
       <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY }}>
-        {isGiftCert ? (
-          <span>Exclusive Item</span>
-        ) : discountPct > 0 ? (
+        {discountPct > 0 ? (
           <>
             <s style={{ opacity: 0.6, marginRight: 4 }}>{fmt(item.price)}</s>
             <strong style={{ color: GOLD }}>{fmt(actualPrice)}</strong>
@@ -155,11 +152,14 @@ export default function BookingPage() {
   const [firstName, setFirstName] = useState('')
   const [middleInitial, setMiddleInitial] = useState('')
   const [lastName, setLastName] = useState('')
-
   const [mobile, setMobile] = useState('')
   const [email, setEmail] = useState('')
 
   const [dbServices, setDbServices] = useState<ServiceItem[]>([])
+  const [customServices, setCustomServices] = useState<ServiceItem[]>([])
+  const [customSvcName, setCustomSvcName] = useState('')
+  const [customSvcPrice, setCustomSvcPrice] = useState('')
+
   const [servicesLoad, setServicesLoad] = useState(true)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
@@ -167,8 +167,10 @@ export default function BookingPage() {
   const [activeMemberships, setActiveMemberships] = useState<Membership[]>([])
 
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
-  const [promoInput, setPromoInput] = useState('')
-  const [appliedPromo, setAppliedPromo] = useState<Discount | null>(null)
+
+  // Custom Dynamic Dropdown States
+  const [discountMode, setDiscountMode] = useState<string>('none')
+  const [customDiscountVal, setCustomDiscountVal] = useState<string>('')
 
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
@@ -198,29 +200,46 @@ export default function BookingPage() {
   useEffect(() => {
     setMinApptDate(getTodayStr())
 
+    const fetchUnlimited = async (tableName: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allRecords: any[] = [];
+      let start = 0;
+      const step = 1000;
+      for (; ;) {
+        const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1);
+        if (error || !data || data.length === 0) break;
+        allRecords.push(...data);
+        if (data.length < step) break;
+        start += step;
+      }
+      return allRecords;
+    };
+
     async function loadData() {
       try {
         const [thRes, svRes, discRes, memRes] = await Promise.all([
-          supabase.from('staff').select('*').order('name', { ascending: true }).limit(10000),
-          supabase.from('services').select('*').limit(10000),
-          supabase.from('discounts').select('*').eq('active', true).limit(10000),
-          supabase.from('memberships').select('*').eq('status', 'Active').limit(10000)
+          fetchUnlimited('staff'),
+          fetchUnlimited('services'),
+          fetchUnlimited('discounts'),
+          fetchUnlimited('memberships')
         ])
 
-        if (thRes.data) {
-          setTherapists(thRes.data.map(t => ({
-            id: String(t.id),
-            name: t.name || t.therapist_name || 'Staff',
-            status: t.status,
-            role: t.role || t.specialty || 'Massage Therapist'
-          })))
+        if (thRes) {
+          setTherapists(thRes
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+            .map(t => ({
+              id: String(t.id),
+              name: t.name || t.therapist_name || 'Staff',
+              status: t.status,
+              role: t.role || t.specialty || 'Massage Therapist'
+            })))
         }
 
-        if (discRes.data) setDbDiscounts(discRes.data as Discount[])
-        if (memRes.data) setActiveMemberships(memRes.data as Membership[])
+        if (discRes) setDbDiscounts(discRes.filter(d => d.active) as Discount[])
+        if (memRes) setActiveMemberships(memRes.filter(m => m.status === 'Active') as Membership[])
 
-        if (svRes.data && svRes.data.length > 0) {
-          const mappedServices = svRes.data.map(s => {
+        if (svRes && svRes.length > 0) {
+          const mappedServices = svRes.map(s => {
             let rawName = String(s.service_name || s.name || s.service || 'Unnamed Service');
             if (rawName.toLowerCase() === 'gel polish') rawName = 'GEL POLISH';
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
@@ -264,7 +283,14 @@ export default function BookingPage() {
     return 0;
   }
 
-  const validServices = dbServices.filter(s => s.name.toUpperCase() !== 'SOFT GEL')
+  // ─── STRICT EXCLUSION FILTER ───
+  const isExcluded = (name: string) => {
+    const n = name.toUpperCase();
+    return n === 'SOFT GEL' || n.includes('GIFT CERTIFICATE') || n.includes('GIFT CERT') || n.includes('MEMBERSHIP');
+  }
+
+  const validServices = dbServices.filter(s => !isExcluded(s.name));
+  const allAvailableServices = [...validServices, ...customServices];
 
   const NAIL_KEYWORDS = [
     'SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED',
@@ -291,7 +317,22 @@ export default function BookingPage() {
     })
   }
 
-  const selectedServices = validServices.filter(s => selectedIds.has(s.id))
+  function handleAddCustomService() {
+    if (!customSvcName.trim() || !customSvcPrice) return;
+    const newCustomService: ServiceItem = {
+      id: `custom-${Date.now()}`,
+      name: customSvcName.trim(),
+      duration: 'Custom',
+      price: Number(customSvcPrice),
+      category: 'Custom'
+    }
+    setCustomServices(prev => [...prev, newCustomService]);
+    setSelectedIds(prev => new Set(prev).add(newCustomService.id));
+    setCustomSvcName('');
+    setCustomSvcPrice('');
+  }
+
+  const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
@@ -311,6 +352,7 @@ export default function BookingPage() {
   }
   const filteredTherapists = allowedTherapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
+  // ─── DYNAMIC PRICING ENGINE ───
   const rawNailSubtotal = selectedServices.filter(isNailService).reduce((a, s) => a + Number(s.price || 0), 0)
   const rawMassageSubtotal = selectedServices.filter(s => !isNailService(s)).reduce((a, s) => a + Number(s.price || 0), 0)
 
@@ -324,8 +366,23 @@ export default function BookingPage() {
   const subtotalAfterMembership = (rawNailSubtotal - membershipNailDeduction) + rawMassageSubtotal;
 
   let promoDeduction = 0;
-  if (appliedPromo) {
-    promoDeduction = subtotalAfterMembership * (Number(appliedPromo.discount_percentage) / 100);
+  let appliedPromoText = '';
+
+  if (discountMode.startsWith('db-')) {
+    const dbId = discountMode.split('db-')[1];
+    const match = dbDiscounts.find(d => String(d.id) === dbId);
+    if (match) {
+      promoDeduction = subtotalAfterMembership * (Number(match.discount_percentage) / 100);
+      appliedPromoText = `${match.name} (${match.discount_percentage}%)`;
+    }
+  } else if (discountMode === 'custom_pct') {
+    const pct = Number(customDiscountVal) || 0;
+    promoDeduction = subtotalAfterMembership * (pct / 100);
+    appliedPromoText = `Custom Discount (${pct}%)`;
+  } else if (discountMode === 'custom_amount') {
+    const amt = Number(customDiscountVal) || 0;
+    promoDeduction = amt;
+    appliedPromoText = `Custom Discount (₱${amt})`;
   }
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
@@ -357,22 +414,6 @@ export default function BookingPage() {
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
-  const handleDropdownPromoChange = (selectedName: string) => {
-    if (!selectedName) {
-      setAppliedPromo(null);
-      setPromoInput('');
-      return;
-    }
-    const match = dbDiscounts.find(d => d.name === selectedName);
-    if (match) {
-      setAppliedPromo(match);
-      setPromoInput(selectedName);
-    } else {
-      setAppliedPromo(null);
-      setPromoInput('');
-    }
-  }
-
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
@@ -384,6 +425,11 @@ export default function BookingPage() {
 
     const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
     const constructedFullName = `${firstName.trim()}${miStr} ${lastName.trim()}`;
+
+    let trackingNotes = notes.trim();
+    if (promoDeduction > 0 && appliedPromoText) {
+      trackingNotes += `\n\n[SYSTEM CHECKOUT: ${appliedPromoText} APPLIED - ₱${promoDeduction.toLocaleString()} DEDUCTED]`;
+    }
 
     try {
       const { error: dbErr } = await supabase.from('bookings').insert({
@@ -398,7 +444,7 @@ export default function BookingPage() {
         appointment_time: time,
         payment_method: payMethod,
         status: 'Pending',
-        notes: notes.trim() || 'None',
+        notes: trackingNotes.trim() || 'None',
       })
 
       if (dbErr) throw new Error(dbErr.message)
@@ -524,12 +570,13 @@ export default function BookingPage() {
 
               {servicesLoad ? (
                 <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.5)', fontStyle: 'italic' }}>Loading live services from database...</p>
-              ) : validServices.length === 0 ? (
+              ) : validServices.length === 0 && customServices.length === 0 ? (
                 <div style={{ backgroundColor: 'rgba(139,58,58,0.05)', padding: 16, borderRadius: 8, border: '1px solid rgba(139,58,58,0.2)' }}>
                   <p style={{ color: '#8B3A3A', fontSize: 14, margin: 0, fontWeight: 600 }}>No services found in database.</p>
                 </div>
               ) : (
-                <div className="svc-scroll" style={{ maxHeight: 350, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
                   {massageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Massage Therapy</div>
@@ -555,6 +602,30 @@ export default function BookingPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Render Ad-Hoc Custom Services */}
+                  {customServices.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Custom Services</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
+                        {customServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Service Input Generator */}
+                  <div style={{ marginTop: 10, padding: 16, backgroundColor: 'rgba(26,26,26,0.02)', borderRadius: 12, border: '1px dashed rgba(26,26,26,0.2)' }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#666', marginBottom: 12 }}>Add Custom Service</p>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <input className="bk-in" style={{ ...INPUT, flex: '2 1 200px', height: 44, fontSize: 14 }} placeholder="Custom Service Name" value={customSvcName} onChange={e => setCustomSvcName(e.target.value)} />
+                      <div style={{ position: 'relative', flex: '1 1 100px' }}>
+                        <span style={{ position: 'absolute', left: 12, top: 13, fontSize: 14, color: '#666', fontWeight: 600 }}>₱</span>
+                        <input className="bk-in" style={{ ...INPUT, height: 44, fontSize: 14, paddingLeft: 28 }} type="number" placeholder="Price" value={customSvcPrice} onChange={e => setCustomSvcPrice(e.target.value)} />
+                      </div>
+                      <button type="button" onClick={handleAddCustomService} style={{ height: 44, padding: '0 20px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ ADD</button>
+                    </div>
+                  </div>
+
                 </div>
               )}
             </Section>
@@ -608,28 +679,48 @@ export default function BookingPage() {
               )}
             </Section>
 
-            {/* ─── CHOOSE ACTIVE DROPDOWN DISCOUNTS SELECTION ─── */}
+            {/* ─── DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
             <Section title="Discounts & Promos" note="Select active promo options directly">
               <Field label="Choose Available Discount">
-                <select
-                  className="bk-in"
-                  style={SELECT}
-                  value={promoInput}
-                  onChange={e => handleDropdownPromoChange(e.target.value)}
-                >
-                  <option value="">No promo code selected…</option>
-                  {dbDiscounts.map(d => (
-                    <option key={d.id} value={d.name}>{d.name} ({d.discount_percentage}% OFF)</option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <select
+                    className="bk-in"
+                    style={{ ...SELECT, flex: 2 }}
+                    value={discountMode}
+                    onChange={e => { setDiscountMode(e.target.value); setCustomDiscountVal(''); }}
+                  >
+                    <option value="none">No promo code selected...</option>
+                    {dbDiscounts.map(d => (
+                      <option key={d.id} value={`db-${d.id}`}>{d.name} ({d.discount_percentage}%)</option>
+                    ))}
+                    <option value="custom_pct">Custom %</option>
+                    <option value="custom_amount">Custom ₱</option>
+                  </select>
+
+                  {(discountMode === 'custom_pct' || discountMode === 'custom_amount') && (
+                    <div style={{ position: 'relative', flex: 1 }}>
+                      <span style={{ position: 'absolute', left: 14, top: 18, fontSize: 14, color: '#666', fontWeight: 700 }}>
+                        {discountMode === 'custom_amount' ? '₱' : '%'}
+                      </span>
+                      <input
+                        className="bk-in"
+                        style={{ ...INPUT, paddingLeft: 34 }}
+                        type="number"
+                        value={customDiscountVal}
+                        onChange={e => setCustomDiscountVal(e.target.value)}
+                        placeholder={discountMode === 'custom_amount' ? 'Amount' : 'Percentage'}
+                      />
+                    </div>
+                  )}
+                </div>
               </Field>
 
-              {appliedPromo && (
+              {promoDeduction > 0 && (
                 <div style={{ padding: '12px 16px', backgroundColor: 'rgba(61,122,74,0.1)', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                   <span style={{ fontSize: 16, color: '#3D7A4A' }}>✓</span>
                   <div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#3D7A4A', textTransform: 'uppercase' }}>{appliedPromo.name} APPLIED SUCCESSFULLY</div>
-                    <div style={{ fontSize: 12, color: '#2A2A2A' }}>{appliedPromo.discount_percentage}% deduction applied to total checkout cost</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#3D7A4A', textTransform: 'uppercase' }}>{appliedPromoText} APPLIED</div>
+                    <div style={{ fontSize: 12, color: '#2A2A2A' }}>₱{promoDeduction.toLocaleString()} deduction applied to total checkout cost</div>
                   </div>
                 </div>
               )}
