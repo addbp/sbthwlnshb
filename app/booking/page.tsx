@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 6 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Custom Services + Custom Discounts + Printable Receipts)
+// app/booking/page.tsx  —  Phase 7 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Guests Added, Payments Removed, Print Ready)
 
 export const dynamic = 'force-dynamic'
 
@@ -55,14 +55,6 @@ interface Discount { id: string; name: string; discount_percentage: number; code
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
-
-const PAYMENT_METHODS = [
-  { key: 'gcash', label: 'GCash', qrImage: '/qr-gcash.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
-  { key: 'maya', label: 'Maya', qrImage: '/qr-maya.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="1" width="18" height="18" rx="4" stroke="currentColor" strokeWidth="1.5" /><path d="M12.5 8H10a2 2 0 1 0 0 4h2.5v-2H10.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg> },
-  { key: 'bank', label: 'Bank Transfer', qrImage: '/qr-qrph.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 8.5L10 3l8 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><rect x="3" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="8.5" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><rect x="14" y="9" width="3" height="7" rx="0.5" stroke="currentColor" strokeWidth="1.4" /><path d="M1.5 16.5h17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg> },
-  { key: 'mastercard', label: 'Visa / Mastercard', qrImage: '/qr-visa.png', icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="4" width="18" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="7.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /><circle cx="12.5" cy="10" r="3" stroke="currentColor" strokeWidth="1.3" /></svg> },
-  { key: 'cash', label: 'Cash', qrImage: null, icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="1" y="5" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.5" /><circle cx="10" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.3" /><path d="M4.5 10h.3M15.2 10h.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg> },
-]
 
 const TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
@@ -127,6 +119,8 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
           `${item.duration} · ${fmt(item.price)}`
         )}
       </span>
+
+      {/* ─── DESCRIPTION ONLY SHOWS WHEN SELECTED ─── */}
       {selected && item.description && (
         <div style={{ marginTop: 8, padding: '10px 12px', backgroundColor: WHITE, borderRadius: 6, border: '1px solid rgba(197,143,59,0.15)', width: '100%', boxSizing: 'border-box' }}>
           <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.65)', lineHeight: 1.5, fontFamily: BODY, display: 'block' }}>
@@ -162,6 +156,9 @@ export default function BookingPage() {
   const [mobile, setMobile] = useState('')
   const [email, setEmail] = useState('')
 
+  // New Guest Variable
+  const [guests, setGuests] = useState('1')
+
   const [dbServices, setDbServices] = useState<ServiceItem[]>([])
   const [customServices, setCustomServices] = useState<ServiceItem[]>([])
   const [customSvcName, setCustomSvcName] = useState('')
@@ -187,7 +184,6 @@ export default function BookingPage() {
   const [therapists, setTherapists] = useState<Therapist[]>([])
   const [therapistLoad, setTherapistLoad] = useState(true)
 
-  const [payMethod, setPayMethod] = useState('')
   const [notes, setNotes] = useState('')
 
   const autoCapitalize = (val: string) => {
@@ -473,7 +469,6 @@ export default function BookingPage() {
     services: selectedIds.size === 0,
     date: date === '',
     time: time === '',
-    payment: payMethod === '',
   }
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
@@ -490,13 +485,17 @@ export default function BookingPage() {
     const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
     const constructedFullName = `${firstName.trim()}${miStr} ${lastName.trim()}`;
 
-    let trackingNotes = notes.trim();
+    // Appending Guest Data and Promos cleanly into the notes
+    let trackingNotes = `[GUESTS: ${guests} Person(s)]\n\n` + notes.trim();
     if (promoDeduction > 0 && appliedPromoText) {
       trackingNotes += `\n\n[SYSTEM CHECKOUT: ${appliedPromoText} APPLIED - ₱${promoDeduction.toLocaleString()} DEDUCTED]`;
     }
 
     try {
-      const { error: dbErr } = await supabase.from('bookings').insert({
+      // Note: "number_of_guests" payload is included safely. If you haven't added this column 
+      // to your Supabase "bookings" table yet, you will need to add it as an integer, otherwise the
+      // trackingNotes string will act as your perfect fallback.
+      const payload: any = {
         booking_id: generatedBookingId,
         client_name: constructedFullName,
         client_mobile: mobile.trim(),
@@ -506,10 +505,15 @@ export default function BookingPage() {
         therapist_name: selectedTherapist?.name ?? null,
         appointment_date: date,
         appointment_time: time,
-        payment_method: payMethod,
+        payment_method: 'PAY AT COUNTER', // Cashier flow replaces strict payment module
         status: 'Pending',
-        notes: trackingNotes.trim() || 'None',
-      })
+        notes: trackingNotes.trim(),
+      };
+
+      // Safely apply number_of_guests to payload
+      try { payload.number_of_guests = parseInt(guests) } catch { }
+
+      const { error: dbErr } = await supabase.from('bookings').insert(payload)
 
       if (dbErr) throw new Error(dbErr.message)
 
@@ -532,7 +536,6 @@ export default function BookingPage() {
     } finally { setLoading(false) }
   }
 
-  const selectedPaymentMethodObj = PAYMENT_METHODS.find(pm => pm.key === payMethod)
   const formatMiStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
   const displayFullName = `${firstName.trim()}${formatMiStr} ${lastName.trim()}`;
   const selectedTherapistDisplay = therapists.find(t => t.id === therapistId)?.name || 'Unassigned';
@@ -556,7 +559,7 @@ export default function BookingPage() {
         <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
         <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
+          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment for <strong style={{ color: BLACK }}>{guests} {parseInt(guests) === 1 ? 'person' : 'guests'}</strong> on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar. Please proceed to the cashier for payment processing.
         </p>
 
         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -594,6 +597,7 @@ export default function BookingPage() {
           <p style={{ margin: 0 }}><strong>Date:</strong> {date}</p>
           <p style={{ margin: 0 }}><strong>Time:</strong> {time}</p>
           <p style={{ margin: 0 }}><strong>Client:</strong> {displayFullName}</p>
+          <p style={{ margin: 0 }}><strong>Guests:</strong> {guests}</p>
           <p style={{ margin: 0 }}><strong>Therapist:</strong> {selectedTherapistDisplay}</p>
         </div>
 
@@ -624,7 +628,7 @@ export default function BookingPage() {
         </div>
 
         <div style={{ marginTop: 30, textAlign: 'center' }}>
-          <p style={{ margin: 0, textTransform: 'uppercase', fontSize: 12 }}>Payment Method: {selectedPaymentMethodObj?.label}</p>
+          <p style={{ margin: 0, textTransform: 'uppercase', fontSize: 12, fontWeight: 'bold' }}>Payment Method: PAY AT COUNTER</p>
           <p style={{ margin: '15px 0 0', fontSize: 12 }}>Thank you for choosing Sabbath Spa!</p>
           <p style={{ margin: 0, fontSize: 10 }}>Have a blessed and relaxing day.</p>
         </div>
@@ -681,6 +685,17 @@ export default function BookingPage() {
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
               </Row2>
+            </Section>
+
+            {/* ─── NEW PARTY SIZE / GUESTS SECTION ─── */}
+            <Section title="Party Size">
+              <Field label="Number of Guests *">
+                <select className="bk-in" style={SELECT} value={guests} onChange={e => setGuests(e.target.value)}>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+                    <option key={num} value={num}>{num} {num === 1 ? 'Person' : 'Persons'}</option>
+                  ))}
+                </select>
+              </Field>
             </Section>
 
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
@@ -796,29 +811,6 @@ export default function BookingPage() {
               </Field>
             </Section>
 
-            <Section title="Payment Method">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(120px,100%),1fr))', gap: 10 }}>
-                {PAYMENT_METHODS.map(pm => {
-                  const sel = payMethod === pm.key
-                  return (
-                    <button key={pm.key} type="button" onClick={() => setPayMethod(pm.key)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '18px 10px', backgroundColor: sel ? BLACK : WHITE, border: `1.5px solid ${sel ? BLACK : 'rgba(26,26,26,0.13)'}`, borderRadius: 12, cursor: 'pointer', color: sel ? GOLD : 'rgba(26,26,26,0.50)', transition: 'all 180ms ease' }}>
-                      {pm.icon}
-                      <span style={{ fontSize: 12, fontWeight: 600, textAlign: 'center' }}>{pm.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-
-              {selectedPaymentMethodObj && selectedPaymentMethodObj.qrImage && (
-                <div style={{ marginTop: 14, padding: 20, backgroundColor: 'rgba(197,143,59,0.05)', border: '1px dashed rgba(197,143,59,0.4)', borderRadius: 12, textAlign: 'center' }}>
-                  <p style={{ fontSize: 12, fontWeight: 700, color: GOLD, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Scan to Pay with {selectedPaymentMethodObj.label}</p>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={selectedPaymentMethodObj.qrImage} alt={`QR Code for ${selectedPaymentMethodObj.label}`} style={{ width: '100%', maxWidth: 350, height: 'auto', objectFit: 'contain', margin: '0 auto', display: 'block', borderRadius: 8 }} />
-                </div>
-              )}
-            </Section>
-
-            {/* ─── EXPANDED DYNAMIC CUSTOM DROPDOWN DISCOUNTS SELECTION ─── */}
             <Section title="Discounts & Promos" note="Select active promo options directly">
               <Field label="Choose Available Discount">
                 <div style={{ display: 'flex', gap: 10 }}>
