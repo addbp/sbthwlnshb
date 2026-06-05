@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 11 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Precise Sorts, Perfect Exclusions, Event Injections)
+// app/booking/page.tsx  —  Phase 12 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Staff Filtering Logic + No Preference Defaults)
 
 export const dynamic = 'force-dynamic'
 
@@ -423,19 +423,20 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
+  // ─── TARGETED THERAPIST FILTERING ENGINE ───
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
-    const hasMassage = selectedServices.some(s => !isNailService(s));
-    const hasNails = selectedServices.some(isNailService);
+    const needsTherapist = selectedServices.some(s => massageServices.includes(s) || wellnessPackages.includes(s));
+    const needsNailTech = selectedServices.some(s => nailServices.includes(s) || packageServices.includes(s));
 
     allowedTherapists = therapists.filter(t => {
-      const role = t.role.toLowerCase();
-      const isMassageTech = role.includes('massage') || role.includes('therapist');
+      const role = (t.role || '').toLowerCase();
+      const isMassageTech = role.includes('massage') || role.includes('therapist') || role.includes('spa');
       const isNailTech = role.includes('nail');
 
-      if (hasMassage && hasNails) return isMassageTech || isNailTech;
-      if (hasMassage) return isMassageTech;
-      if (hasNails) return isNailTech;
+      if (needsTherapist && needsNailTech) return isMassageTech || isNailTech;
+      if (needsTherapist) return isMassageTech;
+      if (needsNailTech) return isNailTech;
       return true;
     });
   }
@@ -740,8 +741,6 @@ export default function BookingPage() {
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                  {/* ── ALIGNMENT: MASSAGES -> LE NAILS -> SUITES & EVENTS -> PACKAGES ── */}
-
                   {massageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Massage Therapy</div>
@@ -824,15 +823,15 @@ export default function BookingPage() {
                 </Field>
               </Row2>
 
-              <Field label={therapistLoad ? 'Therapist (loading…)' : `Therapist`}>
-                <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a therapist..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
+              <Field label={therapistLoad ? 'Staff Selection (loading…)' : `Staff Selection`}>
+                <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a staff member..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
-                  <option value="">Choose your therapist (optional)…</option>
+                  <option value="">Any Available Staff / No Preference</option>
                   {filteredTherapists.map(t => <option key={t.id} value={t.id}>{t.name}{t.status ? ` (${t.status})` : ''}</option>)}
                 </select>
                 {selectedServices.length > 0 && (
                   <p style={{ fontSize: 11, color: '#666', fontStyle: 'italic', marginTop: 8, marginBottom: 0 }}>
-                    Showing specific staff for selected services.
+                    Showing specialized staff for your selected services.
                   </p>
                 )}
               </Field>
