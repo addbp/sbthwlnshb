@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 19: Live Operations Tracker (Custom Timeline Grid & Interactive Staff Assignment)
+// Phase 20: Ultimate Unified Operations Tracker (Dual-Table Routing, Exact Minute Grid, Smart Update)
 
 export const dynamic = 'force-dynamic'
 
@@ -21,8 +21,16 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseCurrency(val: any): number {
+  if (!val) return 0;
+  return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
+}
+
 interface LiveBooking {
-  id: string;
+  id: string;          // React Key
+  rawId: string;       // Database ID
+  source: 'live' | 'import'; // Tells the system WHICH table to update!
   date: string;
   time: string;
   client: string;
@@ -67,42 +75,103 @@ export default function OverviewDashboard() {
     loadStaff();
   }, [supabase]);
 
-  // ─── FETCH DAILY OPERATIONS ───
+  // ─── BULLETPROOF DUAL-FETCH FOR DAILY OPERATIONS ───
   const fetchDailyOperations = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const uniqueRows = new Map<string, LiveBooking>();
+
+      // 1. Fetch from LIVE Bookings Table
+      const { data: liveData } = await supabase
         .from('bookings')
-        .select('booking_id, appointment_date, appointment_time, client_name, service_name, price, status, therapist_name, created_at')
-        .eq('appointment_date', selectedDate)
-        .order('created_at', { ascending: false }); // Sorts by Most Recent First
+        .select('*')
+        .eq('appointment_date', selectedDate);
 
-      if (error) throw error;
+      if (liveData) {
+        liveData.forEach(b => {
+          const amt = parseCurrency(b.price || b.amount);
+          const client = String(b.client_name || 'Guest').trim();
+          const timeStr = String(b.appointment_time || '—').trim();
 
-      if (data) {
-        const mappedData = data.map(b => ({
-          id: b.booking_id,
-          date: b.appointment_date,
-          time: b.appointment_time || '—',
-          client: b.client_name,
-          service: b.service_name,
-          amount: Number(b.price || 0),
-          status: b.status || 'Pending',
-          therapist: b.therapist_name,
-          createdAt: b.created_at
-        }));
-
-        setDailyBookings(mappedData);
-
-        setMetrics({
-          completed: mappedData.filter(b => b.status === 'Completed').length,
-          pending: mappedData.filter(b => b.status === 'Pending').length,
-          ongoing: mappedData.filter(b => b.status === 'Ongoing').length,
-          hold: mappedData.filter(b => b.status === 'Hold').length,
+          const row: LiveBooking = {
+            id: `live-${b.booking_id}`,
+            rawId: b.booking_id,
+            source: 'live',
+            date: b.appointment_date,
+            time: timeStr,
+            client: client,
+            service: String(b.service_name || b.service || '—'),
+            amount: amt,
+            status: b.status || 'Pending',
+            therapist: b.therapist_name || null,
+            createdAt: b.created_at || new Date().toISOString()
+          };
+          const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}`;
+          uniqueRows.set(dedupKey, row);
         });
       }
+
+      // 2. Fetch from LEGACY IMPORT Table (Smart Date Translator)
+      const [y, m, d] = selectedDate.split('-');
+      const mNum = parseInt(m, 10);
+      const dNum = parseInt(d, 10);
+      const monthsArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+      const f1 = `${dNum}-${monthsArr[mNum - 1]}-${y.slice(-2)}`; // 5-Jun-26
+      const f2 = `${String(dNum).padStart(2, '0')}-${monthsArr[mNum - 1]}-${y.slice(-2)}`; // 05-Jun-26
+      const f3 = `${mNum}/${dNum}/${y}`; // 6/5/2026
+      const f4 = `${String(mNum).padStart(2, '0')}/${String(dNum).padStart(2, '0')}/${y}`; // 06/05/2026
+      const orQuery = `date.eq.${f1},date.eq.${f2},date.eq.${f3},date.eq.${f4},date.eq.${selectedDate}`;
+
+      const { data: impData } = await supabase
+        .from('bookings_import')
+        .select('*')
+        .or(orQuery);
+
+      if (impData) {
+        impData.forEach((r, idx) => {
+          const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
+          const client = String(r.client_name || 'Guest').trim();
+          const timeStr = String(r.time || r.appointment_time || '—').trim();
+
+          const row: LiveBooking = {
+            id: `imp-${r.id || idx}`,
+            rawId: r.id,
+            source: 'import',
+            date: selectedDate, // Normalize to selected UI date
+            time: timeStr,
+            client: client,
+            service: String(r.service || '—'),
+            amount: amt,
+            status: r.status || 'Completed',
+            therapist: r.therapist || null,
+            createdAt: r.created_at || new Date().toISOString()
+          };
+
+          // Deduplicate if Dual-Save engine already grabbed it in Live Data
+          const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}`;
+          if (!uniqueRows.has(dedupKey)) {
+            uniqueRows.set(dedupKey, row);
+          }
+        });
+      }
+
+      // Convert Map to Array & Sort by Newest Created First
+      const mappedData = Array.from(uniqueRows.values());
+      mappedData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setDailyBookings(mappedData);
+
+      // Update Top Metrics
+      setMetrics({
+        completed: mappedData.filter(b => b.status === 'Completed').length,
+        pending: mappedData.filter(b => b.status === 'Pending').length,
+        ongoing: mappedData.filter(b => b.status === 'Ongoing').length,
+        hold: mappedData.filter(b => b.status === 'Hold').length,
+      });
+
     } catch (err) {
-      console.error('Operations Fetch Error:', err);
+      console.error('Unified Operations Fetch Error:', err);
     } finally {
       setLoading(false);
     }
@@ -112,17 +181,38 @@ export default function OverviewDashboard() {
     fetchDailyOperations();
   }, [fetchDailyOperations]);
 
-  // ─── DATABASE UPDATE HANDLERS ───
+  // ─── SMART DUAL-TABLE DATABASE UPDATES ───
   const handleStatusChange = async (id: string, newStatus: string) => {
+    const booking = dailyBookings.find(b => b.id === id);
+    if (!booking) return;
+
+    // Fast UI Update
     setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
-    await supabase.from('bookings').update({ status: newStatus }).eq('booking_id', id);
-    fetchDailyOperations();
+
+    // Accurate Database Routing Update
+    if (booking.source === 'live') {
+      await supabase.from('bookings').update({ status: newStatus }).eq('booking_id', booking.rawId);
+    } else {
+      await supabase.from('bookings_import').update({ status: newStatus }).eq('id', booking.rawId);
+    }
+    fetchDailyOperations(); // Recalculate Top Metric Cards
   };
 
   const handleStaffChange = async (id: string, newStaffName: string) => {
+    const booking = dailyBookings.find(b => b.id === id);
+    if (!booking) return;
+
     const finalStaff = newStaffName === 'Unassigned' ? null : newStaffName;
+
+    // Fast UI Update
     setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
-    await supabase.from('bookings').update({ therapist_name: finalStaff }).eq('booking_id', id);
+
+    // Accurate Database Routing Update
+    if (booking.source === 'live') {
+      await supabase.from('bookings').update({ therapist_name: finalStaff }).eq('booking_id', booking.rawId);
+    } else {
+      await supabase.from('bookings_import').update({ therapist: finalStaff }).eq('id', booking.rawId);
+    }
   };
 
   // ─── HELPERS ───
@@ -137,7 +227,7 @@ export default function OverviewDashboard() {
     }
   };
 
-  // ─── TIMELINE CALCULATION LOGIC ───
+  // ─── EXACT MINUTE TIMELINE CALCULATION LOGIC ───
   const TOTAL_MINUTES = 14 * 60; // 11:00 AM to 1:00 AM = 14 Hours
 
   const getMinutesFrom11AM = (timeStr: string) => {
@@ -155,7 +245,7 @@ export default function OverviewDashboard() {
 
     const totalMins = (h * 60) + m;
     const offset = totalMins - (11 * 60);
-    return Math.max(0, offset);
+    return Math.max(0, Math.min(offset, TOTAL_MINUTES));
   };
 
   const HOURS_MARKERS = [
@@ -250,7 +340,7 @@ export default function OverviewDashboard() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Syncing live schedule...</td></tr>
+                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Syncing unified schedule...</td></tr>
                 ) : dailyBookings.length === 0 ? (
                   <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
@@ -260,7 +350,7 @@ export default function OverviewDashboard() {
                         {b.date} <br /> <strong style={{ color: BLACK }}>{b.time}</strong>
                       </td>
                       <td style={{ padding: '16px 20px', fontWeight: 600, color: BLACK }}>{b.client}</td>
-                      <td style={{ padding: '16px 20px', color: '#2A2A2A', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.service}</td>
+                      <td style={{ padding: '16px 20px', color: '#2A2A2A', maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.service}</td>
                       <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(b.amount)}</td>
 
                       {/* LIVE STATUS DROPDOWN */}
@@ -290,9 +380,9 @@ export default function OverviewDashboard() {
                           onChange={(e) => handleStaffChange(b.id, e.target.value)}
                           style={{
                             padding: '8px 12px', borderRadius: 6, fontSize: 12, fontFamily: BODY, fontWeight: 600,
-                            border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888',
+                            border: '1px solid rgba(26,26,26,0.15)', color: b.therapist && b.therapist !== 'Unassigned' ? BLACK : '#888',
                             cursor: 'pointer', outline: 'none', backgroundColor: '#FDFDFD',
-                            maxWidth: '180px', transition: 'border 0.2s ease'
+                            maxWidth: '200px', transition: 'border 0.2s ease'
                           }}
                         >
                           <option value="Unassigned">Unassigned</option>
@@ -309,11 +399,11 @@ export default function OverviewDashboard() {
           </div>
         )}
 
-        {/* ─── DAILY SCHEDULE GRID (TIMELINE VIEW) ─── */}
+        {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW) ─── */}
         {view === 'GRID' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
-              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Realtime Verification Target Date: <strong style={{ color: BLACK }}>{selectedDate}</strong></span>
+              <span style={{ fontSize: 13, color: '#666' }}>Exact Timeline Scheduler — Selected Date: <strong style={{ color: BLACK }}>{selectedDate}</strong></span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -335,36 +425,39 @@ export default function OverviewDashboard() {
 
                 {/* TIMELINE ROWS (STAFF) */}
                 {loading ? (
-                  <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Syncing live schedule...</div>
+                  <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Syncing timeline data...</div>
                 ) : (
-                  [{ name: 'Unassigned', role: 'Any' }, ...staffList].map((staff) => {
-                    // Get bookings for this specific staff member
-                    const staffBookings = dailyBookings.filter(b =>
-                      (staff.name === 'Unassigned' && !b.therapist) ||
-                      (b.therapist === staff.name)
-                    );
+                  [{ name: 'Unassigned', role: 'Requires Assignment' }, ...staffList].map((staff) => {
 
-                    // Hide row if empty (unless it's Unassigned)
+                    // SMART FILTER: Find bookings belonging to this staff exactly
+                    const staffBookings = dailyBookings.filter(b => {
+                      if (staff.name === 'Unassigned') {
+                        return !b.therapist || b.therapist === 'Unassigned';
+                      }
+                      return b.therapist === staff.name;
+                    });
+
+                    // Hide completely empty rows (unless it is Unassigned)
                     if (staff.name !== 'Unassigned' && staffBookings.length === 0) return null;
 
                     return (
                       <div key={staff.name} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', minHeight: '90px' }}>
 
                         {/* Staff Info Column */}
-                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: staff.name === 'Unassigned' ? '#FAFAFA' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                           <span style={{ fontSize: 13, fontWeight: 700, color: BLACK }}>{staff.name.toUpperCase()}</span>
-                          {staff.role && staff.name !== 'Unassigned' && <span style={{ fontSize: 9, color: '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{staff.role}</span>}
+                          {staff.role && <span style={{ fontSize: 9, color: staff.name === 'Unassigned' ? '#C83232' : '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{staff.role}</span>}
                         </div>
 
-                        {/* Booking Canvas for this Staff */}
+                        {/* Booking Canvas for this Staff (Continuous Timeline) */}
                         <div style={{ flexGrow: 1, position: 'relative', backgroundImage: 'linear-gradient(to right, transparent 99%, rgba(26,26,26,0.05) 100%)', backgroundSize: `${100 / 14}% 100%` }}>
 
                           {staffBookings.map(b => {
-                            if (!b.time || b.time === '—') return null;
+                            if (!b.time || b.time === '—') return null; // Ignore unscheduled tasks on visual grid
+
                             const startMins = getMinutesFrom11AM(b.time);
                             const leftPercent = (startMins / TOTAL_MINUTES) * 100;
-                            // Visual block defaults to 60 mins width (7.14%)
-                            const widthPercent = (60 / TOTAL_MINUTES) * 100;
+                            const widthPercent = (60 / TOTAL_MINUTES) * 100; // Visual block represents roughly 60 mins
                             const colors = getStatusColor(b.status);
 
                             return (
@@ -374,7 +467,7 @@ export default function OverviewDashboard() {
                                 top: '10px',
                                 bottom: '10px',
                                 width: `calc(${widthPercent}% - 4px)`,
-                                minWidth: '130px',
+                                minWidth: '140px',
                                 backgroundColor: WHITE,
                                 border: '1px solid rgba(26,26,26,0.15)',
                                 borderLeft: `4px solid ${colors.color}`,
@@ -383,7 +476,7 @@ export default function OverviewDashboard() {
                                 display: 'flex',
                                 flexDirection: 'column',
                                 gap: '4px',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
                                 zIndex: 10,
                                 overflow: 'hidden'
                               }}>
