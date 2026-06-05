@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 8 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Payments Removed, Print Ready, Guests Removed)
+// app/booking/page.tsx  —  Phase 9 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Reordered Categories + Packages & Savings Badges)
 
 export const dynamic = 'force-dynamic'
 
@@ -49,7 +49,7 @@ const LABEL: React.CSSProperties = {
 // ─────────────────────────────────────────────────────────────
 // TYPES & CONSTANTS
 // ─────────────────────────────────────────────────────────────
-interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string }
+interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string; savings?: string }
 interface Therapist { id: string; name: string; status: string; role: string }
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
@@ -109,7 +109,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
         </span>
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
-      <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY }}>
+      <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
         {discountPct > 0 ? (
           <>
             <s style={{ opacity: 0.6, marginRight: 4 }}>{fmt(item.price)}</s>
@@ -117,6 +117,13 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
           </>
         ) : (
           `${item.duration} · ${fmt(item.price)}`
+        )}
+
+        {/* ─── SAVINGS BADGE INJECTION ─── */}
+        {item.savings && (
+          <span style={{ backgroundColor: 'rgba(61,122,74,0.1)', color: '#3D7A4A', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+            {item.savings}
+          </span>
         )}
       </span>
 
@@ -244,18 +251,21 @@ export default function BookingPage() {
             if (rawName.toLowerCase() === 'rhinestones') rawName = 'RHINESTONES';
 
             let desc = '';
+            let saveTag = '';
             const upName = rawName.toUpperCase();
 
-            if (upName === 'PACKAGE A') desc = "Mani, Pedi, Foot Spa";
-            else if (upName === 'PACKAGE B') desc = "ManiGel ORLY, Pedi, Foot Spa";
-            else if (upName === 'PACKAGE C') desc = "ManiGel CUCCIO, Pedi, Foot Massage";
-            else if (upName === 'PACKAGE D') desc = "ManiGel CUCCIO, PediGel CUCCIO, Foot Massage";
-            else if (upName === 'PACKAGE E') desc = "Mani, PediGel ORLY, Hand Paraffin";
-            else if (upName === 'PACKAGE F') desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin";
+            // ─── PACKAGES, SAVINGS, AND COMBOS MAPPING ───
+            if (upName === 'PACKAGE A') { desc = "Mani, Pedi, Foot Spa"; saveTag = "SAVE ₱100.00 !!"; }
+            else if (upName === 'PACKAGE B') { desc = "ManiGel ORLY, Pedi, Foot Spa"; saveTag = "SAVE ₱200.00 !!"; }
+            else if (upName === 'PACKAGE C') { desc = "ManiGel CUCCIO, Pedi, Foot Massage"; saveTag = "SAVE ₱300.00 !!"; }
+            else if (upName === 'PACKAGE D') { desc = "ManiGel CUCCIO, PediGel CUCCIO, Foot Massage"; saveTag = "SAVE ₱300.00 !!"; }
+            else if (upName === 'PACKAGE E') { desc = "Mani, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱300.00 !!"; }
+            else if (upName === 'PACKAGE F') { desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱450.00 !!"; }
             else if (upName.includes('PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE') || (upName.includes('WELLNESS SUITE') && upName.includes('MASSAGE'))) desc = "Duration: 3 hours inclusions: Private Shower, Jacuzzi, Sauna and 60 minutes Regular Massage (Swedish, Foot Reflexology or Shiatsu).";
             else if (upName.includes('PRIVATE WELLNESS SUITE')) desc = "A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session. Includes: Private Shower, Sauna session (4 pax max), Jacuzzi bath experience (for 2).";
             else if (upName.includes('BODY SCRUBS WITH REGULAR MASSAGE')) desc = "Duration: 2 ½ hours. 20 minutes scalp massage - Cream bath or oil scalp massage. 40 minutes - A full-body exfoliation treatment using natural scrubs to remove dead skin cells, leaving the skin smooth and refreshed. 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu.";
             else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
+              // ─── MASSAGE THERAPY MAPPING ───
               if (upName.includes('SABBATH SIGNATURE MASSAGE')) desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
               else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
               else if (upName.includes('THAI MASSAGE')) desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements. Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
@@ -278,7 +288,8 @@ export default function BookingPage() {
               duration: String(s.duration || '60 min'),
               price: Number(s.price || s.amount || 0),
               category: String(s.category || s.type || 'Massage'),
-              description: desc
+              description: desc,
+              savings: saveTag
             };
           })
           setDbServices(mappedServices)
@@ -702,14 +713,7 @@ export default function BookingPage() {
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                  {packageServices.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Wellness Suites</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
-                        {packageServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
-                      </div>
-                    </div>
-                  )}
+                  {/* REORDERED: Massage -> Le Nails -> Packages & Savings -> Custom */}
 
                   {massageServices.length > 0 && (
                     <div>
@@ -722,7 +726,7 @@ export default function BookingPage() {
 
                   {nailServices.length > 0 && (
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails Salon</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
                         {nailServices.map(s => (
                           <ServiceChip
@@ -733,6 +737,15 @@ export default function BookingPage() {
                             discountPct={nailDiscountPercentage}
                           />
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {packageServices.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Savings</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
+                        {packageServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
                       </div>
                     </div>
                   )}
