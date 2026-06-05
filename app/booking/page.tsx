@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 13 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Wax Services Added, Platinum Excluded, Contact Us Fixed)
+// app/booking/page.tsx  —  Phase 14 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Clean Exclusions, Restored Descriptions, Contact Us Fix)
 
 export const dynamic = 'force-dynamic'
 
@@ -111,6 +111,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
       <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
 
+        {/* CLEAN CONTACT US RENDERER (NO DURATION) */}
         {hasPrice ? (
           discountPct > 0 ? (
             <>
@@ -249,7 +250,7 @@ export default function BookingPage() {
 
         // ─── INJECT HARDCODED WELLNESS & EVENT PACKAGES ───
         const hardcodedWellness = [
-          { id: 'ws-1', name: 'PRIVATE WELLNESS SUITE', duration: '120 minutes', price: 1500, category: 'Wellness Suite', description: 'A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session.\n\nIncludes:\n• Private Shower\n• Sauna session (4 pax max)\n• Jacuzzi bath experience (for 2)' },
+          { id: 'ws-1', name: 'PRIVATE WELLNESS SUITE', duration: '120 min', price: 1500, category: 'Wellness Suite', description: 'A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session.\n\nIncludes:\n• Private Shower\n• Sauna session (4 pax max)\n• Jacuzzi bath experience (for 2)' },
           { id: 'ws-2', name: 'PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE', duration: '3 hours', price: 2000, category: 'Wellness Suite', description: 'Swedish, Foot Reflexology and Shiatsu.\n\nInclusions:\nPrivate Shower, Jacuzzi, Sauna and 60 minutes Regular Massage' },
           { id: 'ws-3', name: 'BODY SCRUBS WITH REGULAR MASSAGE', duration: '2 ½ hours', price: 3000, category: 'Wellness Suite', description: 'Swedish, Foot Reflexology and Shiatsu.\n\n• 20 minutes scalp massage - Cream bath or oil scalp massage\n• 40 minutes - A full-body exfoliation treatment using natural scrubs to remove dead skin cells, leaving the skin smooth and refreshed.\n• 60 minutes - Regular massage: Swedish, Foot Reflexology and Shiatsu' },
           { id: 'ev-1', name: 'GIFT CERTIFICATES', duration: '', price: 0, category: 'Wellness Suite', description: 'A thoughtful gift of rest and relaxation.\n🎉 10 + 1 Promo - Book 10 services, get 1 FREE!' },
@@ -271,6 +272,11 @@ export default function BookingPage() {
             let duration = String(s.duration || '60 min');
             const upName = rawName.toUpperCase();
 
+            // Remove duration if it's a zero-price Contact Us item
+            if (upName.includes('GIFT CERTIFICATE') || upName.includes('BRIDAL SHOWER') || upName.includes('BIRTHDAY TREAT') || upName.includes('CORPORATE EVENT')) {
+              duration = '';
+            }
+
             // ─── LE NAIL PACKAGES MAPPING ───
             if (upName === 'PACKAGE A') { desc = "Mani, Pedi, Foot Spa"; saveTag = "SAVE ₱100.00 !!"; }
             else if (upName === 'PACKAGE B') { desc = "ManiGel ORLY, Pedi, Foot Spa"; saveTag = "SAVE ₱200.00 !!"; }
@@ -279,24 +285,72 @@ export default function BookingPage() {
             else if (upName === 'PACKAGE E') { desc = "Mani, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱300.00 !!"; }
             else if (upName === 'PACKAGE F') { desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱450.00 !!"; }
 
-            // ─── MASSAGE THERAPY MAPPING ───
+            // ─── MASSAGE THERAPY MAPPING (BROADENED TO CATCH DB VARIANTS) ───
             else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
-              if (upName.includes('SABBATH SIGNATURE MASSAGE')) { desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed."; duration = "90 minutes"; }
-              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) { desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup."; duration = "40 minutes"; }
-              else if (upName.includes('THAI MASSAGE') || upName.includes('THAI SIGNATURE')) { desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements. Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure."; duration = upName.includes('90') ? "90 minutes" : "60 minutes"; }
-              else if (upName.includes('AROMATHERAPY') || upName.includes('HERBAL BALL')) { desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being."; duration = "60 minutes"; }
-              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) { desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding.\n\nBenefits:\n• Relieves back pain, leg cramps, and swelling\n• Improves sleep and prepares the body for labor\n• Enhances milk flow and reduces breast discomfort\n• Prevents clogged ducts and engorgement\n\nPrenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section."; duration = "60 minutes"; }
-              else if (upName === 'BODY SCRUBS' || upName === 'BODY SCRUB' || (upName.includes('BODY SCRUB') && !upName.includes('WITH REGULAR MASSAGE'))) { desc = "By appointment. Walk-ins accepted if willing to wait. Private room shower use only.\nTotal Duration: 80 minutes (includes shower & dressing).\n• 20 mins: Scalp massage (cream bath or oil-based)\n• 40 mins: Full-body scrub to exfoliate and refresh skin.\n\nBody Scrubs Options:\n• Coffee Scrub: Detoxifies, firms, and minimize cellulite.\n• Oat Scrub: Soothes and nourishes sensitive skin."; duration = "80 minutes"; }
-              else if (upName === 'SWEDISH' || upName === 'SWEDISH MASSAGE') { desc = "A relaxing full-body massage using gentle to firm strokes to relieve tension, improve circulation, and promote overall well-being, ideal for stress relief."; duration = "60 minutes"; }
-              else if (upName === 'SHIATSU' || upName === 'SHIATSU MASSAGE') { desc = "A Japanese massage using firm thumb and palm pressure to increase short-term flexibility and significantly reduces muscle pains and soreness."; duration = "60 minutes"; }
-              else if (upName.includes('FOOT REFLEXOLOGY')) { desc = "Our exclusive, soothing treatment that gently restores balance through calming pressure and wooden sticks, bringing deep relaxation from the ground up."; duration = "60 minutes"; }
-              else if (upName.includes('FOOT, HEAD, NECK, & SHOULDER') || upName.includes('FOOT, HEAD, NECK')) { desc = "Boosts circulation, soothes tired feet, and eases head, neck, and shoulder tension."; duration = "75 minutes"; }
-              else if (upName.includes('GROWTH MASSAGE')) { desc = "A gentle massage for kids and pre-teens that relieves stress, supports healthy growth, and encourages natural development."; duration = "60 minutes"; }
-              else if (upName.includes('COMBINATION') && upName.includes('STONE')) { desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience."; duration = "75 minutes"; }
-              else if (upName.includes('COMBINATION') && !upName.includes('STONE')) { desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience."; duration = "60 minutes"; }
-              else if (upName.includes('SLIMMING')) { desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin."; duration = "75 minutes"; }
-              else if (upName.includes('HILOT') || upName.includes('VENTOSA')) { desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing."; duration = "75 minutes"; }
-              else if (upName.includes('FULL BODY') && (upName.includes('FEMALE') || upName.includes('MALE'))) { desc = "Includes: Chest/Back, Bikini/Brazilian.\nUse of private room included."; }
+
+              if (upName === 'SABBATH SIGNATURE' || upName.includes('SABBATH SIGNATURE MASSAGE')) {
+                desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
+                duration = "90 min";
+              }
+              else if (upName === 'COMBINATION' || (upName.includes('COMBINATION') && !upName.includes('STONE'))) {
+                desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
+                duration = "60 min";
+              }
+              else if (upName.includes('COMBINATION') && upName.includes('STONE')) {
+                desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
+                duration = "75 min";
+              }
+              else if (upName === 'SWEDISH' || upName === 'SWEDISH MASSAGE') {
+                desc = "A relaxing full-body massage using gentle to firm strokes to relieve tension, improve circulation, and promote overall well-being, ideal for stress relief.";
+                duration = "60 min";
+              }
+              else if (upName === 'SHIATSU' || upName === 'SHIATSU MASSAGE') {
+                desc = "A Japanese massage using firm thumb and palm pressure to increase short-term flexibility and significantly reduces muscle pains and soreness.";
+                duration = "60 min";
+              }
+              else if (upName.includes('FOOT REFLEX')) {
+                desc = "Our exclusive, soothing treatment that gently restores balance through calming pressure and wooden sticks, bringing deep relaxation from the ground up.";
+                duration = "60 min";
+              }
+              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) {
+                desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
+                duration = "40 min";
+              }
+              else if (upName.includes('THAI MASSAGE') || upName.includes('THAI SIGNATURE')) {
+                desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements. Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
+                duration = upName.includes('90') ? "90 min" : "60 min";
+              }
+              else if (upName.includes('AROMATHERAPY') || upName.includes('HERBAL BALL')) {
+                desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being.";
+                duration = "60 min";
+              }
+              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) {
+                desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding.\n\nBenefits:\n• Relieves back pain, leg cramps, and swelling\n• Improves sleep and prepares the body for labor\n• Enhances milk flow and reduces breast discomfort\n• Prevents clogged ducts and engorgement\n\nPrenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section.";
+                duration = "60 min";
+              }
+              else if (upName === 'BODY SCRUBS' || upName === 'BODY SCRUB' || (upName.includes('BODY SCRUB') && !upName.includes('WITH REGULAR MASSAGE'))) {
+                desc = "By appointment. Walk-ins accepted if willing to wait. Private room shower use only.\nTotal Duration: 80 minutes (includes shower & dressing).\n• 20 mins: Scalp massage (cream bath or oil-based)\n• 40 mins: Full-body scrub to exfoliate and refresh skin.\n\nBody Scrubs Options:\n• Coffee Scrub: Detoxifies, firms, and minimize cellulite.\n• Oat Scrub: Soothes and nourishes sensitive skin.";
+                duration = "80 min";
+              }
+              else if (upName.includes('FOOT, HEAD, NECK, & SHOULDER') || upName.includes('FOOT, HEAD, NECK')) {
+                desc = "Boosts circulation, soothes tired feet, and eases head, neck, and shoulder tension.";
+                duration = "75 min";
+              }
+              else if (upName.includes('GROWTH MASSAGE')) {
+                desc = "A gentle massage for kids and pre-teens that relieves stress, supports healthy growth, and encourages natural development.";
+                duration = "60 min";
+              }
+              else if (upName.includes('SLIMMING')) {
+                desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin.";
+                duration = "75 min";
+              }
+              else if (upName.includes('HILOT') || upName.includes('VENTOSA')) {
+                desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing.";
+                duration = "75 min";
+              }
+              else if (upName.includes('FULL BODY') && (upName.includes('FEMALE') || upName.includes('MALE'))) {
+                desc = "Includes: Chest/Back, Bikini/Brazilian.\nUse of private room included.";
+              }
             }
 
             return {
@@ -341,7 +395,7 @@ export default function BookingPage() {
     setDetectedMembership(found || null);
   }, [mobile, email, activeMemberships])
 
-  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM & UNWANTED ITEMS) ───
+  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM, WAX DUPLICATES & UNWANTED ITEMS) ───
   const isExcluded = (name: string) => {
     const n = name.toUpperCase();
     return n === 'SOFT GEL' ||
@@ -349,19 +403,21 @@ export default function BookingPage() {
       n === 'SHOWER' ||
       n === 'JACUZZI' ||
       n === 'SLIPPERS' ||
-      n === 'SABBATH PACKAGE 1' ||
-      n === 'SABBATH PACKAGE 2' ||
+      n === 'WAX' ||
+      n === 'BRAZILLIAN WAX' ||
+      n.includes('SABBATH PACKAGE 1') ||
+      n.includes('SABBATH PACKAGE 2') ||
       n.includes('PLATINUM') ||
       n.includes('MEMBERSHIP') ||
-      n.includes('SABBATH PACKAGE 1 W/') ||
-      n.includes('SABBATH PACKAGE 1W/') ||
+      n.includes('GIFT CERTIFICATE (10+1)') ||
+      n.includes('GIFT CERTIFICATE CUSTOM') ||
       n.includes('THERAPIST REQUEST');
   }
 
   const validServices = dbServices.filter(s => !isExcluded(s.name));
   const allAvailableServices = [...validServices, ...customServices];
 
-  const WAX_KEYWORDS = ['WAX', 'UPPER LIP', 'LOWER LIP', 'UNDERARMS', 'ARMS FEMALE', 'ARMS MALE', 'HALF LEGS', 'FULL LEGS', 'FULL BODY']
+  const WAX_KEYWORDS = ['UPPER LIP', 'LOWER LIP', 'UNDERARMS', 'ARMS FEMALE', 'ARMS MALE', 'HALF LEGS', 'FULL LEGS', 'FULL BODY']
   const NAIL_KEYWORDS = ['SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED', 'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH', 'ACCENT', 'POLISH', 'NAIL ART', 'GEL REMOVAL']
 
   const isWaxService = (s: ServiceItem) => {
@@ -748,8 +804,6 @@ export default function BookingPage() {
                 </div>
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-                  {/* ── ALIGNMENT: MASSAGES -> LE NAILS -> WAX -> SUITES & EVENTS -> PACKAGES ── */}
 
                   {massageServices.length > 0 && (
                     <div>
