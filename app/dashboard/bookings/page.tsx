@@ -2,7 +2,11 @@
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@supabase/supabase-js'
+
+// Initialize Supabase Client
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // ─── SAFE CURRENCY PARSER ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,17 +18,27 @@ function parseCurrency(val: any): number {
 // ─── INDESTRUCTIBLE DATE PARSER ───
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
-  let clean = String(raw).trim();
+  const clean = String(raw).trim();
+
+  // 1. Try Live Bookings Format (YYYY-MM-DD)
+  const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
+  }
+
+  // 2. Try Import Format (DD-MMM-YY)
   const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
   if (dashMatch) {
     let year = dashMatch[3];
     if (year.length === 2) year = '20' + year;
-    clean = `${dashMatch[2]} ${dashMatch[1]}, ${year}`;
+    const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
+    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   }
-  let d = new Date(clean);
-  if (!isNaN(d.getTime())) {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
-  }
+
+  // 3. Fallback standard parsing
+  const fallback = new Date(clean);
+  if (!isNaN(fallback.getTime())) return fallback;
+
   return null;
 }
 
@@ -56,7 +70,7 @@ const NAIL_KEYWORDS = [
 ];
 
 export default function BookingsDashboardPage() {
-  const supabase = useRef(createClient()).current
+  const supabase = useRef(createClient(supabaseUrl, supabaseAnonKey)).current
   const [bookings, setBookings] = useState<BookingRow[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'ALL' | 'SABBATH' | 'LE NAILS'>('ALL')
@@ -69,7 +83,7 @@ export default function BookingsDashboardPage() {
   const loadBookingsEngine = useCallback(async () => {
     setLoading(true)
     const PAGE_SIZE = 1000
-    const uniqueRows = new Map<string, BookingRow>() // <-- DEDUPLICATOR MAP
+    const uniqueRows = new Map<string, BookingRow>()
 
     try {
       // 1. Unroll Historical Data Stream (`bookings_import`)
@@ -77,7 +91,7 @@ export default function BookingsDashboardPage() {
       for (; ;) {
         const { data, error } = await supabase
           .from('bookings_import')
-          .select('date, client_name, service, received_payment, service_amount, therapist, payment_method')
+          .select('*')
           .range(fromHist, fromHist + PAGE_SIZE - 1)
 
         if (error || !data || data.length === 0) break
@@ -94,7 +108,7 @@ export default function BookingsDashboardPage() {
             : serviceName;
 
           const parsedDate = parseImportDate(r.date);
-          const amount = parseCurrency(r.received_payment || r.service_amount);
+          const amount = parseCurrency(r.amount || r.received_payment || r.service_amount);
           const client = String(r.client_name || 'Guest').trim();
 
           const row: BookingRow = {
@@ -109,7 +123,6 @@ export default function BookingsDashboardPage() {
             clientType: '—'
           };
 
-          // Generate a strict unique key to prevent Dual-Save duplication
           const dedupKey = `${parsedDate?.getTime()}-${client.toLowerCase()}-${amount}`;
           uniqueRows.set(dedupKey, row);
         })
@@ -122,7 +135,7 @@ export default function BookingsDashboardPage() {
       for (; ;) {
         const { data, error } = await supabase
           .from('bookings')
-          .select('appointment_date, created_at, client_name, service_name, service, price, amount, received_payment, therapist_name, payment_method')
+          .select('*')
           .range(fromLive, fromLive + PAGE_SIZE - 1)
 
         if (error || !data || data.length === 0) break
@@ -139,7 +152,7 @@ export default function BookingsDashboardPage() {
             : serviceName;
 
           const parsedDate = parseImportDate(r.appointment_date || r.created_at);
-          const amount = parseCurrency(r.price || r.amount || r.received_payment);
+          const amount = parseCurrency(r.price || r.amount);
           const client = String(r.client_name || 'Guest').trim();
 
           const row: BookingRow = {
@@ -150,11 +163,10 @@ export default function BookingsDashboardPage() {
             therapist: String(r.therapist_name || '—').toUpperCase(),
             category: categoryValue,
             amount,
-            paymentMethod: String(r.payment_method || 'CASH').toUpperCase(),
+            paymentMethod: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
             clientType: '—'
           };
 
-          // Check if this booking was already processed from `bookings_import`
           const dedupKey = `${parsedDate?.getTime()}-${client.toLowerCase()}-${amount}`;
           if (!uniqueRows.has(dedupKey)) {
             uniqueRows.set(dedupKey, row);
@@ -217,116 +229,116 @@ export default function BookingsDashboardPage() {
         .pos-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
       `}</style>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif", backgroundColor: '#F9F4EB', minHeight: '100vh', padding: '40px' }}>
 
-        {/* Upper Header Control Context */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Data Ledger</p>
-            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Bookings Log</h2>
-          </div>
-          <button onClick={loadBookingsEngine} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
-            {loading ? 'Re-aligning...' : 'Refresh Records'}
-          </button>
-        </div>
-
-        {/* Search Input Controller */}
-        <input
-          type="search"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          placeholder="Search by customer or service string..."
-          style={{ height: 44, width: '100%', maxWidth: 400, padding: '0 16px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, outline: 'none' }}
-        />
-
-        {/* ─── EXPLICITLY FILTERED TABS ─── */}
-        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.08)', paddingBottom: 0 }}>
-          {(['ALL', 'SABBATH', 'LE NAILS'] as const).map(tabKey => (
-            <button
-              key={tabKey}
-              onClick={() => setActiveTab(tabKey)}
-              className={`tab-btn ${activeTab === tabKey ? 'active' : ''}`}
-            >
-              {tabKey}
+        <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
+          {/* Upper Header Control Context */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+            <div>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Data Ledger</p>
+              <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Bookings Log</h2>
+            </div>
+            <button onClick={loadBookingsEngine} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
+              {loading ? 'Re-aligning...' : 'Refresh Records'}
             </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
-            Processing limitless tracking pipeline vectors...
           </div>
-        ) : (
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
-            <div style={{ overflowX: 'auto', minHeight: 400 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                    {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
-                      <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {viewablePaginatedRows.map((r) => (
-                    <tr key={r._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                      <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(r.parsedDate)}</td>
-                      <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A' }}>{r.client}</td>
 
-                      {/* Forced Uppercase Membership Column Display Target */}
-                      <td style={{ padding: '14px 16px', color: '#2A2A2A', fontWeight: r.service.includes('MEMBERSHIP') ? 700 : 400 }}>
-                        {r.service}
-                      </td>
+          {/* Search Input Controller */}
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by customer or service string..."
+            style={{ height: 44, width: '100%', maxWidth: 400, padding: '0 16px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, outline: 'none', marginBottom: 24 }}
+          />
 
-                      <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{r.therapist}</td>
+          {/* ─── EXPLICITLY FILTERED TABS ─── */}
+          <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.08)', paddingBottom: 0, marginBottom: 24 }}>
+            {(['ALL', 'SABBATH', 'LE NAILS'] as const).map(tabKey => (
+              <button
+                key={tabKey}
+                onClick={() => setActiveTab(tabKey)}
+                className={`tab-btn ${activeTab === tabKey ? 'active' : ''}`}
+              >
+                {tabKey}
+              </button>
+            ))}
+          </div>
 
-                      {/* Clean structural categorization field */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <span style={{
-                          padding: '4px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700,
-                          backgroundColor: r.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.05)',
-                          color: r.category === 'LE NAILS' ? '#C58F3B' : '#1A1A1A',
-                          border: r.category === 'LE NAILS' ? '1px solid rgba(197,143,59,0.2)' : '1px solid transparent'
-                        }}>
-                          {r.category}
-                        </span>
-                      </td>
-
-                      <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{r.amount.toLocaleString()}</td>
-                      <td style={{ padding: '14px 16px', color: '#666', fontSize: 12, fontWeight: 600 }}>{r.paymentMethod}</td>
-
-                      <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                        <span className="pos-badge" style={{
-                          backgroundColor: r.clientType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
-                          color: r.clientType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
-                        }}>
-                          {r.clientType}
-                        </span>
-                      </td>
+          {loading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
+              Processing limitless tracking pipeline vectors...
+            </div>
+          ) : (
+            <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
+              <div style={{ overflowX: 'auto', minHeight: 400 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
+                      {['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'].map(h => (
+                        <th key={h} style={{ padding: '14px 16px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
                     </tr>
-                  ))}
-                  {viewablePaginatedRows.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No matching records allocated.</td></tr>}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {viewablePaginatedRows.map((r) => (
+                      <tr key={r._key} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+                        <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{formatDateToDDMMMYY(r.parsedDate)}</td>
+                        <td style={{ padding: '14px 16px', fontWeight: 600, color: '#1A1A1A' }}>{r.client}</td>
 
-            {/* Pagination Controls Footer block */}
-            <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-              <span style={{ fontSize: 13, color: '#666' }}>
-                Showing <strong style={{ color: '#1A1A1A' }}>{offsetIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(offsetIndex + itemsPerPage, processedDataRows.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{processedDataRows.length.toLocaleString()}</strong> transaction sequences
-              </span>
+                        <td style={{ padding: '14px 16px', color: '#2A2A2A', fontWeight: r.service.includes('MEMBERSHIP') ? 700 : 400 }}>
+                          {r.service}
+                        </td>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
-                <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPagesCount}</span>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPagesCount, prev + 1))} disabled={currentPage === totalPagesCount}>Next</button>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPagesCount)} disabled={currentPage === totalPagesCount}>Last</button>
+                        <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>{r.therapist}</td>
+
+                        <td style={{ padding: '14px 16px' }}>
+                          <span style={{
+                            padding: '4px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700,
+                            backgroundColor: r.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.05)',
+                            color: r.category === 'LE NAILS' ? '#C58F3B' : '#1A1A1A',
+                            border: r.category === 'LE NAILS' ? '1px solid rgba(197,143,59,0.2)' : '1px solid transparent'
+                          }}>
+                            {r.category}
+                          </span>
+                        </td>
+
+                        <td style={{ padding: '14px 16px', fontWeight: 700, color: '#1A1A1A' }}>₱{r.amount.toLocaleString()}</td>
+                        <td style={{ padding: '14px 16px', color: '#666', fontSize: 12, fontWeight: 600 }}>{r.paymentMethod}</td>
+
+                        <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
+                          <span className="pos-badge" style={{
+                            backgroundColor: r.clientType === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
+                            color: r.clientType === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B'
+                          }}>
+                            {r.clientType}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {viewablePaginatedRows.length === 0 && <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No matching records allocated.</td></tr>}
+                  </tbody>
+                </table>
               </div>
-            </div>
 
-          </div>
-        )}
+              {/* Pagination Controls Footer block */}
+              <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', borderTop: '1px solid rgba(26,26,26,0.09)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+                <span style={{ fontSize: 13, color: '#666' }}>
+                  Showing <strong style={{ color: '#1A1A1A' }}>{offsetIndex + 1}</strong> to <strong style={{ color: '#1A1A1A' }}>{Math.min(offsetIndex + itemsPerPage, processedDataRows.length)}</strong> of <strong style={{ color: '#C58F3B' }}>{processedDataRows.length.toLocaleString()}</strong> transaction sequences
+                </span>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+                  <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
+                  <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPagesCount}</span>
+                  <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPagesCount, prev + 1))} disabled={currentPage === totalPagesCount}>Next</button>
+                  <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPagesCount ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPagesCount)} disabled={currentPage === totalPagesCount}>Last</button>
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
       </div>
     </>
   )
