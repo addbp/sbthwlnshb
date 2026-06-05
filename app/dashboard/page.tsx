@@ -1,311 +1,412 @@
 'use client'
 
+// app/dashboard/overview/page.tsx
+// Phase 19: Live Operations Tracker (Custom Timeline Grid & Interactive Staff Assignment)
+
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// TYPES & CONSTANTS
+// INITIALIZATION
 // ─────────────────────────────────────────────────────────────
-interface BookingRecord {
-  uniqueRowKey: string;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+const BG = '#F9F4EB'
+const BLACK = '#1A1A1A'
+const GOLD = '#C58F3B'
+const WHITE = '#FFFFFF'
+const BODY = "'Inter', system-ui, sans-serif"
+const DSP = "'Cormorant Garamond', Georgia, serif"
+
+interface LiveBooking {
   id: string;
-  client_name: string;
-  service_name: string;
+  date: string;
+  time: string;
+  client: string;
+  service: string;
   amount: number;
-  price: number;
-  appointment_date: string;
-  appointment_time: string;
-  therapist_name: string;
   status: string;
-  created_at: string;
+  therapist: string | null;
+  createdAt: string;
 }
 
 interface StaffMember {
-  id: string | number;
+  id: string;
   name: string;
   role: string;
 }
 
-const TIME_SLOTS = [
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
-  '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
-  '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM',
-  '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
-  '11:00 PM', '11:30 PM', '12:00 AM'
-];
-
-const STATUS_OPTIONS = ['Pending', 'Ongoing', 'Completed', 'Hold'];
-
 export default function OverviewDashboard() {
-  const supabase = useRef(createClient()).current
-  const [bookings, setBookings] = useState<BookingRecord[]>([])
-  const [staff, setStaff] = useState<StaffMember[]>([])
+  const supabase = useRef(createClient(supabaseUrl, supabaseAnonKey)).current
+
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
+  const [selectedDate, setSelectedDate] = useState(getTodayStr())
+  const [dailyBookings, setDailyBookings] = useState<LiveBooking[]>([])
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
-  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list')
 
-  const [calendarDate, setCalendarDate] = useState(() => {
-    const today = new Date()
-    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-  })
+  const [metrics, setMetrics] = useState({ completed: 0, pending: 0, ongoing: 0, hold: 0 })
 
-  // ─── DATA ENGINE: PULL AND SYNCHRONIZE LEDGER DATA ───
-  const refreshDashboardData = useCallback(async () => {
+  // ─── FETCH STAFF ONCE ───
+  useEffect(() => {
+    async function loadStaff() {
+      const { data } = await supabase.from('staff').select('id, name, role').order('name');
+      if (data) setStaffList(data);
+    }
+    loadStaff();
+  }, [supabase]);
+
+  // ─── FETCH DAILY OPERATIONS ───
+  const fetchDailyOperations = useCallback(async () => {
+    setLoading(true);
     try {
-      const [bookingsRes, staffRes] = await Promise.all([
-        supabase.from('bookings').select('*').order('appointment_date', { ascending: false }).order('appointment_time', { ascending: true }).limit(5000),
-        supabase.from('staff').select('*').order('name', { ascending: true }).limit(1000)
-      ])
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('booking_id, appointment_date, appointment_time, client_name, service_name, price, status, therapist_name, created_at')
+        .eq('appointment_date', selectedDate)
+        .order('created_at', { ascending: false }); // Sorts by Most Recent First
 
-      if (bookingsRes.data) {
-        const isolatedRows = bookingsRes.data.map((b: any, index: number) => ({
-          uniqueRowKey: `row-bkg-${b.id || b.booking_id || index}-${index}`,
-          id: String(b.id || b.booking_id || ''),
-          client_name: b.client_name || 'Guest',
-          service_name: b.service_name || b.service || '—',
-          amount: Number(b.amount || 0),
-          price: Number(b.price || b.amount || 0),
-          appointment_date: b.appointment_date || '',
-          appointment_time: b.appointment_time || '',
-          therapist_name: b.therapist_name || 'Unassigned',
+      if (error) throw error;
+
+      if (data) {
+        const mappedData = data.map(b => ({
+          id: b.booking_id,
+          date: b.appointment_date,
+          time: b.appointment_time || '—',
+          client: b.client_name,
+          service: b.service_name,
+          amount: Number(b.price || 0),
           status: b.status || 'Pending',
-          created_at: b.created_at || ''
-        }))
-        setBookings(isolatedRows)
-      }
+          therapist: b.therapist_name,
+          createdAt: b.created_at
+        }));
 
-      if (staffRes.data) {
-        setStaff(staffRes.data.map(t => ({
-          id: t.id,
-          name: t.name || t.full_name || 'Staff Member',
-          role: t.role || 'Therapist'
-        })))
+        setDailyBookings(mappedData);
+
+        setMetrics({
+          completed: mappedData.filter(b => b.status === 'Completed').length,
+          pending: mappedData.filter(b => b.status === 'Pending').length,
+          ongoing: mappedData.filter(b => b.status === 'Ongoing').length,
+          hold: mappedData.filter(b => b.status === 'Hold').length,
+        });
       }
     } catch (err) {
-      console.error("Dashboard ingestion pipeline error:", err)
+      console.error('Operations Fetch Error:', err);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [supabase])
+  }, [supabase, selectedDate]);
 
-  // ─── REALTIME DATABASE LISTENER SUBSCRIPTION ───
   useEffect(() => {
-    refreshDashboardData()
+    fetchDailyOperations();
+  }, [fetchDailyOperations]);
 
-    const realTimeChannel = supabase
-      .channel('realtime-dashboard-sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'bookings' },
-        () => {
-          refreshDashboardData()
-        }
-      )
-      .subscribe()
+  // ─── DATABASE UPDATE HANDLERS ───
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
+    await supabase.from('bookings').update({ status: newStatus }).eq('booking_id', id);
+    fetchDailyOperations();
+  };
 
-    return () => {
-      supabase.removeChannel(realTimeChannel)
+  const handleStaffChange = async (id: string, newStaffName: string) => {
+    const finalStaff = newStaffName === 'Unassigned' ? null : newStaffName;
+    setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
+    await supabase.from('bookings').update({ therapist_name: finalStaff }).eq('booking_id', id);
+  };
+
+  // ─── HELPERS ───
+  const formatCurrency = (val: number) => `₱${val.toLocaleString('en-PH')}`;
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Completed': return { bg: 'rgba(61,122,74,0.1)', color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)' };
+      case 'Ongoing': return { bg: 'rgba(197,143,59,0.1)', color: '#C58F3B', border: '1px solid rgba(197,143,59,0.3)' };
+      case 'Hold': return { bg: 'rgba(200,50,50,0.1)', color: '#C83232', border: '1px solid rgba(200,50,50,0.3)' };
+      default: return { bg: 'rgba(26,26,26,0.05)', color: '#666', border: '1px solid rgba(26,26,26,0.2)' }; // Pending
     }
-  }, [refreshDashboardData, supabase])
+  };
 
-  // ─── LIVE STATUS INDIVIDUAL TRANSACTION CONTROL ───
-  const handleStatusTransition = async (targetRowKey: string, dbId: string, nextStatus: string) => {
-    setBookings(prev => prev.map(b => b.uniqueRowKey === targetRowKey ? { ...b, status: nextStatus } : b))
+  // ─── TIMELINE CALCULATION LOGIC ───
+  const TOTAL_MINUTES = 14 * 60; // 11:00 AM to 1:00 AM = 14 Hours
 
-    const { error } = await supabase.from('bookings').update({ status: nextStatus }).eq('id', dbId)
-    if (error) {
-      await supabase.from('bookings').update({ status: nextStatus }).eq('booking_id', dbId)
-    }
-  }
+  const getMinutesFrom11AM = (timeStr: string) => {
+    if (!timeStr || timeStr === '—') return 0;
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return 0;
 
-  // ─── CALCULATED METRICS FOR STATUS PLACECARDS ───
-  const activeTodayBookings = bookings.filter(b => b.appointment_date === calendarDate)
+    let h = parseInt(match[1]);
+    const m = parseInt(match[2]);
+    const ampm = match[3].toUpperCase();
 
-  // Strictly calculated counts instead of price/revenue summaries
-  const completedSessionsCount = bookings.filter(b => b.status === 'Completed').length
-  const pendingApprovalsCount = bookings.filter(b => b.status === 'Pending').length
-  const ongoingSessionsCount = bookings.filter(b => b.status === 'Ongoing').length
-  const holdSessionsCount = bookings.filter(b => b.status === 'Hold').length
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    if (h < 11) h += 24; // Handle after-midnight times (12 AM, 1 AM)
 
-  const getStatusBadgeStyle = (status: string) => {
-    const s = status.trim().toUpperCase()
-    if (s === 'COMPLETED') return { backgroundColor: 'rgba(61,122,74,0.1)', color: '#3D7A4A' }
-    if (s === 'ONGOING') return { backgroundColor: 'rgba(197,143,59,0.1)', color: '#C58F3B' }
-    if (s === 'HOLD') return { backgroundColor: 'rgba(139,58,58,0.1)', color: '#8B3A3A' }
-    return { backgroundColor: '#f5f5f5', color: '#666' }
-  }
+    const totalMins = (h * 60) + m;
+    const offset = totalMins - (11 * 60);
+    return Math.max(0, offset);
+  };
+
+  const HOURS_MARKERS = [
+    '11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM',
+    '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'
+  ];
 
   return (
-    <>
-      <style>{`
-        .ctrl-select { border: 1px solid rgba(26,26,26,0.12); padding: 6px 10px; border-radius: 6px; background-color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; outline: none; transition: all 150ms ease; }
-        .ctrl-select:hover { border-color: #C58F3B; }
-        .grid-scroll::-webkit-scrollbar { height: 8px; }
-        .grid-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); }
-        .grid-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.25); border-radius: 4px; }
-        .date-picker-input { padding: 6px 12px; border: 1px solid rgba(197,143,59,0.3); border-radius: 8px; background-color: #fff; font-family: inherit; font-size: 12px; font-weight: 700; color: #1A1A1A; outline: none; }
-      `}</style>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: '40px', fontFamily: BODY }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 24, fontFamily: "'Inter',system-ui,sans-serif" }}>
+        {/* HEADER */}
+        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
+          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview</h1>
+        </div>
 
-        {/* Top Header Controls */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+        {/* CONTROLS */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
           <div>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#C58F3B', margin: '0 0 5px' }}>Live Operation Streams</p>
-            <h2 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 32, fontWeight: 300, color: '#1A1A1A', margin: 0 }}>Management Overview</h2>
+            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>LIVE OPERATION STREAMS</p>
+            <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Management Overview</h2>
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input type="date" className="date-picker-input" value={calendarDate} onChange={(e) => setCalendarDate(e.target.value)} title="Select schedule validation focus day" />
-            <button onClick={refreshDashboardData} style={{ padding: '0 16px', height: 38, border: '1px solid rgba(197,143,59,0.45)', borderRadius: 9, backgroundColor: 'transparent', color: '#C58F3B', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
-              {loading ? 'Refreshing...' : 'Live Synced'}
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none' }}
+            />
+            <button
+              onClick={fetchDailyOperations}
+              style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: 8, color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}
+            >
+              Live Synced
             </button>
           </div>
         </div>
 
-        {/* ─── METRIC PLACECARDS SHOWING COUNTS INSTEAD OF AMOUNT ─── */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>COMPLETED</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#3D7A4A', margin: 0 }}>{completedSessionsCount.toLocaleString()}</p>
-          </div>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>PENDING</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#1A1A1A', margin: 0 }}>{pendingApprovalsCount.toLocaleString()}</p>
-          </div>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>ONGOING</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#C58F3B', margin: 0 }}>{ongoingSessionsCount.toLocaleString()}</p>
-          </div>
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px', letterSpacing: '0.05em' }}>HOLD</p>
-            <p style={{ fontSize: 28, fontWeight: 700, color: '#8B3A3A', margin: 0 }}>{holdSessionsCount.toLocaleString()}</p>
-          </div>
+        {/* METRICS CARDS */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 40 }}>
+          {[
+            { label: 'COMPLETED', value: metrics.completed, color: '#3D7A4A' },
+            { label: 'PENDING', value: metrics.pending, color: '#1A1A1A' },
+            { label: 'ONGOING', value: metrics.ongoing, color: '#C58F3B' },
+            { label: 'HOLD', value: metrics.hold, color: '#C83232' }
+          ].map((metric) => (
+            <div key={metric.label} style={{ backgroundColor: WHITE, padding: '24px', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#666', margin: '0 0 16px 0' }}>{metric.label}</p>
+              <h3 style={{ fontSize: 32, fontWeight: 700, color: metric.color, margin: 0 }}>{metric.value}</h3>
+            </div>
+          ))}
         </div>
 
-        {/* Tab Selection Row */}
-        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 10 }}>
-          <button onClick={() => setViewMode('list')} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'list' ? '#1A1A1A' : 'transparent', color: viewMode === 'list' ? '#C58F3B' : '#666' }}>
-            List Track view
+        {/* VIEW TABS */}
+        <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: 20 }}>
+          <button
+            onClick={() => setView('LIST')}
+            style={{
+              padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em',
+              color: view === 'LIST' ? WHITE : '#666', backgroundColor: view === 'LIST' ? BLACK : 'transparent',
+              borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease'
+            }}
+          >
+            LIST TRACK VIEW
           </button>
-          <button onClick={() => setViewMode('calendar')} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'calendar' ? '#1A1A1A' : 'transparent', color: viewMode === 'calendar' ? '#C58F3B' : '#666' }}>
-            Daily Schedule Grid
+          <button
+            onClick={() => setView('GRID')}
+            style={{
+              padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em',
+              color: view === 'GRID' ? WHITE : '#666', backgroundColor: view === 'GRID' ? BLACK : 'transparent',
+              borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease'
+            }}
+          >
+            DAILY SCHEDULE GRID
           </button>
         </div>
 
-        {/* Primary Views */}
-        {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Synchronizing workspace data matrices...</div>
-        ) : viewMode === 'list' ? (
-
-          /* ─── LIVE DATA ENGINE TABLE VIEW ─── */
-          <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#F8F4EE', borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
-                    {['Date', 'Client', 'Service', 'Revenue (Final Amount)', 'Status Control', 'Assigned Staff'].map(h => (
-                      <th key={h} style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {bookings.map((b) => {
-                    const badgeStyle = getStatusBadgeStyle(b.status)
-                    return (
-                      <tr key={b.uniqueRowKey} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                        <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>{b.appointment_date}</td>
-                        <td style={{ padding: '16px 20px', fontWeight: 600, color: '#1A1A1A' }}>{b.client_name}</td>
-                        <td style={{ padding: '16px 20px', color: '#2A2A2A' }}>{b.service_name}</td>
-                        <td style={{ padding: '16px 20px', fontWeight: 700, color: '#1A1A1A' }}>₱{b.price.toLocaleString()}</td>
-
-                        {/* Dropdown status update matrix layout interface */}
-                        <td style={{ padding: '16px 20px' }}>
-                          <select
-                            value={b.status}
-                            onChange={(e) => handleStatusTransition(b.uniqueRowKey, b.id, e.target.value)}
-                            className="ctrl-select"
-                            style={{ backgroundColor: badgeStyle.backgroundColor, color: badgeStyle.color, borderColor: badgeStyle.color }}
-                          >
-                            {STATUS_OPTIONS.map(opt => (
-                              <option key={opt} value={opt} style={{ backgroundColor: '#fff', color: '#1A1A1A' }}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        <td style={{ padding: '16px 20px', color: '#666', fontWeight: 500 }}>{b.therapist_name || 'Unassigned'}</td>
-                      </tr>
-                    )
-                  })}
-                  {bookings.length === 0 && <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No transactions recorded.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        ) : (
-
-          /* ─── REALTIME INTERLOCKING TIMELINE MATRIX GRID (REALIGNED AND FIXED) ─── */
-          <div className="grid-scroll" style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>
-                Timeline Grid Scheduler — Realtime Verification Target Date: {calendarDate}
-              </h3>
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1400, tableLayout: 'fixed' }}>
+        {/* ─── LIST TRACK VIEW ─── */}
+        {view === 'LIST' && (
+          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
-                <tr style={{ backgroundColor: '#F8F4EE', borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
-                  <th style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', position: 'sticky', left: 0, backgroundColor: '#F8F4EE', zIndex: 10, borderRight: '1px solid rgba(26,26,26,0.09)', width: '220px', boxSizing: 'border-box' }}>
-                    Staff Member
-                  </th>
-                  {TIME_SLOTS.map(t => (
-                    <th key={t} style={{ padding: '14px 10px', fontSize: 10, fontWeight: 700, color: '#666', borderRight: '1px solid rgba(26,26,26,0.05)', width: '160px', boxSizing: 'border-box', textAlign: 'center' }}>
-                      {t}
-                    </th>
-                  ))}
+                <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>DATE & TIME</th>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>CLIENT</th>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>SERVICE</th>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>REVENUE</th>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>STATUS CONTROL</th>
+                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>ASSIGNED STAFF</th>
                 </tr>
               </thead>
               <tbody>
-                {staff.map((s) => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
-                    <td style={{ padding: '14px 20px', position: 'sticky', left: 0, backgroundColor: '#fff', zIndex: 9, borderRight: '1px solid rgba(26,26,26,0.09)', boxShadow: '2px 0 5px rgba(0,0,0,0.02)', boxSizing: 'border-box' }}>
-                      <div style={{ fontWeight: 700, color: '#1A1A1A', fontSize: 13, marginBottom: 2 }}>{s.name}</div>
-                      <div style={{ fontSize: 9, color: '#888', textTransform: 'uppercase' }}>{s.role}</div>
-                    </td>
+                {loading ? (
+                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Syncing live schedule...</td></tr>
+                ) : dailyBookings.length === 0 ? (
+                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
+                ) : (
+                  dailyBookings.map((b) => (
+                    <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
+                      <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>
+                        {b.date} <br /> <strong style={{ color: BLACK }}>{b.time}</strong>
+                      </td>
+                      <td style={{ padding: '16px 20px', fontWeight: 600, color: BLACK }}>{b.client}</td>
+                      <td style={{ padding: '16px 20px', color: '#2A2A2A', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.service}</td>
+                      <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(b.amount)}</td>
 
-                    {TIME_SLOTS.map(slotTime => {
-                      const scheduleBlock = activeTodayBookings.find(b =>
-                        b.therapist_name?.trim().toLowerCase() === s.name.trim().toLowerCase() &&
-                        b.appointment_time?.trim().toUpperCase().replace(/\s+/g, ' ') === slotTime.trim().toUpperCase().replace(/\s+/g, ' ') &&
-                        b.status !== 'Cancelled'
-                      )
+                      {/* LIVE STATUS DROPDOWN */}
+                      <td style={{ padding: '16px 20px' }}>
+                        <select
+                          value={b.status}
+                          onChange={(e) => handleStatusChange(b.id, e.target.value)}
+                          style={{
+                            ...getStatusColor(b.status),
+                            padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                            cursor: 'pointer', outline: 'none', appearance: 'none', WebkitAppearance: 'none',
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L4 4L7 1' stroke='${encodeURIComponent(getStatusColor(b.status).color)}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
+                            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 30
+                          }}
+                        >
+                          <option value="Pending">Pending</option>
+                          <option value="Ongoing">Ongoing</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Hold">Hold</option>
+                        </select>
+                      </td>
 
-                      return (
-                        <td key={slotTime} style={{ padding: '6px', borderRight: '1px solid rgba(26,26,26,0.05)', backgroundColor: scheduleBlock ? 'rgba(197,143,59,0.03)' : 'transparent', verticalAlign: 'top', boxSizing: 'border-box' }}>
-                          {scheduleBlock ? (
-                            <div style={{ padding: '8px', backgroundColor: '#fff', border: '1px solid rgba(197,143,59,0.3)', borderRadius: 6, borderLeft: '4px solid #C58F3B', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: '#1A1A1A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {scheduleBlock.client_name}
-                              </div>
-                              <div style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
-                                {scheduleBlock.service_name}
-                              </div>
-                              <div style={{ marginTop: 6, display: 'inline-block', padding: '2px 6px', borderRadius: 4, fontSize: 8, fontWeight: 700, textTransform: 'uppercase', ...getStatusBadgeStyle(scheduleBlock.status) }}>
-                                {scheduleBlock.status}
-                              </div>
-                            </div>
-                          ) : null}
-                        </td>
-                      )
-                    })}
-                  </tr>
-                ))}
-                {staff.length === 0 && <tr><td colSpan={TIME_SLOTS.length + 1} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No therapist profiles located to map timeline grid parameters.</td></tr>}
+                      {/* LIVE STAFF DROPDOWN */}
+                      <td style={{ padding: '16px 20px' }}>
+                        <select
+                          value={b.therapist || 'Unassigned'}
+                          onChange={(e) => handleStaffChange(b.id, e.target.value)}
+                          style={{
+                            padding: '8px 12px', borderRadius: 6, fontSize: 12, fontFamily: BODY, fontWeight: 600,
+                            border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888',
+                            cursor: 'pointer', outline: 'none', backgroundColor: '#FDFDFD',
+                            maxWidth: '180px', transition: 'border 0.2s ease'
+                          }}
+                        >
+                          <option value="Unassigned">Unassigned</option>
+                          {staffList.map(staff => (
+                            <option key={staff.id} value={staff.name}>{staff.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         )}
+
+        {/* ─── DAILY SCHEDULE GRID (TIMELINE VIEW) ─── */}
+        {view === 'GRID' && (
+          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
+              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Realtime Verification Target Date: <strong style={{ color: BLACK }}>{selectedDate}</strong></span>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <div style={{ minWidth: '1200px' }}>
+
+                {/* TIMELINE HEADER (HOURS) */}
+                <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
+                  <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
+                    <span style={{ color: GOLD, fontWeight: 700, letterSpacing: '0.1em', fontSize: 10 }}>STAFF MEMBER</span>
+                  </div>
+                  <div style={{ display: 'flex', flexGrow: 1, position: 'relative' }}>
+                    {HOURS_MARKERS.slice(0, -1).map((hour, i) => (
+                      <div key={i} style={{ flex: 1, borderRight: i < 13 ? '1px dashed rgba(26,26,26,0.1)' : 'none', padding: '16px 0', textAlign: 'center' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#666' }}>{hour}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* TIMELINE ROWS (STAFF) */}
+                {loading ? (
+                  <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Syncing live schedule...</div>
+                ) : (
+                  [{ name: 'Unassigned', role: 'Any' }, ...staffList].map((staff) => {
+                    // Get bookings for this specific staff member
+                    const staffBookings = dailyBookings.filter(b =>
+                      (staff.name === 'Unassigned' && !b.therapist) ||
+                      (b.therapist === staff.name)
+                    );
+
+                    // Hide row if empty (unless it's Unassigned)
+                    if (staff.name !== 'Unassigned' && staffBookings.length === 0) return null;
+
+                    return (
+                      <div key={staff.name} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', minHeight: '90px' }}>
+
+                        {/* Staff Info Column */}
+                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: BLACK }}>{staff.name.toUpperCase()}</span>
+                          {staff.role && staff.name !== 'Unassigned' && <span style={{ fontSize: 9, color: '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{staff.role}</span>}
+                        </div>
+
+                        {/* Booking Canvas for this Staff */}
+                        <div style={{ flexGrow: 1, position: 'relative', backgroundImage: 'linear-gradient(to right, transparent 99%, rgba(26,26,26,0.05) 100%)', backgroundSize: `${100 / 14}% 100%` }}>
+
+                          {staffBookings.map(b => {
+                            if (!b.time || b.time === '—') return null;
+                            const startMins = getMinutesFrom11AM(b.time);
+                            const leftPercent = (startMins / TOTAL_MINUTES) * 100;
+                            // Visual block defaults to 60 mins width (7.14%)
+                            const widthPercent = (60 / TOTAL_MINUTES) * 100;
+                            const colors = getStatusColor(b.status);
+
+                            return (
+                              <div key={b.id} style={{
+                                position: 'absolute',
+                                left: `${leftPercent}%`,
+                                top: '10px',
+                                bottom: '10px',
+                                width: `calc(${widthPercent}% - 4px)`,
+                                minWidth: '130px',
+                                backgroundColor: WHITE,
+                                border: '1px solid rgba(26,26,26,0.15)',
+                                borderLeft: `4px solid ${colors.color}`,
+                                borderRadius: '6px',
+                                padding: '8px 12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '4px',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                zIndex: 10,
+                                overflow: 'hidden'
+                              }}>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: BLACK }}>{b.time}</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: BLACK, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.client}</span>
+                                <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.service}</span>
+                                <span style={{ display: 'inline-block', backgroundColor: colors.bg, color: colors.color, padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, width: 'fit-content', marginTop: 'auto' }}>
+                                  {b.status.toUpperCase()}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
-    </>
+    </div>
   )
 }
