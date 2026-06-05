@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 12 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Staff Filtering Logic + No Preference Defaults)
+// app/booking/page.tsx  —  Phase 13 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Wax Services Added, Platinum Excluded, Contact Us Fixed)
 
 export const dynamic = 'force-dynamic'
 
@@ -121,7 +121,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
             `${durationDisplay}${fmt(item.price)}`
           )
         ) : (
-          <strong style={{ color: GOLD, letterSpacing: '0.05em' }}>{durationDisplay}Contact Us</strong>
+          <strong style={{ color: GOLD, letterSpacing: '0.05em' }}>Contact Us</strong>
         )}
 
         {item.savings && (
@@ -296,6 +296,7 @@ export default function BookingPage() {
               else if (upName.includes('COMBINATION') && !upName.includes('STONE')) { desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience."; duration = "60 minutes"; }
               else if (upName.includes('SLIMMING')) { desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin."; duration = "75 minutes"; }
               else if (upName.includes('HILOT') || upName.includes('VENTOSA')) { desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing."; duration = "75 minutes"; }
+              else if (upName.includes('FULL BODY') && (upName.includes('FEMALE') || upName.includes('MALE'))) { desc = "Includes: Chest/Back, Bikini/Brazilian.\nUse of private room included."; }
             }
 
             return {
@@ -310,7 +311,6 @@ export default function BookingPage() {
           })
         }
 
-        // Merge Hardcoded Wellness suites if they aren't uniquely present
         hardcodedWellness.forEach(hw => {
           if (!finalMappedServices.some(s => s.name.toUpperCase() === hw.name.toUpperCase())) {
             finalMappedServices.push(hw);
@@ -341,7 +341,7 @@ export default function BookingPage() {
     setDetectedMembership(found || null);
   }, [mobile, email, activeMemberships])
 
-  // ─── STRICT EXCLUSION FILTER (REMOVES PACKAGES & UNWANTED ITEMS) ───
+  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM & UNWANTED ITEMS) ───
   const isExcluded = (name: string) => {
     const n = name.toUpperCase();
     return n === 'SOFT GEL' ||
@@ -351,6 +351,8 @@ export default function BookingPage() {
       n === 'SLIPPERS' ||
       n === 'SABBATH PACKAGE 1' ||
       n === 'SABBATH PACKAGE 2' ||
+      n.includes('PLATINUM') ||
+      n.includes('MEMBERSHIP') ||
       n.includes('SABBATH PACKAGE 1 W/') ||
       n.includes('SABBATH PACKAGE 1W/') ||
       n.includes('THERAPIST REQUEST');
@@ -359,11 +361,13 @@ export default function BookingPage() {
   const validServices = dbServices.filter(s => !isExcluded(s.name));
   const allAvailableServices = [...validServices, ...customServices];
 
-  const NAIL_KEYWORDS = [
-    'SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED',
-    'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH',
-    'ACCENT', 'POLISH', 'NAIL ART', 'GEL REMOVAL'
-  ]
+  const WAX_KEYWORDS = ['WAX', 'UPPER LIP', 'LOWER LIP', 'UNDERARMS', 'ARMS FEMALE', 'ARMS MALE', 'HALF LEGS', 'FULL LEGS', 'FULL BODY']
+  const NAIL_KEYWORDS = ['SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED', 'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH', 'ACCENT', 'POLISH', 'NAIL ART', 'GEL REMOVAL']
+
+  const isWaxService = (s: ServiceItem) => {
+    const n = s.name.toUpperCase();
+    return WAX_KEYWORDS.some(keyword => n.includes(keyword));
+  }
 
   const isNailService = (s: ServiceItem) => {
     const cat = s.category?.toLowerCase() || '';
@@ -374,7 +378,6 @@ export default function BookingPage() {
   }
 
   // ─── CATEGORY ORGANIZATION (PRESERVES DB ORDER, NO ALPHABETIZING) ───
-
   const packageServices = allAvailableServices.filter(s => {
     const n = s.name.toUpperCase();
     return n === 'PACKAGE A' || n === 'PACKAGE B' || n === 'PACKAGE C' || n === 'PACKAGE D' || n === 'PACKAGE E' || n === 'PACKAGE F';
@@ -386,14 +389,18 @@ export default function BookingPage() {
     return n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE') || n.includes('PACKAGE') || n.includes('GIFT CERTIFICATE') || n.includes('BIRTHDAY TREATS') || n.includes('CORPORATE EVENTS');
   });
 
-  const nailServices = allAvailableServices.filter(s => {
+  const waxServices = allAvailableServices.filter(s => {
     if (packageServices.includes(s) || wellnessPackages.includes(s)) return false;
+    return isWaxService(s);
+  });
+
+  const nailServices = allAvailableServices.filter(s => {
+    if (packageServices.includes(s) || wellnessPackages.includes(s) || waxServices.includes(s)) return false;
     return isNailService(s);
   });
 
   const massageServices = allAvailableServices.filter(s => {
-    if (packageServices.includes(s) || wellnessPackages.includes(s)) return false;
-    if (isNailService(s)) return false;
+    if (packageServices.includes(s) || wellnessPackages.includes(s) || waxServices.includes(s) || nailServices.includes(s)) return false;
     if (s.category === 'Custom') return false;
     return true;
   });
@@ -423,20 +430,23 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
-  // ─── TARGETED THERAPIST FILTERING ENGINE ───
+  // ─── DYNAMIC STAFF LOGIC MATRIX ───
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
     const needsTherapist = selectedServices.some(s => massageServices.includes(s) || wellnessPackages.includes(s));
     const needsNailTech = selectedServices.some(s => nailServices.includes(s) || packageServices.includes(s));
+    const needsWaxTech = selectedServices.some(s => waxServices.includes(s));
 
     allowedTherapists = therapists.filter(t => {
       const role = (t.role || '').toLowerCase();
       const isMassageTech = role.includes('massage') || role.includes('therapist') || role.includes('spa');
       const isNailTech = role.includes('nail');
+      const isWaxTech = isMassageTech || isNailTech; // Both can do wax
 
       if (needsTherapist && needsNailTech) return isMassageTech || isNailTech;
       if (needsTherapist) return isMassageTech;
       if (needsNailTech) return isNailTech;
+      if (needsWaxTech) return isWaxTech;
       return true;
     });
   }
@@ -550,7 +560,7 @@ export default function BookingPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            name: firstName.trim(), // <--- Email exclusively receives the first name
+            name: firstName.trim(),
             email: email.trim(), date: date, time: time,
             services: selectedServices.map(s => s.name).join(', '),
             totalAmount: finalTotalAmount
@@ -566,10 +576,9 @@ export default function BookingPage() {
   }
 
   const formatMiStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
-  const displayFullName = `${firstName.trim()}${formatMiStr} ${lastName.trim()}`; // <--- Receipt prints full name
+  const displayFullName = `${firstName.trim()}${formatMiStr} ${lastName.trim()}`;
   const selectedTherapistDisplay = therapists.find(t => t.id === therapistId)?.name || 'Unassigned';
 
-  // ─── FINAL SUCCESS / PRINT VIEW ───
   if (submitted) return (
     <>
       <style>{`
@@ -717,7 +726,6 @@ export default function BookingPage() {
 
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
 
-              {/* ── LIVE MEMBERSHIP DETECTOR BANNER ── */}
               {detectedMembership && (
                 <div style={{ backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.3)', padding: '16px 20px', borderRadius: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div style={{ width: 44, height: 44, borderRadius: '50%', backgroundColor: GOLD, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontSize: 20 }}>👑</div>
@@ -741,6 +749,8 @@ export default function BookingPage() {
               ) : (
                 <div className="svc-scroll" style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+                  {/* ── ALIGNMENT: MASSAGES -> LE NAILS -> WAX -> SUITES & EVENTS -> PACKAGES ── */}
+
                   {massageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Massage Therapy</div>
@@ -763,6 +773,15 @@ export default function BookingPage() {
                             discountPct={nailDiscountPercentage}
                           />
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {waxServices.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Wax Service</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
+                        {waxServices.map(s => <ServiceChip key={s.id} item={s} selected={selectedIds.has(s.id)} onToggle={() => toggleService(s.id)} />)}
                       </div>
                     </div>
                   )}
