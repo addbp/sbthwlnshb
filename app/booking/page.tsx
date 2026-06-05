@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 15 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Strict Deduplication, Event Descriptions Restored, Rogue Items Excluded)
+// app/booking/page.tsx  —  Phase 18 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Custom Native Time Picker, Smart Operating Hours, Conflict Checking)
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +17,6 @@ const GOLD = '#C58F3B'
 const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
-const CARET = `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23C58F3B' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`
 
 const INPUT: React.CSSProperties = {
   display: 'block', width: '100%', height: 54,
@@ -34,7 +33,7 @@ const INPUT: React.CSSProperties = {
 const SELECT: React.CSSProperties = {
   ...INPUT,
   paddingRight: 42,
-  backgroundImage: CARET,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23C58F3B' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
   backgroundRepeat: 'no-repeat',
   backgroundPosition: 'right 14px center',
   cursor: 'pointer',
@@ -55,14 +54,6 @@ interface Discount { id: string; name: string; discount_percentage: number; code
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
-
-const TIME_SLOTS = [
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
-  '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
-  '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM',
-  '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
-  '11:00 PM', '11:30 PM', '12:00 AM'
-]
 
 // ─────────────────────────────────────────────────────────────
 // COMPONENTS
@@ -111,7 +102,6 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
       <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
 
-        {/* CLEAN CONTACT US RENDERER (NO DURATION) */}
         {hasPrice ? (
           discountPct > 0 ? (
             <>
@@ -183,9 +173,14 @@ export default function BookingPage() {
   const [discountMode, setDiscountMode] = useState<string>('none')
   const [customDiscountVal, setCustomDiscountVal] = useState<string>('')
 
+  // ─── DATE & TIME STATES ───
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
-  const [time, setTime] = useState('')
+
+  const [rawTime, setRawTime] = useState('') // The value from <input type="time"> (HH:mm)
+  const [time, setTime] = useState('') // The validated 12-hour format string sent to DB
+  const [timeError, setTimeError] = useState<string | null>(null)
+  const [dateBookings, setDateBookings] = useState<any[]>([])
 
   const [therapistSearch, setTherapistSearch] = useState('')
   const [therapistId, setTherapistId] = useState('')
@@ -276,7 +271,6 @@ export default function BookingPage() {
               duration = '';
             }
 
-            // ─── LE NAIL PACKAGES MAPPING ───
             if (upName === 'PACKAGE A') { desc = "Mani, Pedi, Foot Spa"; saveTag = "SAVE ₱100.00 !!"; }
             else if (upName === 'PACKAGE B') { desc = "ManiGel ORLY, Pedi, Foot Spa"; saveTag = "SAVE ₱200.00 !!"; }
             else if (upName === 'PACKAGE C') { desc = "ManiGel CUCCIO, Pedi, Foot Massage"; saveTag = "SAVE ₱300.00 !!"; }
@@ -284,7 +278,6 @@ export default function BookingPage() {
             else if (upName === 'PACKAGE E') { desc = "Mani, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱300.00 !!"; }
             else if (upName === 'PACKAGE F') { desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱450.00 !!"; }
 
-            // ─── EVENT MAPPING (If pulled from DB instead of hardcoded) ───
             else if (upName.includes('GIFT CERTIFICATE') && !upName.includes('CUSTOM') && !upName.includes('10+1')) {
               desc = 'A thoughtful gift of rest and relaxation.\n🎉 10 + 1 Promo - Book 10 services, get 1 FREE!';
             }
@@ -298,7 +291,6 @@ export default function BookingPage() {
               desc = 'FREE 1 round of Coffee or Tea for groups of 10+ dining at Sabasu ☕\n\nCelebrate. Relax. Indulge. Make your next event a Sabbath to Remember.';
             }
 
-            // ─── MASSAGE THERAPY MAPPING ───
             else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
               if (upName === 'SABBATH SIGNATURE' || upName.includes('SABBATH SIGNATURE MASSAGE')) {
                 desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
@@ -383,7 +375,6 @@ export default function BookingPage() {
           }
         });
 
-        // ─── STRICT FRONTEND DEDUPLICATOR ───
         const uniqueServices: ServiceItem[] = [];
         const seenNames = new Set<string>();
         for (const s of finalMappedServices) {
@@ -418,7 +409,6 @@ export default function BookingPage() {
     setDetectedMembership(found || null);
   }, [mobile, email, activeMemberships])
 
-  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM, WAX DUPLICATES, & ROGUE ITEMS) ───
   const isExcluded = (name: string) => {
     const n = name.toUpperCase().trim();
     return n === 'SOFT GEL' ||
@@ -457,7 +447,6 @@ export default function BookingPage() {
     return false;
   }
 
-  // ─── CATEGORY ORGANIZATION (PRESERVES DB ORDER, NO ALPHABETIZING) ───
   const packageServices = allAvailableServices.filter(s => {
     const n = s.name.toUpperCase();
     return n === 'PACKAGE A' || n === 'PACKAGE B' || n === 'PACKAGE C' || n === 'PACKAGE D' || n === 'PACKAGE E' || n === 'PACKAGE F';
@@ -510,7 +499,6 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
-  // ─── DYNAMIC STAFF LOGIC MATRIX ───
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
     const needsTherapist = selectedServices.some(s => massageServices.includes(s) || wellnessPackages.includes(s));
@@ -572,19 +560,99 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
-  const availableTimeSlots = date === getTodayStr() ? TIME_SLOTS.filter(t => {
-    const match = t.match(/(\d+):(\d+)\s(AM|PM)/);
-    if (!match) return true;
-    let h = parseInt(match[1]); const m = parseInt(match[2]); const ampm = match[3];
-    if (ampm === 'PM' && h !== 12) h += 12; if (ampm === 'AM' && h === 12) h = 0;
-    const now = new Date(); const currH = now.getHours(); const currM = now.getMinutes();
-    if (h > currH) return true; if (h === currH && m > currM) return true;
-    return false;
-  }) : TIME_SLOTS;
 
+  // ─── SMART TIME ENGINE: LIVE CONFLICT FETCH ───
   useEffect(() => {
-    if (time && !availableTimeSlots.includes(time)) setTime('');
-  }, [date, availableTimeSlots, time]);
+    if (!date) return;
+    const fetchDateBookings = async () => {
+      const { data } = await supabase
+        .from('bookings')
+        .select('appointment_time, therapist_name')
+        .eq('appointment_date', date);
+      if (data) setDateBookings(data);
+    }
+    fetchDateBookings();
+  }, [date, supabase]);
+
+  // ─── SMART TIME ENGINE: VALIDATION & COMPLIANCE RULES ───
+  useEffect(() => {
+    if (!rawTime || !date) {
+      setTimeError(null);
+      setTime('');
+      return;
+    }
+
+    const [hhStr, mmStr] = rawTime.split(':');
+    const hh = parseInt(hhStr, 10);
+    const mm = parseInt(mmStr, 10);
+
+    // Safely parse Date to get correct Day of Week
+    const [y, m, d] = date.split('-').map(Number);
+    const selectedDateObj = new Date(y, m - 1, d);
+    const day = selectedDateObj.getDay(); // 0 = Sunday
+
+    // Time Travel Check (Prevent picking a time in the past for today)
+    if (date === getTodayStr()) {
+      const now = new Date();
+      const currH = now.getHours();
+      const currM = now.getMinutes();
+      if (hh < currH || (hh === currH && mm < currM)) {
+        setTimeError("Cannot book a time in the past.");
+        setTime(''); return;
+      }
+    }
+
+    const isLateNight = (hh === 0) || (hh === 1 && mm === 0);
+
+    // 1. Enforce Closing Time (Strictly 1:00 AM)
+    if (hh === 1 && mm > 0) {
+      setTimeError("Spa closes at 1:00 AM exactly.");
+      setTime(''); return;
+    }
+    if (hh > 1 && hh < 11) {
+      setTimeError("Spa is closed during these hours.");
+      setTime(''); return;
+    }
+
+    // 2. Enforce Opening Times
+    if (day === 0) { // Sunday
+      if (!isLateNight && hh < 13) {
+        setTimeError("Sundays: Open 1:00 PM to 1:00 AM.");
+        setTime(''); return;
+      }
+    } else { // Mon - Sat
+      if (!isLateNight && hh < 11) {
+        setTimeError("Mon-Sat: Open 11:00 AM to 1:00 AM.");
+        setTime(''); return;
+      }
+    }
+
+    // 3. Format Time to Database Standard (12-hour format)
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const h12 = hh % 12 || 12;
+    const formatted12h = `${h12}:${mm.toString().padStart(2, '0')} ${ampm}`;
+
+    // 4. Overlap & Conflict Database Check
+    if (therapistId) {
+      const therapistName = therapists.find(t => t.id === therapistId)?.name;
+      const isBooked = dateBookings.some(b => b.appointment_time === formatted12h && b.therapist_name === therapistName);
+      if (isBooked) {
+        setTimeError(`${therapistName} is already booked at ${formatted12h}.`);
+        setTime(''); return;
+      }
+    } else {
+      const bookingsAtTime = dateBookings.filter(b => b.appointment_time === formatted12h).length;
+      if (therapists.length > 0 && bookingsAtTime >= therapists.length) {
+        setTimeError(`All staff are fully booked at ${formatted12h}.`);
+        setTime(''); return;
+      }
+    }
+
+    setTimeError(null);
+    setTime(formatted12h);
+
+  }, [rawTime, date, therapistId, dateBookings, therapists, getTodayStr]);
+
 
   const validation = {
     firstName: firstName.trim().length < 2,
@@ -593,7 +661,7 @@ export default function BookingPage() {
     email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    time: time === '',
+    time: time === '' || timeError !== null,
   }
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
@@ -913,10 +981,19 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
                 <Field label="Preferred Time *">
-                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
-                    <option value="">Select time…</option>
-                    {availableTimeSlots.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <input
+                    suppressHydrationWarning
+                    className="bk-in"
+                    type="time"
+                    style={{ ...INPUT, ...eb(validation.time) }}
+                    value={rawTime}
+                    onChange={e => setRawTime(e.target.value)}
+                  />
+                  {timeError && (
+                    <span style={{ color: '#C83232', fontSize: 11, marginTop: 6, fontWeight: 700 }}>
+                      {timeError}
+                    </span>
+                  )}
                 </Field>
               </Row2>
 
