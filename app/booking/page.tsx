@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 7 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Guests Added, Payments Removed, Print Ready)
+// app/booking/page.tsx  —  Phase 8 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Payments Removed, Print Ready, Guests Removed)
 
 export const dynamic = 'force-dynamic'
 
@@ -155,9 +155,6 @@ export default function BookingPage() {
   const [lastName, setLastName] = useState('')
   const [mobile, setMobile] = useState('')
   const [email, setEmail] = useState('')
-
-  // New Guest Variable
-  const [guests, setGuests] = useState('1')
 
   const [dbServices, setDbServices] = useState<ServiceItem[]>([])
   const [customServices, setCustomServices] = useState<ServiceItem[]>([])
@@ -485,16 +482,12 @@ export default function BookingPage() {
     const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
     const constructedFullName = `${firstName.trim()}${miStr} ${lastName.trim()}`;
 
-    // Appending Guest Data and Promos cleanly into the notes
-    let trackingNotes = `[GUESTS: ${guests} Person(s)]\n\n` + notes.trim();
+    let trackingNotes = notes.trim();
     if (promoDeduction > 0 && appliedPromoText) {
       trackingNotes += `\n\n[SYSTEM CHECKOUT: ${appliedPromoText} APPLIED - ₱${promoDeduction.toLocaleString()} DEDUCTED]`;
     }
 
     try {
-      // Note: "number_of_guests" payload is included safely. If you haven't added this column 
-      // to your Supabase "bookings" table yet, you will need to add it as an integer, otherwise the
-      // trackingNotes string will act as your perfect fallback.
       const payload: any = {
         booking_id: generatedBookingId,
         client_name: constructedFullName,
@@ -505,13 +498,10 @@ export default function BookingPage() {
         therapist_name: selectedTherapist?.name ?? null,
         appointment_date: date,
         appointment_time: time,
-        payment_method: 'PAY AT COUNTER', // Cashier flow replaces strict payment module
+        payment_method: 'PAY AT COUNTER',
         status: 'Pending',
         notes: trackingNotes.trim(),
       };
-
-      // Safely apply number_of_guests to payload
-      try { payload.number_of_guests = parseInt(guests) } catch { }
 
       const { error: dbErr } = await supabase.from('bookings').insert(payload)
 
@@ -559,7 +549,7 @@ export default function BookingPage() {
         <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
         <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment for <strong style={{ color: BLACK }}>{guests} {parseInt(guests) === 1 ? 'person' : 'guests'}</strong> on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar. Please proceed to the cashier for payment processing.
+          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar. Please proceed to the cashier for payment processing.
         </p>
 
         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -597,7 +587,6 @@ export default function BookingPage() {
           <p style={{ margin: 0 }}><strong>Date:</strong> {date}</p>
           <p style={{ margin: 0 }}><strong>Time:</strong> {time}</p>
           <p style={{ margin: 0 }}><strong>Client:</strong> {displayFullName}</p>
-          <p style={{ margin: 0 }}><strong>Guests:</strong> {guests}</p>
           <p style={{ margin: 0 }}><strong>Therapist:</strong> {selectedTherapistDisplay}</p>
         </div>
 
@@ -685,17 +674,6 @@ export default function BookingPage() {
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
               </Row2>
-            </Section>
-
-            {/* ─── NEW PARTY SIZE / GUESTS SECTION ─── */}
-            <Section title="Party Size">
-              <Field label="Number of Guests *">
-                <select className="bk-in" style={SELECT} value={guests} onChange={e => setGuests(e.target.value)}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                    <option key={num} value={num}>{num} {num === 1 ? 'Person' : 'Persons'}</option>
-                  ))}
-                </select>
-              </Field>
             </Section>
 
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
