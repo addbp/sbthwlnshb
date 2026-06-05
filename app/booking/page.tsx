@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 14 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Clean Exclusions, Restored Descriptions, Contact Us Fix)
+// app/booking/page.tsx  —  Phase 15 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Strict Deduplication, Event Descriptions Restored, Rogue Items Excluded)
 
 export const dynamic = 'force-dynamic'
 
@@ -248,7 +248,6 @@ export default function BookingPage() {
         if (discRes) setDbDiscounts(discRes.filter(d => d.active) as Discount[])
         if (memRes) setActiveMemberships(memRes.filter(m => m.status === 'Active') as Membership[])
 
-        // ─── INJECT HARDCODED WELLNESS & EVENT PACKAGES ───
         const hardcodedWellness = [
           { id: 'ws-1', name: 'PRIVATE WELLNESS SUITE', duration: '120 min', price: 1500, category: 'Wellness Suite', description: 'A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session.\n\nIncludes:\n• Private Shower\n• Sauna session (4 pax max)\n• Jacuzzi bath experience (for 2)' },
           { id: 'ws-2', name: 'PRIVATE WELLNESS SUITE WITH REGULAR MASSAGE', duration: '3 hours', price: 2000, category: 'Wellness Suite', description: 'Swedish, Foot Reflexology and Shiatsu.\n\nInclusions:\nPrivate Shower, Jacuzzi, Sauna and 60 minutes Regular Massage' },
@@ -272,7 +271,7 @@ export default function BookingPage() {
             let duration = String(s.duration || '60 min');
             const upName = rawName.toUpperCase();
 
-            // Remove duration if it's a zero-price Contact Us item
+            // REMOVE DURATION FOR EVENTS/CONTACT US ITEMS
             if (upName.includes('GIFT CERTIFICATE') || upName.includes('BRIDAL SHOWER') || upName.includes('BIRTHDAY TREAT') || upName.includes('CORPORATE EVENT')) {
               duration = '';
             }
@@ -285,9 +284,22 @@ export default function BookingPage() {
             else if (upName === 'PACKAGE E') { desc = "Mani, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱300.00 !!"; }
             else if (upName === 'PACKAGE F') { desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱450.00 !!"; }
 
-            // ─── MASSAGE THERAPY MAPPING (BROADENED TO CATCH DB VARIANTS) ───
-            else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
+            // ─── EVENT MAPPING (If pulled from DB instead of hardcoded) ───
+            else if (upName.includes('GIFT CERTIFICATE') && !upName.includes('CUSTOM') && !upName.includes('10+1')) {
+              desc = 'A thoughtful gift of rest and relaxation.\n🎉 10 + 1 Promo - Book 10 services, get 1 FREE!';
+            }
+            else if (upName.includes('BRIDAL SHOWER')) {
+              desc = '(minimum 4 pax- choose your experience)\n💅 Le Nails Spa Bridal Package\n- FREE Foot Spa for the bride\n💆‍♀️ Sabbath Bridal Massage Package\n- FREE Upgrade to Signature Sabbath Massage for the bride\n\n🍲 Add food from Sabasu - choose from our ramen or rice meals for your spa party!';
+            }
+            else if (upName.includes('BIRTHDAY TREAT')) {
+              desc = 'FREE home-baked chocolate cookies for the celebrant 🍪';
+            }
+            else if (upName.includes('CORPORATE EVENT')) {
+              desc = 'FREE 1 round of Coffee or Tea for groups of 10+ dining at Sabasu ☕\n\nCelebrate. Relax. Indulge. Make your next event a Sabbath to Remember.';
+            }
 
+            // ─── MASSAGE THERAPY MAPPING ───
+            else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
               if (upName === 'SABBATH SIGNATURE' || upName.includes('SABBATH SIGNATURE MASSAGE')) {
                 desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
                 duration = "90 min";
@@ -371,7 +383,18 @@ export default function BookingPage() {
           }
         });
 
-        setDbServices(finalMappedServices);
+        // ─── STRICT FRONTEND DEDUPLICATOR ───
+        const uniqueServices: ServiceItem[] = [];
+        const seenNames = new Set<string>();
+        for (const s of finalMappedServices) {
+          const key = s.name.toUpperCase().trim();
+          if (!seenNames.has(key)) {
+            seenNames.add(key);
+            uniqueServices.push(s);
+          }
+        }
+
+        setDbServices(uniqueServices);
 
       } catch (err) {
         console.error("Supabase fetch failed:", err)
@@ -395,9 +418,9 @@ export default function BookingPage() {
     setDetectedMembership(found || null);
   }, [mobile, email, activeMemberships])
 
-  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM, WAX DUPLICATES & UNWANTED ITEMS) ───
+  // ─── STRICT EXCLUSION FILTER (REMOVES PLATINUM, WAX DUPLICATES, & ROGUE ITEMS) ───
   const isExcluded = (name: string) => {
-    const n = name.toUpperCase();
+    const n = name.toUpperCase().trim();
     return n === 'SOFT GEL' ||
       n === 'SAUNA' ||
       n === 'SHOWER' ||
@@ -405,6 +428,7 @@ export default function BookingPage() {
       n === 'SLIPPERS' ||
       n === 'WAX' ||
       n === 'BRAZILLIAN WAX' ||
+      n === 'REGULAR MASSAGE' ||
       n.includes('SABBATH PACKAGE 1') ||
       n.includes('SABBATH PACKAGE 2') ||
       n.includes('PLATINUM') ||
