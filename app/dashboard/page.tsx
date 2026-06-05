@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 21: Limitless Master Overview (Instant Date Filtering, Fixed Staff Mapping)
+// Phase 22: Bulletproof Limitless Overview (Fixed Supabase Column Mismatch)
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +53,6 @@ function parseImportDate(raw: string | null | undefined): Date | null {
   return null;
 }
 
-// Converts ANY date string format into strict YYYY-MM-DD for the date picker
 function formatDateToYYYYMMDD(d: Date | null): string | null {
   if (!d || isNaN(d.getTime())) return null;
   const year = d.getFullYear();
@@ -67,7 +66,7 @@ interface LiveBooking {
   id: string;
   rawId: string;
   source: 'live' | 'import';
-  rawDate: string; // The original database date string
+  rawDate: string;
   time: string;
   client: string;
   service: string;
@@ -108,15 +107,19 @@ export default function OverviewDashboard() {
   const fetchEverything = useCallback(async () => {
     setLoading(true);
     try {
-      // Helper function to bypass 1000 row limits
-      const fetchUnlimited = async (tableName: string, selectQuery: string) => {
+      // Bulletproof generic fetcher that grabs ALL columns (*) to prevent Supabase crashes
+      const fetchUnlimited = async (tableName: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allRecords: any[] = [];
         let start = 0;
         const step = 1000;
         for (; ;) {
-          const { data, error } = await supabase.from(tableName).select(selectQuery).range(start, start + step - 1);
-          if (error || !data || data.length === 0) break;
+          const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1);
+          if (error) {
+            console.error(`Error fetching ${tableName}:`, error);
+            break;
+          }
+          if (!data || data.length === 0) break;
           allRecords.push(...data);
           if (data.length < step) break;
           start += step;
@@ -124,8 +127,8 @@ export default function OverviewDashboard() {
         return allRecords;
       };
 
-      // 1. Fetch Staff (Handling both potential column names)
-      const rawStaff = await fetchUnlimited('staff', '*');
+      // 1. Fetch Staff
+      const rawStaff = await fetchUnlimited('staff');
       const mappedStaff = rawStaff.map(t => ({
         id: String(t.id),
         name: String(t.name || t.therapist_name || 'Unnamed Staff').trim(),
@@ -135,8 +138,8 @@ export default function OverviewDashboard() {
 
       const uniqueRows = new Map<string, LiveBooking>();
 
-      // 2. Fetch Live Bookings
-      const liveData = await fetchUnlimited('bookings', 'booking_id, appointment_date, appointment_time, client_name, service_name, service, price, amount, received_payment, status, therapist_name, created_at');
+      // 2. Fetch Live Bookings Safely
+      const liveData = await fetchUnlimited('bookings');
       liveData.forEach(b => {
         const amt = parseCurrency(b.price || b.amount || b.received_payment);
         const client = String(b.client_name || 'Guest').trim();
@@ -156,12 +159,14 @@ export default function OverviewDashboard() {
           therapist: b.therapist_name || null,
           createdAt: b.created_at || new Date().toISOString()
         };
-        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${rawDateStr}`;
+
+        const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
+        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate}`;
         uniqueRows.set(dedupKey, row);
       });
 
-      // 3. Fetch Import Bookings
-      const impData = await fetchUnlimited('bookings_import', 'id, date, time, appointment_time, client_name, service, amount, service_amount, received_payment, status, therapist, created_at');
+      // 3. Fetch Import Bookings Safely
+      const impData = await fetchUnlimited('bookings_import');
       impData.forEach((r, idx) => {
         const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
         const client = String(r.client_name || 'Guest').trim();
@@ -182,7 +187,9 @@ export default function OverviewDashboard() {
           createdAt: r.created_at || new Date().toISOString()
         };
 
-        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${rawDateStr}`;
+        const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
+        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate}`;
+
         if (!uniqueRows.has(dedupKey)) {
           uniqueRows.set(dedupKey, row);
         }
@@ -206,9 +213,8 @@ export default function OverviewDashboard() {
   }, [fetchEverything]);
 
   // ─── INSTANT IN-MEMORY DATE FILTERING ───
-  // Whenever the user changes the date, it instantly filters the master list without querying the database again.
   useEffect(() => {
-    const targetDateStr = selectedDate; // e.g., "2026-06-05"
+    const targetDateStr = selectedDate;
 
     const todaysBookings = allBookings.filter(b => {
       const parsed = parseImportDate(b.rawDate);
@@ -232,7 +238,7 @@ export default function OverviewDashboard() {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
-    // Fast UI Update across ALL state
+    // Fast UI Update
     setAllBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
 
     // Accurate Database Routing Update
@@ -249,7 +255,7 @@ export default function OverviewDashboard() {
 
     const finalStaff = newStaffName === 'Unassigned' ? null : newStaffName;
 
-    // Fast UI Update across ALL state
+    // Fast UI Update
     setAllBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
 
     // Accurate Database Routing Update
