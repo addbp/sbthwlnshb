@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 20: Ultimate Unified Operations Tracker (Dual-Table Routing, Exact Minute Grid, Smart Update)
+// Phase 21: Limitless Master Overview (Instant Date Filtering, Fixed Staff Mapping)
 
 export const dynamic = 'force-dynamic'
 
@@ -21,17 +21,53 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
   if (!val) return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
 }
 
+function parseImportDate(raw: string | null | undefined): Date | null {
+  if (!raw) return null;
+  const clean = String(raw).trim();
+
+  // 1. Try Live Bookings Format (YYYY-MM-DD)
+  const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
+  }
+
+  // 2. Try Import Format (DD-MMM-YY)
+  const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
+  if (dashMatch) {
+    let year = dashMatch[3];
+    if (year.length === 2) year = '20' + year;
+    const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
+    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+  }
+
+  // 3. Fallback standard parsing
+  const fallback = new Date(clean);
+  if (!isNaN(fallback.getTime())) return fallback;
+  return null;
+}
+
+// Converts ANY date string format into strict YYYY-MM-DD for the date picker
+function formatDateToYYYYMMDD(d: Date | null): string | null {
+  if (!d || isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+// ─── INTERFACES ───
 interface LiveBooking {
-  id: string;          // React Key
-  rawId: string;       // Database ID
-  source: 'live' | 'import'; // Tells the system WHICH table to update!
-  date: string;
+  id: string;
+  rawId: string;
+  source: 'live' | 'import';
+  rawDate: string; // The original database date string
   time: string;
   client: string;
   service: string;
@@ -60,134 +96,144 @@ export default function OverviewDashboard() {
 
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
+
+  const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
   const [dailyBookings, setDailyBookings] = useState<LiveBooking[]>([])
   const [staffList, setStaffList] = useState<StaffMember[]>([])
-  const [loading, setLoading] = useState(true)
 
+  const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState({ completed: 0, pending: 0, ongoing: 0, hold: 0 })
 
-  // ─── FETCH STAFF ONCE ───
-  useEffect(() => {
-    async function loadStaff() {
-      const { data } = await supabase.from('staff').select('id, name, role').order('name');
-      if (data) setStaffList(data);
-    }
-    loadStaff();
-  }, [supabase]);
-
-  // ─── BULLETPROOF DUAL-FETCH FOR DAILY OPERATIONS ───
-  const fetchDailyOperations = useCallback(async () => {
+  // ─── MASTER DATA FETCHER (UNLIMITED) ───
+  const fetchEverything = useCallback(async () => {
     setLoading(true);
     try {
+      // Helper function to bypass 1000 row limits
+      const fetchUnlimited = async (tableName: string, selectQuery: string) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const allRecords: any[] = [];
+        let start = 0;
+        const step = 1000;
+        for (; ;) {
+          const { data, error } = await supabase.from(tableName).select(selectQuery).range(start, start + step - 1);
+          if (error || !data || data.length === 0) break;
+          allRecords.push(...data);
+          if (data.length < step) break;
+          start += step;
+        }
+        return allRecords;
+      };
+
+      // 1. Fetch Staff (Handling both potential column names)
+      const rawStaff = await fetchUnlimited('staff', '*');
+      const mappedStaff = rawStaff.map(t => ({
+        id: String(t.id),
+        name: String(t.name || t.therapist_name || 'Unnamed Staff').trim(),
+        role: String(t.role || t.specialty || 'Staff')
+      })).sort((a, b) => a.name.localeCompare(b.name));
+      setStaffList(mappedStaff);
+
       const uniqueRows = new Map<string, LiveBooking>();
 
-      // 1. Fetch from LIVE Bookings Table
-      const { data: liveData } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('appointment_date', selectedDate);
+      // 2. Fetch Live Bookings
+      const liveData = await fetchUnlimited('bookings', 'booking_id, appointment_date, appointment_time, client_name, service_name, service, price, amount, received_payment, status, therapist_name, created_at');
+      liveData.forEach(b => {
+        const amt = parseCurrency(b.price || b.amount || b.received_payment);
+        const client = String(b.client_name || 'Guest').trim();
+        const timeStr = String(b.appointment_time || '—').trim();
+        const rawDateStr = b.appointment_date;
 
-      if (liveData) {
-        liveData.forEach(b => {
-          const amt = parseCurrency(b.price || b.amount);
-          const client = String(b.client_name || 'Guest').trim();
-          const timeStr = String(b.appointment_time || '—').trim();
-
-          const row: LiveBooking = {
-            id: `live-${b.booking_id}`,
-            rawId: b.booking_id,
-            source: 'live',
-            date: b.appointment_date,
-            time: timeStr,
-            client: client,
-            service: String(b.service_name || b.service || '—'),
-            amount: amt,
-            status: b.status || 'Pending',
-            therapist: b.therapist_name || null,
-            createdAt: b.created_at || new Date().toISOString()
-          };
-          const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}`;
-          uniqueRows.set(dedupKey, row);
-        });
-      }
-
-      // 2. Fetch from LEGACY IMPORT Table (Smart Date Translator)
-      const [y, m, d] = selectedDate.split('-');
-      const mNum = parseInt(m, 10);
-      const dNum = parseInt(d, 10);
-      const monthsArr = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-      const f1 = `${dNum}-${monthsArr[mNum - 1]}-${y.slice(-2)}`; // 5-Jun-26
-      const f2 = `${String(dNum).padStart(2, '0')}-${monthsArr[mNum - 1]}-${y.slice(-2)}`; // 05-Jun-26
-      const f3 = `${mNum}/${dNum}/${y}`; // 6/5/2026
-      const f4 = `${String(mNum).padStart(2, '0')}/${String(dNum).padStart(2, '0')}/${y}`; // 06/05/2026
-      const orQuery = `date.eq.${f1},date.eq.${f2},date.eq.${f3},date.eq.${f4},date.eq.${selectedDate}`;
-
-      const { data: impData } = await supabase
-        .from('bookings_import')
-        .select('*')
-        .or(orQuery);
-
-      if (impData) {
-        impData.forEach((r, idx) => {
-          const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
-          const client = String(r.client_name || 'Guest').trim();
-          const timeStr = String(r.time || r.appointment_time || '—').trim();
-
-          const row: LiveBooking = {
-            id: `imp-${r.id || idx}`,
-            rawId: r.id,
-            source: 'import',
-            date: selectedDate, // Normalize to selected UI date
-            time: timeStr,
-            client: client,
-            service: String(r.service || '—'),
-            amount: amt,
-            status: r.status || 'Completed',
-            therapist: r.therapist || null,
-            createdAt: r.created_at || new Date().toISOString()
-          };
-
-          // Deduplicate if Dual-Save engine already grabbed it in Live Data
-          const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}`;
-          if (!uniqueRows.has(dedupKey)) {
-            uniqueRows.set(dedupKey, row);
-          }
-        });
-      }
-
-      // Convert Map to Array & Sort by Newest Created First
-      const mappedData = Array.from(uniqueRows.values());
-      mappedData.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      setDailyBookings(mappedData);
-
-      // Update Top Metrics
-      setMetrics({
-        completed: mappedData.filter(b => b.status === 'Completed').length,
-        pending: mappedData.filter(b => b.status === 'Pending').length,
-        ongoing: mappedData.filter(b => b.status === 'Ongoing').length,
-        hold: mappedData.filter(b => b.status === 'Hold').length,
+        const row: LiveBooking = {
+          id: `live-${b.booking_id}`,
+          rawId: b.booking_id,
+          source: 'live',
+          rawDate: rawDateStr,
+          time: timeStr,
+          client: client,
+          service: String(b.service_name || b.service || '—'),
+          amount: amt,
+          status: b.status || 'Pending',
+          therapist: b.therapist_name || null,
+          createdAt: b.created_at || new Date().toISOString()
+        };
+        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${rawDateStr}`;
+        uniqueRows.set(dedupKey, row);
       });
 
+      // 3. Fetch Import Bookings
+      const impData = await fetchUnlimited('bookings_import', 'id, date, time, appointment_time, client_name, service, amount, service_amount, received_payment, status, therapist, created_at');
+      impData.forEach((r, idx) => {
+        const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
+        const client = String(r.client_name || 'Guest').trim();
+        const timeStr = String(r.time || r.appointment_time || '—').trim();
+        const rawDateStr = r.date;
+
+        const row: LiveBooking = {
+          id: `imp-${r.id || idx}`,
+          rawId: r.id,
+          source: 'import',
+          rawDate: rawDateStr,
+          time: timeStr,
+          client: client,
+          service: String(r.service || '—'),
+          amount: amt,
+          status: r.status || 'Completed',
+          therapist: r.therapist || null,
+          createdAt: r.created_at || new Date().toISOString()
+        };
+
+        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${rawDateStr}`;
+        if (!uniqueRows.has(dedupKey)) {
+          uniqueRows.set(dedupKey, row);
+        }
+      });
+
+      const finalAllBookings = Array.from(uniqueRows.values());
+      finalAllBookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setAllBookings(finalAllBookings);
+
     } catch (err) {
-      console.error('Unified Operations Fetch Error:', err);
+      console.error('Master Operations Fetch Error:', err);
     } finally {
       setLoading(false);
     }
-  }, [supabase, selectedDate]);
+  }, [supabase]);
 
+  // Load everything ONCE when the page mounts
   useEffect(() => {
-    fetchDailyOperations();
-  }, [fetchDailyOperations]);
+    fetchEverything();
+  }, [fetchEverything]);
+
+  // ─── INSTANT IN-MEMORY DATE FILTERING ───
+  // Whenever the user changes the date, it instantly filters the master list without querying the database again.
+  useEffect(() => {
+    const targetDateStr = selectedDate; // e.g., "2026-06-05"
+
+    const todaysBookings = allBookings.filter(b => {
+      const parsed = parseImportDate(b.rawDate);
+      const formatted = formatDateToYYYYMMDD(parsed);
+      return formatted === targetDateStr;
+    });
+
+    setDailyBookings(todaysBookings);
+
+    setMetrics({
+      completed: todaysBookings.filter(b => b.status === 'Completed').length,
+      pending: todaysBookings.filter(b => b.status === 'Pending').length,
+      ongoing: todaysBookings.filter(b => b.status === 'Ongoing').length,
+      hold: todaysBookings.filter(b => b.status === 'Hold').length,
+    });
+  }, [selectedDate, allBookings]);
+
 
   // ─── SMART DUAL-TABLE DATABASE UPDATES ───
   const handleStatusChange = async (id: string, newStatus: string) => {
-    const booking = dailyBookings.find(b => b.id === id);
+    const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
-    // Fast UI Update
-    setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
+    // Fast UI Update across ALL state
+    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
 
     // Accurate Database Routing Update
     if (booking.source === 'live') {
@@ -195,17 +241,16 @@ export default function OverviewDashboard() {
     } else {
       await supabase.from('bookings_import').update({ status: newStatus }).eq('id', booking.rawId);
     }
-    fetchDailyOperations(); // Recalculate Top Metric Cards
   };
 
   const handleStaffChange = async (id: string, newStaffName: string) => {
-    const booking = dailyBookings.find(b => b.id === id);
+    const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
     const finalStaff = newStaffName === 'Unassigned' ? null : newStaffName;
 
-    // Fast UI Update
-    setDailyBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
+    // Fast UI Update across ALL state
+    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
 
     // Accurate Database Routing Update
     if (booking.source === 'live') {
@@ -241,7 +286,7 @@ export default function OverviewDashboard() {
 
     if (ampm === 'PM' && h !== 12) h += 12;
     if (ampm === 'AM' && h === 12) h = 0;
-    if (h < 11) h += 24; // Handle after-midnight times (12 AM, 1 AM)
+    if (h < 11) h += 24;
 
     const totalMins = (h * 60) + m;
     const offset = totalMins - (11 * 60);
@@ -274,10 +319,10 @@ export default function OverviewDashboard() {
               type="date"
               value={selectedDate}
               onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none' }}
+              style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none', cursor: 'pointer' }}
             />
             <button
-              onClick={fetchDailyOperations}
+              onClick={fetchEverything}
               style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: 8, color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}
             >
               Live Synced
@@ -340,14 +385,14 @@ export default function OverviewDashboard() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Syncing unified schedule...</td></tr>
+                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching unlimited master data records...</td></tr>
                 ) : dailyBookings.length === 0 ? (
                   <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
                   dailyBookings.map((b) => (
                     <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
                       <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>
-                        {b.date} <br /> <strong style={{ color: BLACK }}>{b.time}</strong>
+                        {b.rawDate} <br /> <strong style={{ color: BLACK }}>{b.time}</strong>
                       </td>
                       <td style={{ padding: '16px 20px', fontWeight: 600, color: BLACK }}>{b.client}</td>
                       <td style={{ padding: '16px 20px', color: '#2A2A2A', maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.service}</td>
@@ -425,16 +470,15 @@ export default function OverviewDashboard() {
 
                 {/* TIMELINE ROWS (STAFF) */}
                 {loading ? (
-                  <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Syncing timeline data...</div>
+                  <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Generating timeline visualization...</div>
                 ) : (
                   [{ name: 'Unassigned', role: 'Requires Assignment' }, ...staffList].map((staff) => {
 
-                    // SMART FILTER: Find bookings belonging to this staff exactly
+                    // Filter bookings for this staff member (ignoring case for safety)
                     const staffBookings = dailyBookings.filter(b => {
-                      if (staff.name === 'Unassigned') {
-                        return !b.therapist || b.therapist === 'Unassigned';
-                      }
-                      return b.therapist === staff.name;
+                      const dbTherapist = String(b.therapist || 'unassigned').trim().toLowerCase();
+                      const targetTherapist = staff.name.toLowerCase();
+                      return dbTherapist === targetTherapist;
                     });
 
                     // Hide completely empty rows (unless it is Unassigned)
@@ -453,11 +497,11 @@ export default function OverviewDashboard() {
                         <div style={{ flexGrow: 1, position: 'relative', backgroundImage: 'linear-gradient(to right, transparent 99%, rgba(26,26,26,0.05) 100%)', backgroundSize: `${100 / 14}% 100%` }}>
 
                           {staffBookings.map(b => {
-                            if (!b.time || b.time === '—') return null; // Ignore unscheduled tasks on visual grid
+                            if (!b.time || b.time === '—') return null;
 
                             const startMins = getMinutesFrom11AM(b.time);
                             const leftPercent = (startMins / TOTAL_MINUTES) * 100;
-                            const widthPercent = (60 / TOTAL_MINUTES) * 100; // Visual block represents roughly 60 mins
+                            const widthPercent = (60 / TOTAL_MINUTES) * 100;
                             const colors = getStatusColor(b.status);
 
                             return (
