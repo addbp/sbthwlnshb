@@ -69,10 +69,10 @@ export default function BookingsDashboardPage() {
   const loadBookingsEngine = useCallback(async () => {
     setLoading(true)
     const PAGE_SIZE = 1000
-    const unifiedTimeline: BookingRow[] = []
+    const uniqueRows = new Map<string, BookingRow>() // <-- DEDUPLICATOR MAP
 
     try {
-      // 1. Unroll Historical Data Stream (Limitless execution bounds)
+      // 1. Unroll Historical Data Stream (`bookings_import`)
       let fromHist = 0
       for (; ;) {
         const { data, error } = await supabase
@@ -86,32 +86,38 @@ export default function BookingsDashboardPage() {
           const serviceName = String(r.service || '—');
           const upperService = serviceName.toUpperCase();
 
-          // Determine clean structural category mapping
           const isNail = NAIL_KEYWORDS.some(k => upperService.includes(k));
           const categoryValue = isNail ? 'LE NAILS' : 'SABBATH';
 
-          // Strictly enforce uppercase formatting for all memberships
           const displayService = (upperService.includes('MEMBERSHIP') || upperService.includes('PLATINUM') || upperService.includes('GOLD') || upperService.includes('BASIC') || upperService.includes('VIP'))
             ? upperService
             : serviceName;
 
-          unifiedTimeline.push({
+          const parsedDate = parseImportDate(r.date);
+          const amount = parseCurrency(r.received_payment || r.service_amount);
+          const client = String(r.client_name || 'Guest').trim();
+
+          const row: BookingRow = {
             _key: `hist-${fromHist}-${idx}`,
-            parsedDate: parseImportDate(r.date),
-            client: String(r.client_name || 'Guest'),
+            parsedDate,
+            client,
             service: displayService,
             therapist: String(r.therapist || '—').toUpperCase(),
             category: categoryValue,
-            amount: parseCurrency(r.received_payment || r.service_amount),
+            amount,
             paymentMethod: String(r.payment_method || 'CASH').toUpperCase(),
             clientType: '—'
-          })
+          };
+
+          // Generate a strict unique key to prevent Dual-Save duplication
+          const dedupKey = `${parsedDate?.getTime()}-${client.toLowerCase()}-${amount}`;
+          uniqueRows.set(dedupKey, row);
         })
         if (data.length < PAGE_SIZE) break
         fromHist += PAGE_SIZE
       }
 
-      // 2. Unroll Live POS/Kiosk Data Stream
+      // 2. Unroll Live POS/Kiosk Data Stream (`bookings`)
       let fromLive = 0
       for (; ;) {
         const { data, error } = await supabase
@@ -125,30 +131,41 @@ export default function BookingsDashboardPage() {
           const serviceName = String(r.service_name || r.service || '—');
           const upperService = serviceName.toUpperCase();
 
-          // Fixed the category column matching matrix completely
           const isNail = NAIL_KEYWORDS.some(k => upperService.includes(k));
           const categoryValue = isNail ? 'LE NAILS' : 'SABBATH';
 
-          // Strictly force matching membership strings into true uppercase
           const displayService = (upperService.includes('MEMBERSHIP') || upperService.includes('PLATINUM') || upperService.includes('GOLD') || upperService.includes('BASIC') || upperService.includes('VIP'))
             ? upperService
             : serviceName;
 
-          unifiedTimeline.push({
+          const parsedDate = parseImportDate(r.appointment_date || r.created_at);
+          const amount = parseCurrency(r.price || r.amount || r.received_payment);
+          const client = String(r.client_name || 'Guest').trim();
+
+          const row: BookingRow = {
             _key: `live-${fromLive}-${idx}`,
-            parsedDate: parseImportDate(r.appointment_date || r.created_at),
-            client: String(r.client_name || 'Guest'),
+            parsedDate,
+            client,
             service: displayService,
             therapist: String(r.therapist_name || '—').toUpperCase(),
             category: categoryValue,
-            amount: parseCurrency(r.price || r.amount || r.received_payment),
+            amount,
             paymentMethod: String(r.payment_method || 'CASH').toUpperCase(),
             clientType: '—'
-          })
+          };
+
+          // Check if this booking was already processed from `bookings_import`
+          const dedupKey = `${parsedDate?.getTime()}-${client.toLowerCase()}-${amount}`;
+          if (!uniqueRows.has(dedupKey)) {
+            uniqueRows.set(dedupKey, row);
+          }
         })
         if (data.length < PAGE_SIZE) break
         fromLive += PAGE_SIZE
       }
+
+      // Extract unified deduplicated array
+      const unifiedTimeline = Array.from(uniqueRows.values());
 
       // 3. Sequential Timeline Pass (Calculate Guest Retention Flags)
       unifiedTimeline.sort((a, b) => (a.parsedDate?.getTime() || 0) - (b.parsedDate?.getTime() || 0))
@@ -222,7 +239,7 @@ export default function BookingsDashboardPage() {
           style={{ height: 44, width: '100%', maxWidth: 400, padding: '0 16px', border: '1px solid rgba(26,26,26,0.16)', borderRadius: 8, fontSize: 14, outline: 'none' }}
         />
 
-        {/* ─── EXPLICITLY FILTERED TABS (No Placeholders) ─── */}
+        {/* ─── EXPLICITLY FILTERED TABS ─── */}
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.08)', paddingBottom: 0 }}>
           {(['ALL', 'SABBATH', 'LE NAILS'] as const).map(tabKey => (
             <button
