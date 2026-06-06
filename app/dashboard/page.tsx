@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 23: Absolute Bypass Engine (Forced Staff Rendering & Fuzzy Date Matching)
+// Phase 24: Ultimate POS Engine (Financials, Digital Receipts, Auto-Ongoing, Clickable Grid)
 
 export const dynamic = 'force-dynamic'
 
@@ -62,7 +62,14 @@ interface LiveBooking {
   time: string;
   client: string;
   service: string;
-  amount: number;
+  notes: string;
+  amount: number; // Base Service Amount
+  discount_pct: number;
+  therapist_comm_pct: number;
+  payment_method: string;
+  ref_no: string;
+  receipt_url: string;
+  received_payment: number;
   status: string;
   therapist: string | null;
   createdAt: string;
@@ -95,6 +102,9 @@ export default function OverviewDashboard() {
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState({ completed: 0, pending: 0, ongoing: 0, hold: 0 })
 
+  // Grid Modal State
+  const [gridModalBooking, setGridModalBooking] = useState<LiveBooking | null>(null)
+
   // ─── MASTER DATA FETCHER (UNLIMITED) ───
   const fetchEverything = useCallback(async () => {
     setLoading(true);
@@ -115,7 +125,6 @@ export default function OverviewDashboard() {
         return allRecords;
       };
 
-      // 1. Fetch Staff
       const rawStaff = await fetchUnlimited('staff');
       const mappedStaff = rawStaff.map(t => ({
         id: String(t.id),
@@ -126,63 +135,65 @@ export default function OverviewDashboard() {
 
       const uniqueRows = new Map<string, LiveBooking>();
 
-      // 2. Fetch Live Bookings
-      const liveData = await fetchUnlimited('bookings');
-      liveData.forEach(b => {
-        const amt = parseCurrency(b.price || b.amount || b.received_payment);
-        const client = String(b.client_name || 'Guest').trim();
-        const timeStr = String(b.appointment_time || '—').trim();
-        const rawDateStr = String(b.appointment_date || '').trim();
-
-        const row: LiveBooking = {
-          id: `live-${b.booking_id}`,
-          rawId: b.booking_id,
-          source: 'live',
-          rawDate: rawDateStr,
-          time: timeStr,
-          client: client,
-          service: String(b.service_name || b.service || '—'),
-          amount: amt,
-          status: b.status || 'Pending',
-          therapist: b.therapist_name || null,
-          createdAt: b.created_at || new Date().toISOString()
-        };
-        const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
-        const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate || rawDateStr}`;
-        uniqueRows.set(dedupKey, row);
-      });
-
-      // 3. Fetch Import Bookings
-      const impData = await fetchUnlimited('bookings_import');
-      impData.forEach((r, idx) => {
-        const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
+      const processRow = (r: any, source: 'live' | 'import', idField: string) => {
+        const amt = parseCurrency(r.price || r.amount || r.service_amount || 0);
         const client = String(r.client_name || 'Guest').trim();
-        const timeStr = String(r.time || r.appointment_time || '—').trim();
-        const rawDateStr = String(r.date || '').trim();
+        const timeStr = String(r.appointment_time || r.time || '—').trim();
+        const rawDateStr = String(r.appointment_date || r.date || '').trim();
+
+        // Auto-Ongoing Logic: If it's today and time has passed, visually mark as Ongoing if Pending
+        let currentStatus = r.status || 'Pending';
+        if (currentStatus === 'Pending' && timeStr !== '—') {
+          const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+          if (match) {
+            let h = parseInt(match[1]);
+            const m = parseInt(match[2]);
+            if (match[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+            if (match[3].toUpperCase() === 'AM' && h === 12) h = 0;
+            const now = new Date();
+            if (formatDateToYYYYMMDD(parseImportDate(rawDateStr)) === getTodayStr()) {
+              if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+                currentStatus = 'Ongoing';
+              }
+            }
+          }
+        }
 
         const row: LiveBooking = {
-          id: `imp-${r.id || idx}`,
-          rawId: r.id,
-          source: 'import',
+          id: `${source}-${r[idField]}`,
+          rawId: r[idField],
+          source: source,
           rawDate: rawDateStr,
           time: timeStr,
           client: client,
-          service: String(r.service || '—'),
+          service: String(r.service_name || r.service || '—'),
+          notes: String(r.notes || ''),
           amount: amt,
-          status: r.status || 'Completed',
-          therapist: r.therapist || null,
+          discount_pct: Number(r.discount_pct || 0),
+          therapist_comm_pct: Number(r.therapist_comm_pct || 0),
+          payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
+          ref_no: String(r.ref_no || ''),
+          receipt_url: String(r.receipt_url || ''),
+          received_payment: parseCurrency(r.received_payment || amt), // default to amount if empty
+          status: currentStatus,
+          therapist: r.therapist_name || r.therapist || null,
           createdAt: r.created_at || new Date().toISOString()
         };
         const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
         const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate || rawDateStr}`;
         if (!uniqueRows.has(dedupKey)) uniqueRows.set(dedupKey, row);
-      });
+      };
+
+      const liveData = await fetchUnlimited('bookings');
+      liveData.forEach(b => processRow(b, 'live', 'booking_id'));
+
+      const impData = await fetchUnlimited('bookings_import');
+      impData.forEach((r, idx) => processRow(r, 'import', r.id ? 'id' : idx.toString()));
 
       const finalAllBookings = Array.from(uniqueRows.values());
       finalAllBookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       setAllBookings(finalAllBookings);
-
     } catch (err) {
       console.error('Master Operations Fetch Error:', err);
     } finally {
@@ -190,11 +201,9 @@ export default function OverviewDashboard() {
     }
   }, [supabase]);
 
-  useEffect(() => {
-    fetchEverything();
-  }, [fetchEverything]);
+  useEffect(() => { fetchEverything() }, [fetchEverything]);
 
-  // ─── AGGRESSIVE FUZZY DATE FILTERING ───
+  // ─── DATE FILTERING ───
   useEffect(() => {
     const targetYMD = selectedDate;
     const [y, m, d] = targetYMD.split('-');
@@ -210,9 +219,7 @@ export default function OverviewDashboard() {
     const todaysBookings = allBookings.filter(b => {
       const raw = b.rawDate;
       if (!raw) return false;
-      // Aggressive Bypass: If the raw string contains the target date formats anywhere, it passes!
       if (raw.includes(targetYMD) || raw.includes(var1) || raw.includes(var2)) return true;
-      // Fallback to strict parser
       const parsed = parseImportDate(raw);
       return formatDateToYYYYMMDD(parsed) === targetYMD;
     });
@@ -228,30 +235,57 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DUAL-TABLE DATABASE UPDATES ───
-  const handleStatusChange = async (id: string, newStatus: string) => {
+  // ─── SMART DATABASE UPDATES (POS ENGINE) ───
+  const handleUpdate = async (id: string, field: keyof LiveBooking, value: any) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
-    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, status: newStatus } : b));
-    if (booking.source === 'live') {
-      await supabase.from('bookings').update({ status: newStatus }).eq('booking_id', booking.rawId);
-    } else {
-      await supabase.from('bookings_import').update({ status: newStatus }).eq('id', booking.rawId);
+
+    // Fast UI Update
+    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, [field]: value } : b));
+
+    // Try DB Update (Wrapped in try/catch in case columns are missing)
+    try {
+      const table = booking.source === 'live' ? 'bookings' : 'bookings_import';
+      const idField = booking.source === 'live' ? 'booking_id' : 'id';
+
+      const { error } = await supabase.from(table).update({ [field]: value }).eq(idField, booking.rawId);
+      if (error) {
+        console.warn(`Could not save ${field}. Did you add the column to Supabase?`, error);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const handleStaffChange = async (id: string, newStaffName: string) => {
+  // ─── FILE UPLOAD TO SUPABASE STORAGE ───
+  const handleFileUpload = async (id: string, file: File) => {
     const booking = allBookings.find(b => b.id === id);
-    if (!booking) return;
-    const finalStaff = newStaffName === 'Unassigned' ? null : newStaffName;
-    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, therapist: finalStaff } : b));
-    if (booking.source === 'live') {
-      await supabase.from('bookings').update({ therapist_name: finalStaff }).eq('booking_id', booking.rawId);
-    } else {
-      await supabase.from('bookings_import').update({ therapist: finalStaff }).eq('id', booking.rawId);
+    if (!booking || !file) return;
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${booking.rawId}-${Date.now()}.${fileExt}`;
+
+      // Upload to 'receipts' bucket
+      const { error: uploadError } = await supabase.storage.from('receipts').upload(fileName, file);
+      if (uploadError) {
+        alert("Failed to upload receipt. Make sure you created a 'receipts' storage bucket in Supabase and it is public.");
+        throw uploadError;
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
+
+      // Save URL to DB
+      handleUpdate(id, 'receipt_url', publicUrl);
+      alert("Receipt attached successfully!");
+
+    } catch (error) {
+      console.error('Upload error:', error);
     }
   };
 
+  // ─── HELPERS ───
   const formatCurrency = (val: number) => `₱${val.toLocaleString('en-PH')}`;
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -262,7 +296,6 @@ export default function OverviewDashboard() {
     }
   };
 
-  // ─── EXACT MINUTE TIMELINE CALCULATION LOGIC ───
   const TOTAL_MINUTES = 14 * 60;
   const getMinutesFrom11AM = (timeStr: string) => {
     if (!timeStr || timeStr === '—') return 0;
@@ -282,10 +315,10 @@ export default function OverviewDashboard() {
 
   return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', padding: '40px', fontFamily: BODY }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
 
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
-          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview</h1>
+          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview POS</h1>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
@@ -295,15 +328,8 @@ export default function OverviewDashboard() {
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none', cursor: 'pointer' }}
-            />
-            <button onClick={fetchEverything} style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: 8, color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
-              Live Synced
-            </button>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none', cursor: 'pointer' }} />
+            <button onClick={fetchEverything} style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: 8, color: GOLD, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>Live Synced</button>
           </div>
         </div>
 
@@ -322,52 +348,136 @@ export default function OverviewDashboard() {
         </div>
 
         <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: 20 }}>
-          <button onClick={() => setView('LIST')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'LIST' ? WHITE : '#666', backgroundColor: view === 'LIST' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>
-            LIST TRACK VIEW
-          </button>
-          <button onClick={() => setView('GRID')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'GRID' ? WHITE : '#666', backgroundColor: view === 'GRID' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>
-            DAILY SCHEDULE GRID
-          </button>
+          <button onClick={() => setView('LIST')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'LIST' ? WHITE : '#666', backgroundColor: view === 'LIST' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>LIST TRACK VIEW (POS)</button>
+          <button onClick={() => setView('GRID')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'GRID' ? WHITE : '#666', backgroundColor: view === 'GRID' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>DAILY SCHEDULE GRID</button>
         </div>
 
         {view === 'LIST' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>DATE & TIME</th>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>CLIENT</th>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>SERVICE</th>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>REVENUE</th>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>STATUS CONTROL</th>
-                  <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>ASSIGNED STAFF</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>TIME & CLIENT</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em' }}>SERVICE & NOTES</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>STAFF</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '100px' }}>FINANCIALS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>COMMISSION</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '150px' }}>PAYMENT DETAILS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>STATUS</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching unlimited master data records...</td></tr>
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching operations data...</td></tr>
                 ) : dailyBookings.length === 0 ? (
-                  <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
-                  dailyBookings.map((b) => (
-                    <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                      <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>{b.rawDate} <br /> <strong style={{ color: BLACK }}>{b.time}</strong></td>
-                      <td style={{ padding: '16px 20px', fontWeight: 600, color: BLACK }}>{b.client}</td>
-                      <td style={{ padding: '16px 20px', color: '#2A2A2A', maxWidth: 250, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.service}</td>
-                      <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(b.amount)}</td>
-                      <td style={{ padding: '16px 20px' }}>
-                        <select value={b.status} onChange={(e) => handleStatusChange(b.id, e.target.value)} style={{ ...getStatusColor(b.status), padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', appearance: 'none', WebkitAppearance: 'none', backgroundImage: `url("data:image/svg+xml,%3Csvg width='8' height='5' viewBox='0 0 8 5' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L4 4L7 1' stroke='${encodeURIComponent(getStatusColor(b.status).color)}' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 10px center', paddingRight: 30 }}>
-                          <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '16px 20px' }}>
-                        <select value={b.therapist || 'Unassigned'} onChange={(e) => handleStaffChange(b.id, e.target.value)} style={{ padding: '8px 12px', borderRadius: 6, fontSize: 12, fontFamily: BODY, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist && b.therapist !== 'Unassigned' ? BLACK : '#888', cursor: 'pointer', outline: 'none', backgroundColor: '#FDFDFD', maxWidth: '200px', transition: 'border 0.2s ease' }}>
-                          <option value="Unassigned">Unassigned</option>
-                          {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  ))
+                  dailyBookings.map((b) => {
+                    const netSales = b.amount * (1 - (b.discount_pct / 100));
+                    const commAmount = netSales * (b.therapist_comm_pct / 100);
+                    const isOnlinePay = ['GCASH', 'BANK TRANSFER', 'QRPH', 'MASTERCARD'].includes(b.payment_method);
+
+                    return (
+                      <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
+
+                        {/* Time & Client */}
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
+                          <strong style={{ color: BLACK, fontSize: 14 }}>{b.time}</strong><br />
+                          <span style={{ color: '#666', fontWeight: 600 }}>{b.client}</span>
+                        </td>
+
+                        {/* Service & Notes */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <div style={{ color: '#2A2A2A', fontWeight: 600, marginBottom: 8, whiteSpace: 'pre-wrap' }}>{b.service}</div>
+                          <textarea
+                            value={b.notes}
+                            onChange={e => handleUpdate(b.id, 'notes', e.target.value)}
+                            placeholder="Add client notes..."
+                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical' }}
+                          />
+                        </td>
+
+                        {/* Staff */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD' }}>
+                            <option value="Unassigned">Unassigned</option>
+                            {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
+                          </select>
+                        </td>
+
+                        {/* Financials (Amount, Disc, Net) */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                              <span style={{ color: '#666' }}>Base:</span>
+                              <strong>{formatCurrency(b.amount)}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                              <span style={{ color: '#666' }}>Disc %:</span>
+                              <input type="number" value={b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4 }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 4, marginTop: 2 }}>
+                              <span style={{ color: GOLD, fontWeight: 700 }}>Net:</span>
+                              <strong style={{ color: '#3D7A4A' }}>{formatCurrency(netSales)}</strong>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Commission */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                              <span style={{ color: '#666' }}>Comm %:</span>
+                              <input type="number" value={b.therapist_comm_pct} onChange={e => handleUpdate(b.id, 'therapist_comm_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4 }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 4, marginTop: 2 }}>
+                              <span style={{ color: '#666', fontWeight: 600 }}>Earned:</span>
+                              <strong>{formatCurrency(commAmount)}</strong>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Payment Details */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none' }}>
+                              <option value="PAY AT COUNTER">PAY AT COUNTER</option>
+                              <option value="CASH">CASH</option>
+                              <option value="GCASH">GCASH</option>
+                              <option value="BANK TRANSFER">BANK TRANSFER</option>
+                              <option value="QRPH">QRPH</option>
+                              <option value="MASTERCARD">MASTERCARD</option>
+                            </select>
+
+                            {isOnlinePay && (
+                              <input type="text" placeholder="Ref #..." value={b.ref_no} onChange={e => handleUpdate(b.id, 'ref_no', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, border: '1px dashed rgba(197,143,59,0.5)', outline: 'none' }} />
+                            )}
+
+                            {isOnlinePay && !b.receipt_url && (
+                              <input type="file" accept="image/*" onChange={e => e.target.files && handleFileUpload(b.id, e.target.files[0])} style={{ fontSize: 9, maxWidth: '100%' }} />
+                            )}
+
+                            {b.receipt_url && (
+                              <a href={b.receipt_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: GOLD, fontWeight: 700, textDecoration: 'underline' }}>View Receipt</a>
+                            )}
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                              <span style={{ fontSize: 10, color: '#666' }}>Paid:</span>
+                              <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4 }} />
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                            <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option>
+                          </select>
+                        </td>
+
+                      </tr>
+                    )
+                  })
                 )}
               </tbody>
             </table>
@@ -378,7 +488,7 @@ export default function OverviewDashboard() {
         {view === 'GRID' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
-              <span style={{ fontSize: 13, color: '#666' }}>Exact Timeline Scheduler — Selected Date: <strong style={{ color: BLACK }}>{selectedDate}</strong></span>
+              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Click any block to view details.</span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -399,7 +509,6 @@ export default function OverviewDashboard() {
                 {loading ? (
                   <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Generating timeline visualization...</div>
                 ) : (
-                  // OVERRIDE: FORCE RENDER ALL STAFF, NEVER HIDE THEM
                   [{ name: 'Unassigned', role: 'Requires Assignment' }, ...staffList].map((staff) => {
                     const staffBookings = dailyBookings.filter(b => {
                       const dbTherapist = String(b.therapist || 'unassigned').trim().toLowerCase();
@@ -423,13 +532,19 @@ export default function OverviewDashboard() {
                             const colors = getStatusColor(b.status);
 
                             return (
-                              <div key={b.id} style={{
-                                position: 'absolute', left: `${leftPercent}%`, top: '10px', bottom: '10px',
-                                width: `calc(${widthPercent}% - 4px)`, minWidth: '140px', backgroundColor: WHITE,
-                                border: '1px solid rgba(26,26,26,0.15)', borderLeft: `4px solid ${colors.color}`,
-                                borderRadius: '6px', padding: '8px 12px', display: 'flex', flexDirection: 'column',
-                                gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', zIndex: 10, overflow: 'hidden'
-                              }}>
+                              <div
+                                key={b.id}
+                                onClick={() => setGridModalBooking(b)}
+                                style={{
+                                  position: 'absolute', left: `${leftPercent}%`, top: '10px', bottom: '10px',
+                                  width: `calc(${widthPercent}% - 4px)`, minWidth: '140px', backgroundColor: WHITE,
+                                  border: '1px solid rgba(26,26,26,0.15)', borderLeft: `4px solid ${colors.color}`,
+                                  borderRadius: '6px', padding: '8px 12px', display: 'flex', flexDirection: 'column',
+                                  gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', zIndex: 10, overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.1s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
+                                onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                              >
                                 <span style={{ fontSize: 11, fontWeight: 800, color: BLACK }}>{b.time}</span>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: BLACK, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.client}</span>
                                 <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.service}</span>
@@ -445,6 +560,28 @@ export default function OverviewDashboard() {
                   })
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── GRID BOOKING INFO POPUP ─── */}
+        {gridModalBooking && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '500px', padding: '30px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                <div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: GOLD, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{gridModalBooking.time}</span>
+                  <h2 style={{ fontFamily: DSP, fontSize: 28, color: BLACK, margin: '4px 0 0' }}>{gridModalBooking.client}</h2>
+                </div>
+                <button onClick={() => setGridModalBooking(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#666' }}>&times;</button>
+              </div>
+              <div style={{ backgroundColor: '#FDFCF8', padding: 16, borderRadius: 8, border: '1px solid rgba(26,26,26,0.05)', marginBottom: 20 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Service:</strong> {gridModalBooking.service}</p>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Assigned:</strong> {gridModalBooking.therapist || 'Unassigned'}</p>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Status:</strong> <span style={{ color: getStatusColor(gridModalBooking.status).color, fontWeight: 700 }}>{gridModalBooking.status}</span></p>
+                <p style={{ margin: '0', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Notes:</strong> {gridModalBooking.notes || 'None'}</p>
+              </div>
+              <button onClick={() => { setGridModalBooking(null); setView('LIST'); }} style={{ width: '100%', padding: '12px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>GO TO POS VIEW TO EDIT</button>
             </div>
           </div>
         )}
