@@ -3,6 +3,7 @@
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
 // Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export w/ All Time & Min Date
+// NEW: Interactive Payment Details Modal
 
 export const dynamic = 'force-dynamic'
 
@@ -76,7 +77,12 @@ interface UnifiedRecord {
   therapist: string;
   category: string;
   amount: number;
+  discount_pct: number;
   payment_method: string;
+  payment_status: string;
+  ref_no: string;
+  receipt_url: string;
+  received_payment: number;
   customer_type?: string;
 }
 
@@ -94,6 +100,9 @@ export default function DashboardBookings() {
   const [showModal, setShowModal] = useState(false)
   const [selectedClientName, setSelectedClientName] = useState('')
   const [selectedClientHistory, setSelectedClientHistory] = useState<UnifiedRecord[]>([])
+
+  // Payment Modal State
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
 
   // CSV Export Modal State
   const [showExportModal, setShowExportModal] = useState(false)
@@ -128,11 +137,11 @@ export default function DashboardBookings() {
 
       // 1. Process Live Bookings
       liveData.forEach(r => {
+        const amt = parseCurrency(r.price || r.amount || r.service_amount || 0);
         const client = String(r.client_name || 'Guest').trim();
-        const amt = parseCurrency(r.price || r.amount || r.received_payment);
+        const timeStr = String(r.appointment_time || '').trim();
         const parsedDate = parseImportDate(r.appointment_date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
-        const timeStr = String(r.appointment_time || '').trim();
         const service = String(r.service_name || r.service || '—');
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
@@ -148,17 +157,22 @@ export default function DashboardBookings() {
           therapist: String(r.therapist_name || '—').toUpperCase(),
           category: cat,
           amount: amt,
-          payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase()
+          discount_pct: Number(r.discount_pct || 0),
+          payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
+          payment_status: String(r.payment_status || 'UNPAID').toUpperCase(),
+          ref_no: String(r.ref_no || ''),
+          receipt_url: String(r.receipt_url || ''),
+          received_payment: parseCurrency(r.received_payment || amt),
         });
       });
 
       // 2. Process Import Bookings
       importData.forEach(r => {
-        const client = String(r.client_name || 'Guest').trim();
         const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
+        const client = String(r.client_name || 'Guest').trim();
+        const timeStr = String(r.time || r.appointment_time || '').trim();
         const parsedDate = parseImportDate(r.date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
-        const timeStr = String(r.time || r.appointment_time || '').trim();
         const service = String(r.service || '—');
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
@@ -175,7 +189,12 @@ export default function DashboardBookings() {
             therapist: String(r.therapist || '—').toUpperCase(),
             category: cat,
             amount: amt,
-            payment_method: String(r.payment_method || 'CASH').toUpperCase()
+            discount_pct: Number(r.discount_pct || 0),
+            payment_method: String(r.payment_method || 'CASH').toUpperCase(),
+            payment_status: String(r.payment_status || 'PAID').toUpperCase(), // default past records to PAID usually
+            ref_no: String(r.ref_no || ''),
+            receipt_url: String(r.receipt_url || ''),
+            received_payment: parseCurrency(r.received_payment || amt),
           });
         }
       });
@@ -236,13 +255,21 @@ export default function DashboardBookings() {
 
   const formatCurrency = (amount: number) => amount === 0 ? '—' : `₱${amount.toLocaleString('en-PH')}`
 
-  // ─── MODAL HANDLER ───
+  // ─── MODAL HANDLERS ───
   const openClientModal = (clientName: string) => {
     if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
     const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
     setSelectedClientHistory(history);
     setSelectedClientName(clientName);
     setShowModal(true);
+  }
+
+  const openPaymentModal = (clientName: string) => {
+    if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
+    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
+    setSelectedClientHistory(history);
+    setSelectedClientName(clientName);
+    setShowPaymentModal(true);
   }
 
   // ─── CSV EXPORT LOGIC WITH EXPLICIT OPTIONS ───
@@ -271,10 +298,10 @@ export default function DashboardBookings() {
       return;
     }
 
-    const headers = ['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'];
+    const headers = ['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Payment Status', 'Client Type'];
     const csvRows = dataToExport.map(r => [
       `"${r.displayDate}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
-      `"${r.category}"`, `"${r.amount}"`, `"${r.payment_method}"`, `"${r.customer_type}"`
+      `"${r.category}"`, `"${r.amount}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
     ].join(','));
 
     const csvContent = [headers.join(','), ...csvRows].join('\n');
@@ -370,9 +397,16 @@ export default function DashboardBookings() {
                       </span>
                     </td>
                     <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(record.amount)}</td>
-                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)' }}>{record.payment_method}</td>
+
+                    {/* CLICKABLE PAYMENT METHOD */}
+                    <td
+                      onClick={() => openPaymentModal(record.client_name)}
+                      style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      {record.payment_method}
+                    </td>
+
                     <td style={{ padding: '16px 20px' }}>
-                      {/* FIXED ALIGNMENT */}
                       <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
                         {record.customer_type}
                       </span>
@@ -454,6 +488,68 @@ export default function DashboardBookings() {
           </div>
         )}
 
+        {/* ─── PAYMENT DETAILS & HISTORY POPUP MODAL ─── */}
+        {showPaymentModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+
+              <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
+                <div>
+                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>PAYMENT PROFILE & HISTORY</p>
+                  <h2 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
+                </div>
+                <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+              </div>
+
+              <div style={{ overflowY: 'auto', padding: '0 30px 30px 30px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', marginTop: '20px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid rgba(26,26,26,0.1)' }}>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Date</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Service</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Net Amt</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Paid</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Method</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Ref / Receipt</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedClientHistory.map((h, i) => {
+                      const net = h.amount * (1 - (h.discount_pct / 100));
+                      return (
+                        <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
+                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
+                          <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
+                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700 }}>{formatCurrency(net)}</td>
+                          <td style={{ padding: '16px 0', color: '#3D7A4A', fontWeight: 700 }}>{formatCurrency(h.received_payment)}</td>
+                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.payment_method}</td>
+                          <td style={{ padding: '16px 0', color: '#666', fontSize: 11 }}>
+                            {h.ref_no ? <div style={{ marginBottom: 4 }}>Ref: {h.ref_no}</div> : null}
+                            {h.receipt_url ? <a href={h.receipt_url} target="_blank" rel="noreferrer" style={{ color: GOLD, fontWeight: 700, textDecoration: 'underline' }}>View Receipt</a> : null}
+                            {!h.ref_no && !h.receipt_url ? '—' : null}
+                          </td>
+                          <td style={{ padding: '16px 0' }}>
+                            <span style={{
+                              display: 'inline-block', whiteSpace: 'nowrap',
+                              backgroundColor: h.payment_status === 'PAID' ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.1)',
+                              color: h.payment_status === 'PAID' ? '#3D7A4A' : '#C83232',
+                              padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700
+                            }}>
+                              {h.payment_status}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+            </div>
+          </div>
+        )}
+
         {/* ─── CSV EXPORT FILTER MODAL ─── */}
         {showExportModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -464,7 +560,6 @@ export default function DashboardBookings() {
                 Choose how much data you want to download from your ledger.
               </p>
 
-              {/* Explicit Export Mode Selection */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
                   <input type="radio" checked={exportMode === 'ALL'} onChange={() => setExportMode('ALL')} style={{ accentColor: GOLD, width: '18px', height: '18px' }} />
@@ -480,7 +575,6 @@ export default function DashboardBookings() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px', padding: '16px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.05)' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>START DATE</label>
-                    {/* min="2025-05-01" added to restrict historical fetch appropriately */}
                     <input type="date" min="2025-05-01" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
                   </div>
                   <div>

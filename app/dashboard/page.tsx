@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 25: POS Refinement (Renamed Headers, Added Payment Status, Optimized Table Widths)
+// Phase 26: POS Refinement (Added "Change" calculation inside Payment Details)
 
 export const dynamic = 'force-dynamic'
 
@@ -67,7 +67,7 @@ interface LiveBooking {
   discount_pct: number;
   therapist_comm_pct: number;
   payment_method: string;
-  payment_status: string; // NEW FIELD
+  payment_status: string;
   ref_no: string;
   receipt_url: string;
   received_payment: number;
@@ -350,7 +350,6 @@ export default function OverviewDashboard() {
 
         {view === 'LIST' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            {/* Added min-widths to prevent content squishing and clipping */}
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
@@ -374,6 +373,7 @@ export default function OverviewDashboard() {
                     const netSales = b.amount * (1 - (b.discount_pct / 100));
                     const commAmount = netSales * (b.therapist_comm_pct / 100);
                     const isOnlinePay = ['GCASH', 'BANK TRANSFER', 'QRPH', 'MASTERCARD'].includes(b.payment_method);
+                    const calculatedChange = Math.max(0, b.received_payment - netSales);
 
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
@@ -435,7 +435,7 @@ export default function OverviewDashboard() {
                           </div>
                         </td>
 
-                        {/* Payment Details */}
+                        {/* Payment Details (WITH CHANGE CALCULATION) */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
@@ -463,10 +463,16 @@ export default function OverviewDashboard() {
                               <span style={{ fontSize: 10, color: '#666' }}>Paid:</span>
                               <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box' }} />
                             </div>
+
+                            {/* SMART CHANGE CALCULATION */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', backgroundColor: 'rgba(26,26,26,0.03)', borderRadius: 4, marginTop: 2 }}>
+                              <span style={{ fontSize: 10, color: '#666', fontWeight: 600 }}>Change:</span>
+                              <strong style={{ fontSize: 11, color: BLACK }}>{formatCurrency(calculatedChange)}</strong>
+                            </div>
                           </div>
                         </td>
 
-                        {/* NEW: Payment Status */}
+                        {/* Payment Status */}
                         <td style={{ padding: '16px 12px' }}>
                           <select
                             value={b.payment_status}
