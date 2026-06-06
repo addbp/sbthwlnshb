@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 24: Ultimate POS Engine (Financials, Digital Receipts, Auto-Ongoing, Clickable Grid)
+// Phase 25: POS Refinement (Renamed Headers, Added Payment Status, Optimized Table Widths)
 
 export const dynamic = 'force-dynamic'
 
@@ -63,10 +63,11 @@ interface LiveBooking {
   client: string;
   service: string;
   notes: string;
-  amount: number; // Base Service Amount
+  amount: number;
   discount_pct: number;
   therapist_comm_pct: number;
   payment_method: string;
+  payment_status: string; // NEW FIELD
   ref_no: string;
   receipt_url: string;
   received_payment: number;
@@ -102,7 +103,6 @@ export default function OverviewDashboard() {
   const [loading, setLoading] = useState(true)
   const [metrics, setMetrics] = useState({ completed: 0, pending: 0, ongoing: 0, hold: 0 })
 
-  // Grid Modal State
   const [gridModalBooking, setGridModalBooking] = useState<LiveBooking | null>(null)
 
   // ─── MASTER DATA FETCHER (UNLIMITED) ───
@@ -141,7 +141,6 @@ export default function OverviewDashboard() {
         const timeStr = String(r.appointment_time || r.time || '—').trim();
         const rawDateStr = String(r.appointment_date || r.date || '').trim();
 
-        // Auto-Ongoing Logic: If it's today and time has passed, visually mark as Ongoing if Pending
         let currentStatus = r.status || 'Pending';
         if (currentStatus === 'Pending' && timeStr !== '—') {
           const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -172,9 +171,10 @@ export default function OverviewDashboard() {
           discount_pct: Number(r.discount_pct || 0),
           therapist_comm_pct: Number(r.therapist_comm_pct || 0),
           payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
+          payment_status: String(r.payment_status || 'UNPAID').toUpperCase(),
           ref_no: String(r.ref_no || ''),
           receipt_url: String(r.receipt_url || ''),
-          received_payment: parseCurrency(r.received_payment || amt), // default to amount if empty
+          received_payment: parseCurrency(r.received_payment || amt),
           status: currentStatus,
           therapist: r.therapist_name || r.therapist || null,
           createdAt: r.created_at || new Date().toISOString()
@@ -235,15 +235,13 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DATABASE UPDATES (POS ENGINE) ───
+  // ─── SMART DATABASE UPDATES ───
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
-    // Fast UI Update
     setAllBookings(prev => prev.map(b => b.id === id ? { ...b, [field]: value } : b));
 
-    // Try DB Update (Wrapped in try/catch in case columns are missing)
     try {
       const table = booking.source === 'live' ? 'bookings' : 'bookings_import';
       const idField = booking.source === 'live' ? 'booking_id' : 'id';
@@ -264,19 +262,17 @@ export default function OverviewDashboard() {
 
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${booking.rawId}-${Date.now()}.${fileExt}`;
+      const dateFolder = formatDateToYYYYMMDD(parseImportDate(booking.rawDate)) || getTodayStr();
+      const safeClientName = booking.client.replace(/[^a-zA-Z0-9]/g, "_").trim();
+      const filePath = `${dateFolder}/${safeClientName}/receipt-${Date.now()}.${fileExt}`;
 
-      // Upload to 'receipts' bucket
-      const { error: uploadError } = await supabase.storage.from('receipts').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage.from('receipts').upload(filePath, file);
       if (uploadError) {
         alert("Failed to upload receipt. Make sure you created a 'receipts' storage bucket in Supabase and it is public.");
         throw uploadError;
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(fileName);
-
-      // Save URL to DB
+      const { data: { publicUrl } } = supabase.storage.from('receipts').getPublicUrl(filePath);
       handleUpdate(id, 'receipt_url', publicUrl);
       alert("Receipt attached successfully!");
 
@@ -354,23 +350,25 @@ export default function OverviewDashboard() {
 
         {view === 'LIST' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12 }}>
+            {/* Added min-widths to prevent content squishing and clipping */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>TIME & CLIENT</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em' }}>SERVICE & NOTES</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>STAFF</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '100px' }}>FINANCIALS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>COMMISSION</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '150px' }}>PAYMENT DETAILS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '120px' }}>STATUS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '140px' }}>TIME & CLIENT</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '220px' }}>SERVICE & NOTES</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '150px' }}>THERAPIST</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '120px' }}>AMOUNT</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '120px' }}>COMMISSION</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '160px' }}>PAYMENT DETAILS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>PAYMENT STATUS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>STATUS</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching operations data...</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching operations data...</td></tr>
                 ) : dailyBookings.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
                   dailyBookings.map((b) => {
                     const netSales = b.amount * (1 - (b.discount_pct / 100));
@@ -393,19 +391,19 @@ export default function OverviewDashboard() {
                             value={b.notes}
                             onChange={e => handleUpdate(b.id, 'notes', e.target.value)}
                             placeholder="Add client notes..."
-                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical' }}
+                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box' }}
                           />
                         </td>
 
-                        {/* Staff */}
+                        {/* Therapist */}
                         <td style={{ padding: '16px 12px' }}>
-                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD' }}>
+                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
                             <option value="Unassigned">Unassigned</option>
                             {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
                           </select>
                         </td>
 
-                        {/* Financials (Amount, Disc, Net) */}
+                        {/* Amount (Financials) */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
@@ -440,7 +438,7 @@ export default function OverviewDashboard() {
                         {/* Payment Details */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none' }}>
+                            <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
                               <option value="PAY AT COUNTER">PAY AT COUNTER</option>
                               <option value="CASH">CASH</option>
                               <option value="GCASH">GCASH</option>
@@ -450,7 +448,7 @@ export default function OverviewDashboard() {
                             </select>
 
                             {isOnlinePay && (
-                              <input type="text" placeholder="Ref #..." value={b.ref_no} onChange={e => handleUpdate(b.id, 'ref_no', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, border: '1px dashed rgba(197,143,59,0.5)', outline: 'none' }} />
+                              <input type="text" placeholder="Ref #..." value={b.ref_no} onChange={e => handleUpdate(b.id, 'ref_no', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, border: '1px dashed rgba(197,143,59,0.5)', outline: 'none', boxSizing: 'border-box' }} />
                             )}
 
                             {isOnlinePay && !b.receipt_url && (
@@ -463,14 +461,31 @@ export default function OverviewDashboard() {
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                               <span style={{ fontSize: 10, color: '#666' }}>Paid:</span>
-                              <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4 }} />
+                              <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box' }} />
                             </div>
                           </div>
                         </td>
 
-                        {/* Status */}
+                        {/* NEW: Payment Status */}
                         <td style={{ padding: '16px 12px' }}>
-                          <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                          <select
+                            value={b.payment_status}
+                            onChange={(e) => handleUpdate(b.id, 'payment_status', e.target.value)}
+                            style={{
+                              width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
+                              backgroundColor: b.payment_status === 'PAID' ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.1)',
+                              color: b.payment_status === 'PAID' ? '#3D7A4A' : '#C83232',
+                              border: b.payment_status === 'PAID' ? '1px solid rgba(61,122,74,0.3)' : '1px solid rgba(200,50,50,0.3)'
+                            }}
+                          >
+                            <option value="UNPAID">UNPAID</option>
+                            <option value="PAID">PAID</option>
+                          </select>
+                        </td>
+
+                        {/* General Status */}
+                        <td style={{ padding: '16px 12px' }}>
+                          <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }}>
                             <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option>
                           </select>
                         </td>
@@ -495,7 +510,7 @@ export default function OverviewDashboard() {
               <div style={{ minWidth: '1200px' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
                   <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
-                    <span style={{ color: GOLD, fontWeight: 700, letterSpacing: '0.1em', fontSize: 10 }}>STAFF MEMBER</span>
+                    <span style={{ color: GOLD, fontWeight: 700, letterSpacing: '0.1em', fontSize: 10 }}>THERAPIST</span>
                   </div>
                   <div style={{ display: 'flex', flexGrow: 1, position: 'relative' }}>
                     {HOURS_MARKERS.slice(0, -1).map((hour, i) => (
