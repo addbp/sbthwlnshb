@@ -122,7 +122,7 @@ export default function ClientsPage() {
       fromWaiver += PAGE
     }
 
-    // 4. Fetch ALL ACTIVE MEMBERSHIPS (Unlimited Fetch Logic)
+    // 4. Fetch ALL ACTIVE MEMBERSHIPS
     let fromMem = 0
     for (; ;) {
       const { data, error } = await supabase
@@ -145,11 +145,11 @@ export default function ClientsPage() {
       const key = name.toLowerCase()
       if (!clientMap.has(key)) {
         clientMap.set(key, {
-          name: name, // Preserve original capitalization
+          name: name,
           totalVisits: 0,
           totalSpend: 0,
-          membershipTier: 'N/A', // Default to Non-Member
-          remainingMassages: '—', // Default to blank
+          membershipTier: 'N/A',
+          remainingMassages: '—',
           lastVisitDate: null,
           history: [],
           waiver: null
@@ -161,7 +161,7 @@ export default function ClientsPage() {
     // Process Bookings
     allBookings.forEach(r => {
       const name = r.client_name || r.name || 'Guest'
-      if (name.toLowerCase() === 'guest' || name === '—') return // Skip generic guests
+      if (name.toLowerCase() === 'guest' || name === '—') return
 
       const client = getClient(name)
       const rawDate = r.date || r.appointment_date || r.created_at
@@ -182,7 +182,7 @@ export default function ClientsPage() {
       }
     })
 
-    // Process Memberships (Attach to matching client profile)
+    // Process Memberships 
     allMemberships.forEach(m => {
       const name = m.client_name
       if (!name || name.toLowerCase() === 'guest' || name === '—') return
@@ -192,15 +192,14 @@ export default function ClientsPage() {
       client.remainingMassages = m.remaining_massages || '—'
     })
 
-    // Process Waivers (Attach to matching client profile)
+    // Process Waivers 
     allWaivers.forEach(w => {
       const name = w.client_name
       if (!name || name.toLowerCase() === 'guest' || name === '—') return
 
-      const client = getClient(name) // Grabs existing client, or creates them if they signed waiver but no booking yet
+      const client = getClient(name)
       const d = parseImportDate(w.date_signed)
 
-      // Only keep the most recent waiver
       if (!client.waiver || (d && client.waiver.date_signed && d.getTime() > client.waiver.date_signed.getTime())) {
         client.waiver = {
           focus_areas: w.focus_areas || 'None',
@@ -212,7 +211,6 @@ export default function ClientsPage() {
     })
 
     const allClients = Array.from(clientMap.values())
-    // Sort by most recent visit
     allClients.sort((a, b) => (b.lastVisitDate?.getTime() || 0) - (a.lastVisitDate?.getTime() || 0))
 
     setClients(allClients)
@@ -393,7 +391,7 @@ export default function ClientsPage() {
                       <td style={{ padding: '14px 20px', color: '#666' }}>{c.totalVisits}</td>
                       <td style={{ padding: '14px 20px', fontWeight: 700, color: '#1A1A1A' }}>₱{c.totalSpend.toLocaleString()}</td>
 
-                      {/* NEW MEMBERSHIP TIER COLUMN */}
+                      {/* MEMBERSHIP TIER COLUMN */}
                       <td style={{ padding: '14px 20px' }}>
                         <span style={{
                           padding: '4px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap',
@@ -405,7 +403,7 @@ export default function ClientsPage() {
                         </span>
                       </td>
 
-                      {/* NEW REMAINING MASSAGES COLUMN */}
+                      {/* REMAINING MASSAGES COLUMN */}
                       <td style={{ padding: '14px 20px', color: c.remainingMassages !== '—' ? '#3D7A4A' : '#666', fontWeight: c.remainingMassages !== '—' ? 700 : 400 }}>
                         {c.remainingMassages}
                       </td>

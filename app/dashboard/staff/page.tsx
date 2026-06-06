@@ -11,8 +11,9 @@ interface StaffMember {
     id: string | number;
     name: string;
     role: string;
-    status: string; // Base DB Status: 'Available', 'Off Duty'
-    dynamicStatus?: string; // Calculated live status
+    status: string;
+    off_days: string[]; // NEW: Array of days off
+    dynamicStatus?: string;
 }
 
 interface BookingRecord {
@@ -20,7 +21,19 @@ interface BookingRecord {
     appointment_date: string;
     appointment_time: string;
     status: string;
+    client_name?: string;
+    service_name?: string;
 }
+
+const TIME_SLOTS = [
+    '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM',
+    '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM',
+    '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM',
+    '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
+    '11:00 PM', '11:30 PM', '12:00 AM'
+];
+
+const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // Checks if an appointment is happening RIGHT NOW (65 min window)
 function isTimeInSession(dateStr: string, timeStr: string): boolean {
@@ -56,6 +69,7 @@ export default function StaffPage() {
     const [liveBookings, setLiveBookings] = useState<BookingRecord[]>([])
     const [loading, setLoading] = useState(true)
     const [filter, setFilter] = useState<string>('All')
+    const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table')
 
     // ─── SECURITY STATE ───
     const [dbPin, setDbPin] = useState('123456')
@@ -69,7 +83,7 @@ export default function StaffPage() {
     // ─── CRUD MODAL STATE ───
     const [showStaffModal, setShowStaffModal] = useState(false)
     const [editingId, setEditingId] = useState<string | number | null>(null)
-    const [formData, setFormData] = useState({ name: '', role: 'Massage Therapist', status: 'Available' })
+    const [formData, setFormData] = useState({ name: '', role: 'Massage Therapist', status: 'Available', off_days: [] as string[] })
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     // ─── DATA FETCHING ───
@@ -83,25 +97,34 @@ export default function StaffPage() {
             // 2. Fetch Staff
             const { data: staffData } = await supabase.from('staff').select('*').order('name', { ascending: true })
 
-            // 3. Fetch Live Bookings for Today
+            // 3. Fetch Live Bookings
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
             const { data: bookingsData } = await supabase
                 .from('bookings')
-                .select('therapist_name, appointment_date, appointment_time, status')
+                .select('therapist_name, appointment_date, appointment_time, status, client_name, service_name, service')
                 .eq('appointment_date', todayStr)
                 .neq('status', 'Completed')
                 .neq('status', 'Cancelled')
 
-            if (bookingsData) setLiveBookings(bookingsData)
+            if (bookingsData) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const normalizedBookings = bookingsData.map((b: any) => ({
+                    ...b,
+                    service_name: b.service_name || b.service || 'Appointment'
+                }))
+                setLiveBookings(normalizedBookings)
+            }
 
             if (staffData) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const formatted = staffData.map((t: any) => ({
                     id: t.id,
                     name: t.name || t.full_name || 'Unknown',
                     role: t.role || t.specialty || 'Massage Therapist',
-                    status: t.status || 'Available'
+                    status: t.status || 'Available',
+                    off_days: t.off_days ? t.off_days.split(',').filter(Boolean) : []
                 }))
                 setStaffList(formatted)
             }
@@ -116,8 +139,14 @@ export default function StaffPage() {
 
     // ─── DYNAMIC STATUS CALCULATOR ───
     const getDynamicStatus = (s: StaffMember) => {
+        // 1. Hard Check: Is today their scheduled day off?
+        const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+        if (s.off_days.includes(todayName)) return 'Off Duty';
+
+        // 2. Manual Check
         if (s.status === 'Off Duty') return 'Off Duty';
 
+        // 3. Busy Check
         const isBusy = liveBookings.some(b =>
             b.therapist_name?.toLowerCase() === s.name.toLowerCase() &&
             (b.status === 'Ongoing' || isTimeInSession(b.appointment_date, b.appointment_time))
@@ -158,14 +187,23 @@ export default function StaffPage() {
     // ─── CRUD ACTIONS ───
     const handleOpenAdd = () => {
         setEditingId(null)
-        setFormData({ name: '', role: 'Massage Therapist', status: 'Available' })
+        setFormData({ name: '', role: 'Massage Therapist', status: 'Available', off_days: [] })
         setShowStaffModal(true)
     }
 
     const handleOpenEdit = (s: StaffMember) => {
         setEditingId(s.id)
-        setFormData({ name: s.name, role: s.role, status: s.status })
+        setFormData({ name: s.name, role: s.role, status: s.status, off_days: s.off_days })
         setShowStaffModal(true)
+    }
+
+    const toggleDayOff = (day: string) => {
+        setFormData(prev => ({
+            ...prev,
+            off_days: prev.off_days.includes(day)
+                ? prev.off_days.filter(d => d !== day)
+                : [...prev.off_days, day]
+        }))
     }
 
     const handleDelete = async (id: string | number, name: string) => {
@@ -184,23 +222,22 @@ export default function StaffPage() {
 
         setIsSubmitting(true)
         try {
+            const dbPayload = {
+                name: formData.name.trim(),
+                role: formData.role,
+                status: formData.status,
+                off_days: formData.off_days.join(',')
+            }
+
             if (editingId) {
-                await supabase.from('staff').update({
-                    name: formData.name.trim(),
-                    role: formData.role,
-                    status: formData.status
-                }).eq('id', editingId)
+                await supabase.from('staff').update(dbPayload).eq('id', editingId)
             } else {
-                await supabase.from('staff').insert([{
-                    name: formData.name.trim(),
-                    role: formData.role,
-                    status: formData.status
-                }])
+                await supabase.from('staff').insert([dbPayload])
             }
             setShowStaffModal(false)
             loadData()
         } catch (err) {
-            alert("Database Error: Make sure your 'staff' table is configured properly.")
+            alert("Database Error: Make sure your 'staff' table is configured properly with the off_days column.")
         } finally {
             setIsSubmitting(false)
         }
@@ -220,6 +257,10 @@ export default function StaffPage() {
         <>
             <style>{`
                 .modal-overlay { position: fixed; inset: 0; z-index: 50; background-color: rgba(10,8,6,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+                .cal-scroll::-webkit-scrollbar { height: 8px; }
+                .cal-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 4px; }
+                .cal-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
+                .cal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
             `}</style>
 
             {/* ── PIN SECURITY MODAL ── */}
@@ -256,7 +297,7 @@ export default function StaffPage() {
             {/* ── ADD/EDIT STAFF MODAL ── */}
             {showStaffModal && (
                 <div className="modal-overlay">
-                    <div style={{ width: '100%', maxWidth: 400, backgroundColor: '#F9F4EB', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif" }}>
+                    <div style={{ width: '100%', maxWidth: 450, backgroundColor: '#F9F4EB', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif" }}>
                         <div style={{ height: 4, backgroundColor: '#C58F3B' }} />
                         <form onSubmit={handleSaveStaff} style={{ padding: '24px' }}>
                             <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 24, margin: '0 0 20px', color: '#1A1A1A' }}>
@@ -266,13 +307,13 @@ export default function StaffPage() {
                             <div style={{ marginBottom: 16 }}>
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Full Name</label>
                                 <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Maria Santos" autoFocus
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none' }} />
+                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
                             </div>
 
                             <div style={{ marginBottom: 16 }}>
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Role</label>
                                 <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}>
+                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
                                     <option value="Massage Therapist">Massage Therapist</option>
                                     <option value="Nail Technician">Nail Technician</option>
                                     <option value="Maintenance">Maintenance</option>
@@ -281,14 +322,33 @@ export default function StaffPage() {
                                 </select>
                             </div>
 
-                            <div style={{ marginBottom: 24 }}>
+                            <div style={{ marginBottom: 16 }}>
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Base Status</label>
                                 <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer' }}>
+                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
                                     <option value="Available">Available</option>
                                     <option value="Off Duty">Off Duty</option>
                                 </select>
-                                <p style={{ fontSize: 11, color: '#888', fontStyle: 'italic', marginTop: 6, marginBottom: 0 }}>Note: "In Session" is applied automatically.</p>
+                            </div>
+
+                            <div style={{ marginBottom: 24, padding: '16px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12 }}>
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#1A1A1A', marginBottom: 12 }}>Scheduled Days Off</label>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {DAYS_OF_WEEK.map(day => (
+                                        <div
+                                            key={day}
+                                            onClick={() => toggleDayOff(day)}
+                                            style={{
+                                                padding: '6px 12px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: 'pointer', userSelect: 'none', border: '1px solid', transition: 'all 0.2s ease',
+                                                backgroundColor: formData.off_days.includes(day) ? '#1A1A1A' : '#f9f9f9',
+                                                color: formData.off_days.includes(day) ? '#C58F3B' : '#666',
+                                                borderColor: formData.off_days.includes(day) ? '#1A1A1A' : 'rgba(26,26,26,0.1)'
+                                            }}>
+                                            {day.slice(0, 3)}
+                                        </div>
+                                    ))}
+                                </div>
+                                <p style={{ fontSize: 11, color: '#888', fontStyle: 'italic', marginTop: 12, marginBottom: 0 }}>System will automatically lock schedule on selected days.</p>
                             </div>
 
                             <div style={{ display: 'flex', gap: 12 }}>
@@ -354,7 +414,23 @@ export default function StaffPage() {
                     </div>
                 </div>
 
-                {/* Staff List / Empty State */}
+                {/* ─── VIEW TOGGLE (TABLE vs CALENDAR) ─── */}
+                <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 12 }}>
+                    <button
+                        onClick={() => setViewMode('table')}
+                        style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'table' ? '#1A1A1A' : 'transparent', color: viewMode === 'table' ? '#C58F3B' : '#666', transition: 'all 200ms ease' }}
+                    >
+                        List View
+                    </button>
+                    <button
+                        onClick={() => setViewMode('calendar')}
+                        style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'calendar' ? '#1A1A1A' : 'transparent', color: viewMode === 'calendar' ? '#C58F3B' : '#666', transition: 'all 200ms ease' }}
+                    >
+                        Daily Schedule
+                    </button>
+                </div>
+
+                {/* Staff List / Empty State / Calendar */}
                 {loading ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Aggregating staff data and live bookings...</div>
                 ) : staffList.length === 0 ? (
@@ -368,13 +444,78 @@ export default function StaffPage() {
                             + Add First Therapist
                         </button>
                     </div>
+                ) : viewMode === 'calendar' ? (
+
+                    /* ─── NEW CALENDAR MATRIX VIEW ─── */
+                    <div className="cal-scroll" style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
+                        <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
+                            <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>Today's Therapist Schedule</h3>
+                            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>Scroll right to view all appointments. Automated off-days block scheduling.</p>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1200 }}>
+                            <thead>
+                                <tr style={{ backgroundColor: '#F8F4EE' }}>
+                                    <th style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', position: 'sticky', left: 0, backgroundColor: '#F8F4EE', zIndex: 10, borderRight: '1px solid rgba(26,26,26,0.09)', minWidth: 200 }}>
+                                        Therapist
+                                    </th>
+                                    {TIME_SLOTS.map(t => (
+                                        <th key={t} style={{ padding: '14px 10px', fontSize: 10, fontWeight: 700, color: '#666', borderRight: '1px solid rgba(26,26,26,0.05)', minWidth: 140, textAlign: 'center' }}>
+                                            {t}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {displayedStaff.map((s, i) => (
+                                    <tr key={s.id || i} style={{ borderTop: '1px solid rgba(26,26,26,0.06)' }}>
+                                        <td style={{ padding: '12px 20px', position: 'sticky', left: 0, backgroundColor: '#fff', zIndex: 9, borderRight: '1px solid rgba(26,26,26,0.09)', boxShadow: '2px 0 5px rgba(0,0,0,0.02)' }}>
+                                            <div style={{ fontWeight: 700, color: '#1A1A1A', fontSize: 13, marginBottom: 4 }}>{s.name}</div>
+                                            <div style={{ fontSize: 10, color: s.dynamicStatus === 'Off Duty' ? '#C83232' : '#888', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: s.dynamicStatus === 'Off Duty' ? 800 : 400 }}>
+                                                {s.dynamicStatus}
+                                            </div>
+                                        </td>
+
+                                        {/* CALENDAR BLOCKOUT LOGIC */}
+                                        {s.dynamicStatus === 'Off Duty' ? (
+                                            <td colSpan={TIME_SLOTS.length} style={{ padding: 0, backgroundColor: 'rgba(26,26,26,0.03)', textAlign: 'center' }}>
+                                                <div style={{ padding: '10px', margin: '6px', borderRadius: 8, border: '1px dashed rgba(26,26,26,0.2)', color: '#888', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em' }}>
+                                                    OFF DUTY / UNAVAILABLE TODAY
+                                                </div>
+                                            </td>
+                                        ) : (
+                                            TIME_SLOTS.map(t => {
+                                                const booking = liveBookings.find(b => b.therapist_name?.toLowerCase() === s.name.toLowerCase() && b.appointment_time === t);
+                                                return (
+                                                    <td key={t} style={{ padding: '6px', borderRight: '1px solid rgba(26,26,26,0.05)', backgroundColor: booking ? 'rgba(197,143,59,0.05)' : 'transparent', verticalAlign: 'top' }}>
+                                                        {booking ? (
+                                                            <div style={{ padding: '8px', backgroundColor: '#fff', border: '1px solid rgba(197,143,59,0.3)', borderRadius: 6, borderLeft: '4px solid #C58F3B', height: '100%' }}>
+                                                                <div style={{ fontSize: 11, fontWeight: 700, color: '#1A1A1A', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {booking.client_name || 'Walk-in Client'}
+                                                                </div>
+                                                                <div style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                                    {booking.service_name}
+                                                                </div>
+                                                            </div>
+                                                        ) : null}
+                                                    </td>
+                                                )
+                                            })
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
                 ) : (
+
+                    /* ─── EXISTING DATA TABLE VIEW ─── */
                     <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
                         <div style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 14 }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid rgba(26,26,26,0.09)', backgroundColor: '#F8F4EE' }}>
-                                        {['Name', 'Role', 'Status', 'Actions'].map(h => (
+                                        {['Name', 'Role', 'Status', 'Days Off', 'Actions'].map(h => (
                                             <th key={h} style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', whiteSpace: 'nowrap' }}>{h}</th>
                                         ))}
                                     </tr>
@@ -393,6 +534,13 @@ export default function StaffPage() {
                                                     {s.dynamicStatus}
                                                 </span>
                                             </td>
+                                            <td style={{ padding: '16px 20px' }}>
+                                                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 150 }}>
+                                                    {s.off_days && s.off_days.length > 0 ? s.off_days.map(d => (
+                                                        <span key={d} style={{ fontSize: 9, padding: '2px 6px', backgroundColor: '#f5f5f5', borderRadius: 4, border: '1px solid #e0e0e0', color: '#666', fontWeight: 600 }}>{d.slice(0, 3)}</span>
+                                                    )) : <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>None</span>}
+                                                </div>
+                                            </td>
                                             <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                                                 <button onClick={() => executeProtectedAction(() => handleOpenEdit(s))} style={{ background: 'none', border: 'none', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginRight: 16, textTransform: 'uppercase', textDecoration: 'underline', textDecorationColor: 'rgba(197,143,59,0.5)', textUnderlineOffset: 4 }}>Edit</button>
                                                 <button onClick={() => executeProtectedAction(() => handleDelete(s.id, s.name))} style={{ background: 'none', border: 'none', color: '#C83232', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>Delete</button>
@@ -400,7 +548,7 @@ export default function StaffPage() {
                                         </tr>
                                     ))}
                                     {displayedStaff.length === 0 && (
-                                        <tr><td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No staff match this filter.</td></tr>
+                                        <tr><td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: '#666' }}>No staff match this filter.</td></tr>
                                     )}
                                 </tbody>
                             </table>
