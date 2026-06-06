@@ -2,7 +2,7 @@
 
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
-// Features: Dual-Table Merge, Smart Returning Client Logic, Client History Popup, CSV Export
+// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
 
 export const dynamic = 'force-dynamic'
 
@@ -90,10 +90,14 @@ export default function DashboardBookings() {
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 100
 
-  // Modal State
+  // Client Modal State
   const [showModal, setShowModal] = useState(false)
   const [selectedClientName, setSelectedClientName] = useState('')
   const [selectedClientHistory, setSelectedClientHistory] = useState<UnifiedRecord[]>([])
+
+  // CSV Export Modal State
+  const [showExportModal, setShowExportModal] = useState(false)
+  const [exportDateRange, setExportDateRange] = useState({ start: '', end: '' })
 
   // ─── LIMITLESS OMNI-FETCHER (MERGES BOTH TABLES) ───
   const fetchRecords = useCallback(async () => {
@@ -214,15 +218,6 @@ export default function DashboardBookings() {
     setCurrentPage(1)
   }, [activeTab, searchQuery])
 
-  // ─── MODAL HANDLER ───
-  const openClientModal = (clientName: string) => {
-    if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
-    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
-    setSelectedClientHistory(history);
-    setSelectedClientName(clientName);
-    setShowModal(true);
-  }
-
   // ─── FILTERING LOGIC ───
   const filteredRecords = records.filter(record => {
     const matchesSearch =
@@ -240,11 +235,39 @@ export default function DashboardBookings() {
 
   const formatCurrency = (amount: number) => amount === 0 ? '—' : `₱${amount.toLocaleString('en-PH')}`
 
-  // ─── CSV EXPORT ───
-  const exportToCSV = () => {
-    if (filteredRecords.length === 0) return alert("No records to export.");
+  // ─── MODAL HANDLER ───
+  const openClientModal = (clientName: string) => {
+    if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
+    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
+    setSelectedClientHistory(history);
+    setSelectedClientName(clientName);
+    setShowModal(true);
+  }
+
+  // ─── CSV EXPORT LOGIC WITH DATE RANGE ───
+  const confirmCSVExport = () => {
+    let dataToExport = filteredRecords;
+
+    // Apply Date Range Filter if set
+    if (exportDateRange.start && exportDateRange.end) {
+      const startDate = new Date(exportDateRange.start);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(exportDateRange.end);
+      endDate.setHours(23, 59, 59, 999);
+
+      dataToExport = filteredRecords.filter(r => {
+        if (!r.rawDate) return false;
+        return r.rawDate >= startDate && r.rawDate <= endDate;
+      });
+    }
+
+    if (dataToExport.length === 0) {
+      alert("No records found in the selected date range.");
+      return;
+    }
+
     const headers = ['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Client Type'];
-    const csvRows = filteredRecords.map(r => [
+    const csvRows = dataToExport.map(r => [
       `"${r.displayDate}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
       `"${r.category}"`, `"${r.amount}"`, `"${r.payment_method}"`, `"${r.customer_type}"`
     ].join(','));
@@ -257,6 +280,8 @@ export default function DashboardBookings() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    setShowExportModal(false); // Close modal on success
   }
 
   return (
@@ -276,7 +301,7 @@ export default function DashboardBookings() {
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <button onClick={exportToCSV} disabled={loading || filteredRecords.length === 0} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease' }}>
+            <button onClick={() => setShowExportModal(true)} disabled={loading || filteredRecords.length === 0} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease' }}>
               ⬇ Export CSV
             </button>
             <button onClick={fetchRecords} disabled={loading} style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease' }}>
@@ -342,7 +367,13 @@ export default function DashboardBookings() {
                     <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(record.amount)}</td>
                     <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)' }}>{record.payment_method}</td>
                     <td style={{ padding: '16px 20px' }}>
-                      <span style={{ backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
+                      {/* FIX: inline-block and nowrap applied here to prevent awkward background wrapping */}
+                      <span style={{
+                        display: 'inline-block', whiteSpace: 'nowrap',
+                        backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
+                        color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B',
+                        padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em'
+                      }}>
                         {record.customer_type}
                       </span>
                     </td>
@@ -420,6 +451,36 @@ export default function DashboardBookings() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* ─── CSV EXPORT FILTER MODAL ─── */}
+        {showExportModal && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '400px', padding: '30px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+
+              <h2 style={{ fontFamily: DSP, fontSize: '24px', color: BLACK, margin: '0 0 16px 0' }}>Export CSV</h2>
+              <p style={{ fontSize: '13px', color: '#666', marginBottom: '24px', lineHeight: 1.5 }}>
+                Select a specific date range to download. Leave the dates blank to download all currently visible records.
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>START DATE</label>
+                  <input type="date" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', fontFamily: BODY, outline: 'none' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>END DATE</label>
+                  <input type="date" value={exportDateRange.end} onChange={e => setExportDateRange({ ...exportDateRange, end: e.target.value })} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', fontFamily: BODY, outline: 'none' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button onClick={() => setShowExportModal(false)} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: 'none', color: '#666', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={confirmCSVExport} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Download Data</button>
               </div>
 
             </div>
