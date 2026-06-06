@@ -2,8 +2,7 @@
 
 // app/dashboard/layout.tsx
 // Dashboard Shell — Black sidebar (#1A1A1A) · Beige content area (#F9F4EB)
-// Tablet-first · Gold icons · Supabase sign-out
-// Upgraded: Collapsible Desktop Sidebar for Full-Screen POS View
+// Upgraded: Attached Handle Toggle Button for smooth sliding
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -71,7 +70,7 @@ const NAV_MAIN = [
   },
   {
     href: '/dashboard/reports',
-    label: 'Waivers', // <--- CHANGED FROM REPORTS
+    label: 'Waivers',
     icon: (
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
         <path d="M11 2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-4-5z" stroke="#C58F3B" strokeWidth="1.5" />
@@ -114,7 +113,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     })
   }, [])
 
-  // Close mobile nav on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
   async function signOut() {
@@ -126,178 +124,162 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname.startsWith(href)
 
-  // Initial for avatar
   const initial = userEmail?.[0]?.toUpperCase() ?? 'S'
 
   return (
     <>
       <style>{`
-        /* FORCED BACKGROUND COLOR FOR ALL PAGES */
-        html, body, #__next { background-color: #F9F4EB !important; }
+        html, body, #__next { background-color: #F9F4EB !important; overflow-x: hidden; }
 
-        /* Sidebar nav item */
         .sb-item {
-          display:      flex;
-          align-items:  center;
-          gap:          12px;
-          padding:      0 14px;
-          min-height:   50px;
-          border-radius:10px;
-          text-decoration: none;
-          color:        rgba(243,233,224,0.52);
-          font-size:    14px;
-          font-weight:  400;
-          transition:   background-color 180ms ease, color 180ms ease;
-          position:     relative;
+          display: flex; align-items: center; gap: 12px; padding: 0 14px;
+          min-height: 50px; border-radius: 10px; text-decoration: none;
+          color: rgba(243,233,224,0.52); font-size: 14px; font-weight: 400;
+          transition: background-color 180ms ease, color 180ms ease; position: relative;
         }
         .sb-item:hover { background-color:rgba(197,143,59,0.10); color:#F3E9E0; }
         .sb-item.active { background-color:rgba(197,143,59,0.14); color:#F3E9E0; }
         .sb-item.active::after {
-          content:'';
-          position:absolute;
-          right:0; top:50%; transform:translateY(-50%);
-          width:3px; height:20px; border-radius:99px;
-          background-color:#C58F3B;
+          content:''; position:absolute; right:0; top:50%; transform:translateY(-50%);
+          width:3px; height:20px; border-radius:99px; background-color:#C58F3B;
         }
 
-        /* Sign out button */
         .sb-signout {
-          display:      flex;
-          align-items:  center;
-          gap:          10px;
-          width:        100%;
-          padding:      0 14px;
-          min-height:   44px;
-          border:       none;
-          background:   transparent;
-          color:        rgba(243,233,224,0.38);
-          font-size:    13px;
-          font-family:  'Inter', system-ui, sans-serif;
-          cursor:       pointer;
-          border-radius:10px;
-          transition:   background-color 180ms ease, color 180ms ease;
-          text-align:   left;
+          display: flex; align-items: center; gap: 10px; width: 100%; padding: 0 14px;
+          min-height: 44px; border: none; background: transparent;
+          color: rgba(243,233,224,0.38); font-size: 13px; font-family: 'Inter', system-ui, sans-serif;
+          cursor: pointer; border-radius: 10px; transition: background-color 180ms ease, color 180ms ease; text-align: left;
         }
         .sb-signout:hover { background-color:rgba(160,80,80,0.12); color:#d07070; }
 
-        /* Mobile overlay */
         .mob-overlay {
-          position:fixed; inset:0; background:rgba(0,0,0,0.65);
-          backdrop-filter:blur(3px); z-index:38;
+          position:fixed; inset:0; background:rgba(0,0,0,0.65); backdrop-filter:blur(3px); z-index:38;
         }
 
-        /* LAYOUT TRANSITIONS */
-        .sidebar {
-          transition: transform 300ms cubic-bezier(0.22,1,0.36,1);
-        }
-        .dashboard-main {
-          transition: margin-left 300ms cubic-bezier(0.22,1,0.36,1);
-        }
+        /* Smooth Layout Transitions */
+        .sidebar { transition: transform 300ms cubic-bezier(0.22,1,0.36,1); }
+        .dashboard-main { transition: margin-left 300ms cubic-bezier(0.22,1,0.36,1); }
 
-        /* DESKTOP STYLES (>= 768px) */
+        /* Desktop Positioning */
         @media (min-width:768px) {
           .mob-menu-btn { display:none !important; }
-          .desktop-toggle-btn { display:flex !important; }
-          
-          /* Dynamic Sidebar Positioning */
           .app-wrapper.desktop-open .sidebar { transform: translateX(0); }
           .app-wrapper.desktop-open .dashboard-main { margin-left: 276px; }
-
           .app-wrapper.desktop-closed .sidebar { transform: translateX(-276px); }
           .app-wrapper.desktop-closed .dashboard-main { margin-left: 0; }
         }
 
-        /* MOBILE STYLES (< 768px) */
+        /* Mobile Positioning */
         @media (max-width:767px) {
           .dashboard-main { margin-left:0 !important; }
           .dashboard-header { padding-left:16px !important; }
           .desktop-toggle-btn { display:none !important; }
-
-          /* Dynamic Mobile Positioning */
-          .app-wrapper:not(.mob-open) .sidebar { transform: translateX(-100%); }
+          .app-wrapper:not(.mob-open) .sidebar { transform: translateX(-276px); }
           .app-wrapper.mob-open .sidebar { transform: translateX(0); }
         }
       `}</style>
 
-      {/* DYNAMIC WRAPPER: Handles CSS classes based on state to prevent inline style conflict */}
       <div className={`app-wrapper ${isSidebarOpen ? 'desktop-open' : 'desktop-closed'} ${mobileOpen ? 'mob-open' : ''}`} style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F9F4EB' }}>
 
-        {/* Mobile overlay */}
-        {mobileOpen && (
-          <div className="mob-overlay" onClick={() => setMobileOpen(false)} />
-        )}
+        {mobileOpen && <div className="mob-overlay" onClick={() => setMobileOpen(false)} />}
 
         {/* ── SIDEBAR ────────────────────────────────────── */}
         <aside
           className="sidebar"
           style={{
-            position: 'fixed',
-            top: 0, left: 0, bottom: 0,
-            width: 276,
-            backgroundColor: '#1A1A1A',
-            backgroundImage: 'none',
-            borderRight: '1px solid rgba(197,143,59,0.14)',
-            display: 'flex',
-            flexDirection: 'column',
-            zIndex: 40,
-            overflowY: 'auto',
+            position: 'fixed', top: 0, left: 0, bottom: 0,
+            zIndex: 40, overflow: 'visible', // Allows the button to stick out!
           }}
         >
-          {/* Brand — logo only */}
-          <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/sabbath-logo.png" alt="Sabbath Logo" style={{ width: 72, height: 72, objectFit: 'contain' }} />
-          </div>
-
-          <div style={{ height: 1, margin: '0 20px', backgroundColor: 'rgba(197,143,59,0.18)' }} />
-
-          <div style={{ padding: '14px 20px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(197,143,59,0.55)' }}>
-            Navigation
-          </div>
-
-          <nav style={{ padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {NAV_MAIN.map(item => (
-              <Link key={item.href} href={item.href} className={`sb-item${isActive(item.href) ? ' active' : ''}`}>
-                <span style={{ flexShrink: 0 }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          <div style={{ flex: 1 }} />
-
-          <div style={{ height: 1, margin: '0 20px', backgroundColor: 'rgba(197,143,59,0.18)' }} />
-
-          <nav style={{ padding: '8px 10px 4px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {NAV_BOTTOM.map(item => (
-              <Link key={item.href} href={item.href} className={`sb-item${isActive(item.href) ? ' active' : ''}`}>
-                <span style={{ flexShrink: 0 }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            ))}
-            <button onClick={signOut} className="sb-signout">
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <path d="M13 3h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <path d="M9 14l4-4-4-4M13 10H3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              Sign out
-            </button>
-          </nav>
-
-          {/* User pill */}
-          <div style={{ margin: '10px 14px 16px', padding: '12px 14px', backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.16)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: '#C58F3B', color: '#1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 16, fontWeight: 600, flexShrink: 0 }}>
-              {initial}
+          {/* Inner Scrollable Area */}
+          <div style={{
+            width: 276, height: '100%', backgroundColor: '#1A1A1A',
+            borderRight: '1px solid rgba(197,143,59,0.14)',
+            display: 'flex', flexDirection: 'column', overflowY: 'auto'
+          }}>
+            <div style={{ padding: '20px 20px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img src="/sabbath-logo.png" alt="Sabbath Logo" style={{ width: 72, height: 72, objectFit: 'contain' }} />
             </div>
-            <div style={{ overflow: 'hidden' }}>
-              <div style={{ fontSize: 13, fontWeight: 500, color: '#F3E9E0', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {userEmail ?? 'Staff'}
+
+            <div style={{ height: 1, margin: '0 20px', backgroundColor: 'rgba(197,143,59,0.18)' }} />
+
+            <div style={{ padding: '14px 20px 6px', fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(197,143,59,0.55)' }}>
+              Navigation
+            </div>
+
+            <nav style={{ padding: '4px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {NAV_MAIN.map(item => (
+                <Link key={item.href} href={item.href} className={`sb-item${isActive(item.href) ? ' active' : ''}`}>
+                  <span style={{ flexShrink: 0 }}>{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+
+            <div style={{ flex: 1 }} />
+            <div style={{ height: 1, margin: '0 20px', backgroundColor: 'rgba(197,143,59,0.18)' }} />
+
+            <nav style={{ padding: '8px 10px 4px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {NAV_BOTTOM.map(item => (
+                <Link key={item.href} href={item.href} className={`sb-item${isActive(item.href) ? ' active' : ''}`}>
+                  <span style={{ flexShrink: 0 }}>{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+              <button onClick={signOut} className="sb-signout">
+                <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                  <path d="M13 3h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                  <path d="M9 14l4-4-4-4M13 10H3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Sign out
+              </button>
+            </nav>
+
+            <div style={{ margin: '10px 14px 16px', padding: '12px 14px', backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.16)', borderRadius: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', backgroundColor: '#C58F3B', color: '#1A1A1A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 16, fontWeight: 600, flexShrink: 0 }}>
+                {initial}
               </div>
-              <div style={{ fontSize: 10, color: 'rgba(197,143,59,0.65)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Logged in
+              <div style={{ overflow: 'hidden' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#F3E9E0', lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {userEmail ?? 'Staff'}
+                </div>
+                <div style={{ fontSize: 10, color: 'rgba(197,143,59,0.65)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  Logged in
+                </div>
               </div>
             </div>
           </div>
+
+          {/* ── ATTACHED TOGGLE HANDLE ── */}
+          <button
+            className="desktop-toggle-btn"
+            onClick={() => setIsSidebarOpen(v => !v)}
+            style={{
+              position: 'absolute',
+              top: '24px',
+              right: '-28px', // Sticks out past the edge of the sidebar!
+              width: '28px',
+              height: '48px',
+              backgroundColor: '#1A1A1A',
+              border: '1px solid rgba(197,143,59,0.28)',
+              borderLeft: 'none',
+              borderRadius: '0 8px 8px 0',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '4px 0 15px rgba(0,0,0,0.05)',
+              zIndex: 50
+            }}
+            title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+          >
+            <svg
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: isSidebarOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.3s ease' }}
+            >
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </button>
         </aside>
 
         {/* ── MAIN AREA ───────────────────────────────────── */}
@@ -308,7 +290,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             display: 'flex',
             flexDirection: 'column',
             minHeight: '100vh',
-            backgroundColor: '#F9F4EB',  // Sabbath Beige
+            backgroundColor: '#F9F4EB',
             backgroundImage: 'none',
           }}
         >
@@ -324,8 +306,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             backdropFilter: 'blur(10px)',
             borderBottom: '1px solid rgba(197,143,59,0.14)',
           }}>
-
-            {/* Mobile menu toggle */}
             <button
               className="mob-menu-btn"
               onClick={() => setMobileOpen(v => !v)}
@@ -337,27 +317,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </svg>
             </button>
 
-            {/* Desktop Sidebar Toggle (Gold Sidebar Icon) */}
-            <button
-              className="desktop-toggle-btn"
-              onClick={() => setIsSidebarOpen(v => !v)}
-              style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, border: '1px solid rgba(197,143,59,0.28)', borderRadius: 8, backgroundColor: 'transparent', color: '#1A1A1A', cursor: 'pointer', flexShrink: 0 }}
-              aria-label="Toggle sidebar"
-              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="9" y1="3" x2="9" y2="21"></line>
-              </svg>
-            </button>
-
-            {/* Page title */}
             <h1 style={{ flex: 1, fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.3rem,2.5vw,1.8rem)', fontWeight: 400, color: '#1A1A1A', margin: 0, letterSpacing: '0.01em' }}>
               {NAV_MAIN.find(i => isActive(i.href))?.label ?? 'Dashboard'}
             </h1>
           </header>
 
-          {/* Page content: maxWidth set to 100% to allow full expansion when sidebar is hidden! */}
           <main style={{ flex: 1, padding: '32px', maxWidth: '100%', width: '100%' }}>
             {children}
           </main>
