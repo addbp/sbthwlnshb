@@ -2,7 +2,7 @@
 
 // app/dashboard/layout.tsx
 // Dashboard Shell — Black sidebar (#1A1A1A) · Beige content area (#F9F4EB)
-// Upgraded: Attached Handle Toggle Button for smooth sliding
+// Upgraded: Attached Handle Toggle Button + Replaced Settings with Audit Logs
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -81,14 +81,17 @@ const NAV_MAIN = [
   },
 ]
 
+// ─── BOTTOM NAV REPLACED SETTINGS WITH AUDIT ───
 const NAV_BOTTOM = [
   {
-    href: '/dashboard/settings',
-    label: 'Settings',
+    href: '/dashboard/audit',
+    label: 'Audit Logs',
     icon: (
-      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="2.5" stroke="#C58F3B" strokeWidth="1.5" />
-        <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="#C58F3B" strokeWidth="1.3" strokeLinecap="round" />
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+        <circle cx="12" cy="14" r="3"></circle>
+        <path d="M12 11v-1"></path>
       </svg>
     ),
   },
@@ -318,7 +321,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </button>
 
             <h1 style={{ flex: 1, fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.3rem,2.5vw,1.8rem)', fontWeight: 400, color: '#1A1A1A', margin: 0, letterSpacing: '0.01em' }}>
-              {NAV_MAIN.find(i => isActive(i.href))?.label ?? 'Dashboard'}
+              {NAV_MAIN.find(i => isActive(i.href))?.label ??
+                NAV_BOTTOM.find(i => isActive(i.href))?.label ?? 'Dashboard'}
             </h1>
           </header>
 
