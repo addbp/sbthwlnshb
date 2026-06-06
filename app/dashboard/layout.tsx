@@ -3,6 +3,7 @@
 // app/dashboard/layout.tsx
 // Dashboard Shell — Black sidebar (#1A1A1A) · Beige content area (#F9F4EB)
 // Tablet-first · Gold icons · Supabase sign-out
+// Upgraded: Collapsible Desktop Sidebar for Full-Screen POS View
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -101,7 +102,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+
+  // State for responsive toggles
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true) // Desktop toggle
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
   useEffect(() => {
@@ -182,17 +186,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           backdrop-filter:blur(3px); z-index:38;
         }
 
+        /* LAYOUT TRANSITIONS */
+        .sidebar {
+          transition: transform 300ms cubic-bezier(0.22,1,0.36,1);
+        }
+        .dashboard-main {
+          transition: margin-left 300ms cubic-bezier(0.22,1,0.36,1);
+        }
+
+        /* DESKTOP STYLES (>= 768px) */
         @media (min-width:768px) {
           .mob-menu-btn { display:none !important; }
-          .sidebar      { transform:translateX(0) !important; }
+          .desktop-toggle-btn { display:flex !important; }
+          
+          /* Dynamic Sidebar Positioning */
+          .app-wrapper.desktop-open .sidebar { transform: translateX(0); }
+          .app-wrapper.desktop-open .dashboard-main { margin-left: 276px; }
+
+          .app-wrapper.desktop-closed .sidebar { transform: translateX(-276px); }
+          .app-wrapper.desktop-closed .dashboard-main { margin-left: 0; }
         }
+
+        /* MOBILE STYLES (< 768px) */
         @media (max-width:767px) {
           .dashboard-main { margin-left:0 !important; }
           .dashboard-header { padding-left:16px !important; }
+          .desktop-toggle-btn { display:none !important; }
+
+          /* Dynamic Mobile Positioning */
+          .app-wrapper:not(.mob-open) .sidebar { transform: translateX(-100%); }
+          .app-wrapper.mob-open .sidebar { transform: translateX(0); }
         }
       `}</style>
 
-      <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F9F4EB' }}>
+      {/* DYNAMIC WRAPPER: Handles CSS classes based on state to prevent inline style conflict */}
+      <div className={`app-wrapper ${isSidebarOpen ? 'desktop-open' : 'desktop-closed'} ${mobileOpen ? 'mob-open' : ''}`} style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F9F4EB' }}>
 
         {/* Mobile overlay */}
         {mobileOpen && (
@@ -213,8 +241,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             flexDirection: 'column',
             zIndex: 40,
             overflowY: 'auto',
-            transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
-            transition: 'transform 300ms cubic-bezier(0.22,1,0.36,1)',
           }}
         >
           {/* Brand — logo only */}
@@ -278,7 +304,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div
           className="dashboard-main"
           style={{
-            marginLeft: 276,
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -299,6 +324,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             backdropFilter: 'blur(10px)',
             borderBottom: '1px solid rgba(197,143,59,0.14)',
           }}>
+
             {/* Mobile menu toggle */}
             <button
               className="mob-menu-btn"
@@ -311,14 +337,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </svg>
             </button>
 
+            {/* Desktop Sidebar Toggle (Gold Sidebar Icon) */}
+            <button
+              className="desktop-toggle-btn"
+              onClick={() => setIsSidebarOpen(v => !v)}
+              style={{ display: 'none', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, border: '1px solid rgba(197,143,59,0.28)', borderRadius: 8, backgroundColor: 'transparent', color: '#1A1A1A', cursor: 'pointer', flexShrink: 0 }}
+              aria-label="Toggle sidebar"
+              title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="3" x2="9" y2="21"></line>
+              </svg>
+            </button>
+
             {/* Page title */}
             <h1 style={{ flex: 1, fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 'clamp(1.3rem,2.5vw,1.8rem)', fontWeight: 400, color: '#1A1A1A', margin: 0, letterSpacing: '0.01em' }}>
               {NAV_MAIN.find(i => isActive(i.href))?.label ?? 'Dashboard'}
             </h1>
           </header>
 
-          {/* Page content */}
-          <main style={{ flex: 1, padding: '32px', maxWidth: 1400, width: '100%' }}>
+          {/* Page content: maxWidth set to 100% to allow full expansion when sidebar is hidden! */}
+          <main style={{ flex: 1, padding: '32px', maxWidth: '100%', width: '100%' }}>
             {children}
           </main>
         </div>
