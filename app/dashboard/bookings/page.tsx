@@ -2,7 +2,7 @@
 
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
-// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
+// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export w/ All Time & Min Date
 
 export const dynamic = 'force-dynamic'
 
@@ -97,6 +97,7 @@ export default function DashboardBookings() {
 
   // CSV Export Modal State
   const [showExportModal, setShowExportModal] = useState(false)
+  const [exportMode, setExportMode] = useState<'ALL' | 'RANGE'>('ALL')
   const [exportDateRange, setExportDateRange] = useState({ start: '', end: '' })
 
   // ─── LIMITLESS OMNI-FETCHER (MERGES BOTH TABLES) ───
@@ -244,12 +245,16 @@ export default function DashboardBookings() {
     setShowModal(true);
   }
 
-  // ─── CSV EXPORT LOGIC WITH DATE RANGE ───
+  // ─── CSV EXPORT LOGIC WITH EXPLICIT OPTIONS ───
   const confirmCSVExport = () => {
     let dataToExport = filteredRecords;
 
-    // Apply Date Range Filter if set
-    if (exportDateRange.start && exportDateRange.end) {
+    if (exportMode === 'RANGE') {
+      if (!exportDateRange.start || !exportDateRange.end) {
+        alert("Please select both a Start Date and an End Date.");
+        return;
+      }
+
       const startDate = new Date(exportDateRange.start);
       startDate.setHours(0, 0, 0, 0);
       const endDate = new Date(exportDateRange.end);
@@ -281,7 +286,7 @@ export default function DashboardBookings() {
     link.click();
     document.body.removeChild(link);
 
-    setShowExportModal(false); // Close modal on success
+    setShowExportModal(false);
   }
 
   return (
@@ -367,13 +372,8 @@ export default function DashboardBookings() {
                     <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(record.amount)}</td>
                     <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)' }}>{record.payment_method}</td>
                     <td style={{ padding: '16px 20px' }}>
-                      {/* FIX: inline-block and nowrap applied here to prevent awkward background wrapping */}
-                      <span style={{
-                        display: 'inline-block', whiteSpace: 'nowrap',
-                        backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)',
-                        color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B',
-                        padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em'
-                      }}>
+                      {/* FIXED ALIGNMENT */}
+                      <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
                         {record.customer_type}
                       </span>
                     </td>
@@ -405,7 +405,6 @@ export default function DashboardBookings() {
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
             <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
-              {/* Modal Header */}
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
                   <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>CLIENT PROFILE</p>
@@ -414,7 +413,6 @@ export default function DashboardBookings() {
                 <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
               </div>
 
-              {/* Client Stats Summary */}
               <div style={{ display: 'flex', gap: '20px', padding: '20px 30px', backgroundColor: WHITE, borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
                 <div style={{ flex: 1, padding: '16px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: '12px', border: '1px solid rgba(197,143,59,0.1)' }}>
                   <p style={{ fontSize: '10px', fontWeight: 700, color: GOLD, letterSpacing: '0.1em', margin: '0 0 8px 0' }}>TOTAL VISITS</p>
@@ -428,7 +426,6 @@ export default function DashboardBookings() {
                 </div>
               </div>
 
-              {/* History Table */}
               <div style={{ overflowY: 'auto', padding: '0 30px 30px 30px' }}>
                 <h3 style={{ fontSize: '14px', fontWeight: 700, color: BLACK, marginBottom: '16px', marginTop: '20px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Service History</h3>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
@@ -464,21 +461,36 @@ export default function DashboardBookings() {
 
               <h2 style={{ fontFamily: DSP, fontSize: '24px', color: BLACK, margin: '0 0 16px 0' }}>Export CSV</h2>
               <p style={{ fontSize: '13px', color: '#666', marginBottom: '24px', lineHeight: 1.5 }}>
-                Select a specific date range to download. Leave the dates blank to download all currently visible records.
+                Choose how much data you want to download from your ledger.
               </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>START DATE</label>
-                  <input type="date" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', fontFamily: BODY, outline: 'none' }} />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>END DATE</label>
-                  <input type="date" value={exportDateRange.end} onChange={e => setExportDateRange({ ...exportDateRange, end: e.target.value })} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', fontFamily: BODY, outline: 'none' }} />
-                </div>
+              {/* Explicit Export Mode Selection */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
+                  <input type="radio" checked={exportMode === 'ALL'} onChange={() => setExportMode('ALL')} style={{ accentColor: GOLD, width: '18px', height: '18px' }} />
+                  All Time Data
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
+                  <input type="radio" checked={exportMode === 'RANGE'} onChange={() => setExportMode('RANGE')} style={{ accentColor: GOLD, width: '18px', height: '18px' }} />
+                  Filter by Date Range
+                </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              {exportMode === 'RANGE' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px', padding: '16px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.05)' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>START DATE</label>
+                    {/* min="2025-05-01" added to restrict historical fetch appropriately */}
+                    <input type="date" min="2025-05-01" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>END DATE</label>
+                    <input type="date" min="2025-05-01" value={exportDateRange.end} onChange={e => setExportDateRange({ ...exportDateRange, end: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: exportMode === 'ALL' ? '30px' : '10px' }}>
                 <button onClick={() => setShowExportModal(false)} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: 'none', color: '#666', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                 <button onClick={confirmCSVExport} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Download Data</button>
               </div>
