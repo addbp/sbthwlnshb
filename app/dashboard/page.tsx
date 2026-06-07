@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 30: Omni-Synced Overview POS (Connected Time Slots, Extensions, and Staff Availability)
+// Phase 31: Omni-Synced Overview POS (Added Explicit User Tracking for Audit Logs)
 
 export const dynamic = 'force-dynamic'
 
@@ -25,7 +25,7 @@ const DSP = "'Cormorant Garamond', Georgia, serif"
 const ALL_TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
-  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM', '1:00 AM'
+  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
 ];
 
 // ─── UTILITIES ───
@@ -105,6 +105,9 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
+  // NEW: Store the active user's email to pass to the Audit Log
+  const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
+
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
   const [dailyBookings, setDailyBookings] = useState<LiveBooking[]>([])
   const [staffList, setStaffList] = useState<StaffMember[]>([])
@@ -118,6 +121,13 @@ export default function OverviewDashboard() {
   const fetchEverything = useCallback(async () => {
     setLoading(true);
     try {
+      // 1. Fetch current logged-in user for Audit Trail
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email) {
+        setCurrentUserEmail(user.email);
+      }
+
+      // 2. Fetch all table data
       const fetchUnlimited = async (tableName: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allRecords: any[] = [];
@@ -246,7 +256,7 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DATABASE UPDATES ───
+  // ─── SMART DATABASE UPDATES (WITH AUDIT TRAIL) ───
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string) => {
     const booking = allBookings.find(b => b.id === id);
@@ -259,7 +269,11 @@ export default function OverviewDashboard() {
       const idField = booking.source === 'live' ? 'booking_id' : 'id';
       const actualDbField = dbFieldOverride || field;
 
-      const { error } = await supabase.from(table).update({ [actualDbField]: value }).eq(idField, booking.rawId);
+      const { error } = await supabase.from(table).update({
+        [actualDbField]: value,
+        receptionist_track: currentUserEmail // <--- explicitly passes who is making the change
+      }).eq(idField, booking.rawId);
+
       if (error) {
         console.warn(`Could not save ${field}.`, error);
       }
@@ -391,7 +405,7 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* Time & Client (EDITABLE TIME DROPDOWN) */}
+                        {/* Time & Client */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <select
                             value={b.time}
@@ -405,7 +419,7 @@ export default function OverviewDashboard() {
                           <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4 }}>{b.client}</span>
                         </td>
 
-                        {/* Service & Notes (EDITABLE TEXTAREA FOR CONTINUOUS EXTENSION) */}
+                        {/* Service & Notes */}
                         <td style={{ padding: '16px 12px' }}>
                           <textarea
                             value={b.service}
@@ -429,7 +443,7 @@ export default function OverviewDashboard() {
                           </select>
                         </td>
 
-                        {/* Amount (Financials - EDITABLE FOR EXTENSIONS) */}
+                        {/* Amount */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
