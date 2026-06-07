@@ -101,15 +101,14 @@ export default function WaiverPage() {
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
   const [agreed, setAgreed] = useState(false)
 
-  // --- BACKED OFF DIGITAL SIGNATURE STATES ---
-  /* 
-  const [signature, setSignature] = useState('') 
+  // --- BACKED OFF DIGITAL SIGNATURE STATES (PRESERVED INTACT) ---
+  /* const [signature, setSignature] = useState('') 
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   */
 
-  // --- NEW PHYSICAL PHOTO STATES ---
+  // --- NEW PHYSICAL GOOGLE DRIVE PHOTO STATES ---
   const [photoAttachment, setPhotoAttachment] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>('')
 
@@ -135,7 +134,7 @@ export default function WaiverPage() {
 
   const normalizedInput = currentFullName.toLowerCase()
 
-  // --- BACKED OFF CANVAS USEEFFECT ---
+  // --- BACKED OFF CANVAS SIGNING HOOK (PRESERVED INTACT) ---
   /*
   useEffect(() => {
     if (showSignatureModal && canvasRef.current) {
@@ -284,7 +283,7 @@ export default function WaiverPage() {
     })
   }
 
-  // --- BACKED OFF DRAWING LOGIC ---
+  // --- BACKED OFF CANVAS DRAWING CORE INTERFACES (PRESERVED INTACT) ---
   /*
   const getCoords = (e: any, rect: DOMRect) => {
     const isTouch = e.touches && e.touches.length > 0
@@ -339,33 +338,38 @@ export default function WaiverPage() {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) return alert("Please fill out your first and last name completely.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
-
-    // Check for photo attachment instead of digital signature
     if (!photoAttachment) return alert("Please attach a photo of the signed physical waiver.")
-    // if (!signature) return alert("Please draw your signature.") // Backed off 
 
     setLoading(true)
     try {
-      let photoUrl = '';
+
+      // 1. Upload Photo to Backend Google Drive Route
+      let driveViewingUrl = '';
       if (photoAttachment) {
-        const fileExt = photoAttachment.name.split('.').pop();
-        const safeName = currentFullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        const filePath = `${safeName}-${Date.now()}.${fileExt}`;
+        const payloadData = new FormData();
+        payloadData.append('file', photoAttachment);
+        payloadData.append('clientName', currentFullName);
 
-        const { error: uploadError } = await supabase.storage.from('waivers').upload(filePath, photoAttachment);
-        if (uploadError) throw new Error("Failed to upload physical waiver photo. Please ensure 'waivers' storage bucket is public. Details: " + uploadError.message);
+        const driveTransferResponse = await fetch('/api/upload-drive', {
+          method: 'POST',
+          body: payloadData,
+        });
 
-        const { data: { publicUrl } } = supabase.storage.from('waivers').getPublicUrl(filePath);
-        photoUrl = publicUrl;
+        const driveResult = await driveTransferResponse.json();
+        if (!driveTransferResponse.ok) {
+          throw new Error(driveResult.error || "Google Infrastructure Upload Refused");
+        }
+
+        driveViewingUrl = driveResult.url; // Google Drive Web View URL Link
       }
 
+      // 2. Insert Record log into Supabase
       const { error } = await supabase.from('waivers').insert({
         id: crypto.randomUUID(),
         client_name: currentFullName,
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
-        // signature: signature, // Backed off
-        photo_attachment_url: photoUrl, // New Photo Column
+        photo_attachment_url: driveViewingUrl, // Stores direct Google link!
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -392,7 +396,6 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        /* .signature-modal { position: fixed; inset: 0; background-color: ${BG}; z-index: 9999; display: flex; flex-direction: column; } */
       `}</style>
 
       {/* ── HISTORY MODAL ── */}
@@ -415,16 +418,15 @@ export default function WaiverPage() {
         </div>
       )}
 
-      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL ── */}
-      {/* 
-      {showSignatureModal && (
+      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL CANVAS (PRESERVED INTACT) ── */}
+      {/* {showSignatureModal && (
         <div className="signature-modal">
           <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
             <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Please Draw Your Signature</h3>
             <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
           </div>
 
-          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: \`2px dashed \${GOLD}\`, overflow: 'hidden' }}>
+          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed \${GOLD}`, overflow: 'hidden' }}>
             <canvas
               ref={canvasRef}
               onMouseDown={startDrawing}
@@ -612,7 +614,7 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* --- BACKED OFF DIGITAL SIGNATURE UI --- */}
+            {/* --- BACKED OFF DIGITAL SIGNATURE CANVAS UI BLOCK --- */}
             {/*
             <Section title="Signature & Date" note="Please sign and verify the date">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -627,7 +629,7 @@ export default function WaiverPage() {
                       </div>
                     </div>
                   ) : (
-                    <button type="button" onClick={() => setShowSignatureModal(true)} style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: \`2px dashed \${GOLD}\`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
+                    <button type="button" onClick={() => setShowSignatureModal(true)} style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed \${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
                     </button>
                   )}
@@ -640,7 +642,7 @@ export default function WaiverPage() {
             </Section>
             */}
 
-            {/* --- NEW PHYSICAL WAIVER ATTACHMENT UI --- */}
+            {/* --- NEW PHYSICAL WAIVER IMAGE CAPTURE UI --- */}
             <Section title="Physical Waiver Documentation" note="Please attach a clear photo of the signed physical paper waiver">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
