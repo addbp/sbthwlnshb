@@ -100,7 +100,19 @@ export default function WaiverPage() {
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(new Set())
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
   const [agreed, setAgreed] = useState(false)
-  const [signature, setSignature] = useState('')
+
+  // --- BACKED OFF DIGITAL SIGNATURE STATES ---
+  /* 
+  const [signature, setSignature] = useState('') 
+  const [showSignatureModal, setShowSignatureModal] = useState(false)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [isDrawing, setIsDrawing] = useState(false)
+  */
+
+  // --- NEW PHYSICAL PHOTO STATES ---
+  const [photoAttachment, setPhotoAttachment] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string>('')
+
   const [loading, setLoading] = useState(false)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -111,17 +123,11 @@ export default function WaiverPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
-  // Signature Canvas States
-  const [showSignatureModal, setShowSignatureModal] = useState(false)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-
   const autoCapitalize = (val: string) => {
     if (!val) return '';
     return val.charAt(0).toUpperCase() + val.slice(1);
   }
 
-  // Derived tracking calculations based on the structural split inputs
   const currentFullName = useMemo(() => {
     const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
     return `${firstName.trim()}${miStr} ${lastName.trim()}`.trim();
@@ -129,7 +135,8 @@ export default function WaiverPage() {
 
   const normalizedInput = currentFullName.toLowerCase()
 
-  // Initialize Canvas when the modal opens & lock background scrolling
+  // --- BACKED OFF CANVAS USEEFFECT ---
+  /*
   useEffect(() => {
     if (showSignatureModal && canvasRef.current) {
       const canvas = canvasRef.current
@@ -152,8 +159,8 @@ export default function WaiverPage() {
     }
     return () => { document.body.style.overflow = 'auto' }
   }, [showSignatureModal])
+  */
 
-  // ── UNLIMITED PAGINATION SCRAPER ──
   useEffect(() => {
     async function fetchAllRecords() {
       try {
@@ -229,14 +236,12 @@ export default function WaiverPage() {
   const isReturningClient = matchingHistory.length > 0
 
   const dropdownOptions = useMemo(() => {
-    // Search based on either typed first name or last name fields
     const searchString = (firstName.trim() || lastName.trim()).toLowerCase();
     if (!searchString || searchString.length < 2) return []
     const names = Array.from(new Set(allRecords.map(r => r.display_name)))
     return names.filter(n => n.toLowerCase().includes(searchString) && n.toLowerCase() !== normalizedInput).slice(0, 5)
   }, [allRecords, firstName, lastName, normalizedInput])
 
-  // Custom Split Logic to map selected Autocomplete string perfectly back to explicit states
   const handleSelectAutocompleteName = (fullName: string) => {
     const tokens = fullName.trim().split(/\s+/);
     if (tokens.length === 1) {
@@ -279,8 +284,8 @@ export default function WaiverPage() {
     })
   }
 
-  // ─── DRAWING LOGIC FOR MODAL ───
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // --- BACKED OFF DRAWING LOGIC ---
+  /*
   const getCoords = (e: any, rect: DOMRect) => {
     const isTouch = e.touches && e.touches.length > 0
     const clientX = isTouch ? e.touches[0].clientX : e.clientX
@@ -288,7 +293,6 @@ export default function WaiverPage() {
     return { x: clientX - rect.left, y: clientY - rect.top }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const startDrawing = (e: any) => {
     const canvas = canvasRef.current; if (!canvas) return
     const ctx = canvas.getContext('2d'); if (!ctx) return
@@ -296,7 +300,6 @@ export default function WaiverPage() {
     ctx.beginPath(); ctx.moveTo(x, y); setIsDrawing(true)
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const draw = (e: any) => {
     if (!isDrawing || !canvasRef.current) return
     const ctx = canvasRef.current.getContext('2d'); if (!ctx) return
@@ -304,9 +307,7 @@ export default function WaiverPage() {
     ctx.lineTo(x, y); ctx.stroke()
   }
 
-  const stopDrawing = () => {
-    setIsDrawing(false)
-  }
+  const stopDrawing = () => { setIsDrawing(false) }
 
   const handleClearCanvas = () => {
     const canvas = canvasRef.current
@@ -323,24 +324,48 @@ export default function WaiverPage() {
     setShowSignatureModal(false)
   }
 
-  const handleClearMainSignature = () => {
-    setSignature('')
+  const handleClearMainSignature = () => { setSignature('') }
+  */
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setPhotoAttachment(file);
+      setPhotoPreview(URL.createObjectURL(file));
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) return alert("Please fill out your first and last name completely.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
-    if (!signature) return alert("Please draw your signature.")
+
+    // Check for photo attachment instead of digital signature
+    if (!photoAttachment) return alert("Please attach a photo of the signed physical waiver.")
+    // if (!signature) return alert("Please draw your signature.") // Backed off 
 
     setLoading(true)
     try {
+      let photoUrl = '';
+      if (photoAttachment) {
+        const fileExt = photoAttachment.name.split('.').pop();
+        const safeName = currentFullName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const filePath = `${safeName}-${Date.now()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage.from('waivers').upload(filePath, photoAttachment);
+        if (uploadError) throw new Error("Failed to upload physical waiver photo. Please ensure 'waivers' storage bucket is public. Details: " + uploadError.message);
+
+        const { data: { publicUrl } } = supabase.storage.from('waivers').getPublicUrl(filePath);
+        photoUrl = publicUrl;
+      }
+
       const { error } = await supabase.from('waivers').insert({
         id: crypto.randomUUID(),
         client_name: currentFullName,
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
-        signature: signature,
+        // signature: signature, // Backed off
+        photo_attachment_url: photoUrl, // New Photo Column
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -367,7 +392,7 @@ export default function WaiverPage() {
         .wv-in:focus{border-color:${GOLD}!important;box-shadow:0 0 0 3px rgba(197,143,59,0.18)!important;}
         .dropdown-item:hover { background-color: rgba(197,143,59,0.08); color: ${GOLD}; }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        .signature-modal { position: fixed; inset: 0; background-color: ${BG}; z-index: 9999; display: flex; flex-direction: column; }
+        /* .signature-modal { position: fixed; inset: 0; background-color: ${BG}; z-index: 9999; display: flex; flex-direction: column; } */
       `}</style>
 
       {/* ── HISTORY MODAL ── */}
@@ -390,7 +415,8 @@ export default function WaiverPage() {
         </div>
       )}
 
-      {/* ── FULL SCREEN SIGNATURE MODAL ── */}
+      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL ── */}
+      {/* 
       {showSignatureModal && (
         <div className="signature-modal">
           <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
@@ -398,7 +424,7 @@ export default function WaiverPage() {
             <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
           </div>
 
-          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed ${GOLD}`, overflow: 'hidden' }}>
+          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: \`2px dashed \${GOLD}\`, overflow: 'hidden' }}>
             <canvas
               ref={canvasRef}
               onMouseDown={startDrawing}
@@ -408,28 +434,18 @@ export default function WaiverPage() {
               onTouchStart={startDrawing}
               onTouchMove={draw}
               onTouchEnd={stopDrawing}
-              style={{
-                width: '100%',
-                height: '100%',
-                cursor: 'crosshair',
-                touchAction: 'none'
-              }}
+              style={{ width: '100%', height: '100%', cursor: 'crosshair', touchAction: 'none' }}
             />
           </div>
 
           <div style={{ padding: '20px', display: 'flex', gap: 12, backgroundColor: WHITE, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>
-              Cancel
-            </button>
-            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>
-              Undo
-            </button>
-            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>
-              Save
-            </button>
+            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Undo</button>
+            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>Save</button>
           </div>
         </div>
       )}
+      */}
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -596,12 +612,13 @@ export default function WaiverPage() {
               </div>
             </Section>
 
+            {/* --- BACKED OFF DIGITAL SIGNATURE UI --- */}
+            {/*
             <Section title="Signature & Date" note="Please sign and verify the date">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
                   {signature ? (
                     <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={signature} alt="Client Signature" style={{ width: '100%', height: 160, objectFit: 'contain', display: 'block', backgroundColor: '#fafafa' }} />
                       <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
                         <button type="button" onClick={() => setShowSignatureModal(true)} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: BLACK }}>RE-SIGN</button>
@@ -610,18 +627,46 @@ export default function WaiverPage() {
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowSignatureModal(true)}
-                      style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed ${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}
-                    >
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth="1.5"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
+                    <button type="button" onClick={() => setShowSignatureModal(true)} style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: \`2px dashed \${GOLD}\`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
                       <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
                     </button>
                   )}
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
                   <label style={LABEL}>Date Signed</label>
+                  <div style={{ ...INPUT, backgroundColor: '#F0F0F0', display: 'flex', alignItems: 'center', color: 'rgba(0,0,0,0.5)', fontWeight: 600 }}>{today}</div>
+                </div>
+              </div>
+            </Section>
+            */}
+
+            {/* --- NEW PHYSICAL WAIVER ATTACHMENT UI --- */}
+            <Section title="Physical Waiver Documentation" note="Please attach a clear photo of the signed physical paper waiver">
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 350px' }}>
+                  {photoPreview ? (
+                    <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoPreview} alt="Physical Waiver Document" style={{ width: '100%', height: 160, objectFit: 'contain', display: 'block', backgroundColor: '#fafafa' }} />
+                      <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                        <label style={{ flex: 1, padding: '12px', textAlign: 'center', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: BLACK }}>
+                          CHANGE PHOTO
+                          <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                        </label>
+                        <div style={{ width: 1, backgroundColor: 'rgba(0,0,0,0.05)' }} />
+                        <button type="button" onClick={() => { setPhotoPreview(''); setPhotoAttachment(null); }} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#C83232' }}>REMOVE</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed ${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={GOLD} strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP TO ATTACH PHOTO</span>
+                      <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                    </label>
+                  )}
+                </div>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={LABEL}>Date Recorded</label>
                   <div style={{
                     ...INPUT,
                     backgroundColor: '#F0F0F0',
@@ -650,7 +695,7 @@ export default function WaiverPage() {
                 cursor: 'pointer'
               }}
             >
-              {loading ? 'Processing...' : 'Confirm & Sign'}
+              {loading ? 'Processing...' : 'Securely File Document'}
             </button>
           </form>
         </div>

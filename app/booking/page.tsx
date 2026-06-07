@@ -559,6 +559,21 @@ export default function BookingPage() {
     });
   }
 
+  // ─── DYNAMIC THERAPIST STATUS GENERATOR ───
+  const getTherapistStatus = (t: Therapist) => {
+    if (time) {
+      const isConflict = dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
+      if (isConflict) return ` (Booked at ${time})`;
+    }
+    return t.status ? ` (${t.status})` : '';
+  }
+
+  const isTherapistDisabled = (t: Therapist) => {
+    if (time) {
+      return dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
+    }
+    return false;
+  }
 
   // ─── STRICT VALIDATION TO PREVENT UNAVAILABLE SUBMISSIONS ───
   const selectedSlot = availableSlots.find(s => s.time === time);
@@ -911,7 +926,11 @@ export default function BookingPage() {
                 <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a staff member..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
                   <option value="">Any Available Staff / No Preference</option>
-                  {filteredTherapists.map(t => <option key={t.id} value={t.id}>{t.name}{t.status ? ` (${t.status})` : ''}</option>)}
+                  {filteredTherapists.map(t => (
+                    <option key={t.id} value={t.id} disabled={isTherapistDisabled(t)}>
+                      {t.name}{getTherapistStatus(t)}
+                    </option>
+                  ))}
                 </select>
                 {selectedServices.length > 0 && (
                   <p style={{ fontSize: 11, color: '#666', fontStyle: 'italic', marginTop: 8, marginBottom: 0 }}>
