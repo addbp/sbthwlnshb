@@ -1,14 +1,14 @@
 'use client'
 
 // app/page.tsx
-// Sabbath Wellness — Luxury 2x2 Grid Kiosk
+// Sabbath Wellness — Luxury 2x2 Grid Kiosk (5 Items)
 // Light spa background (#F9F4EB) · /sabbath-logo.png · Dark charcoal text
 
 import Image from 'next/image'
 import Link from 'next/link'
 
 // ─────────────────────────────────────────────────────────────
-// NAV ITEMS
+// NAV ITEMS (UPDATED ORDER)
 // ─────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   {
@@ -42,6 +42,14 @@ const NAV_ITEMS = [
     desc: 'Order coffee, pasta & pastries to your room',
     icon: <IconCafe />,
     external: true,
+  },
+  {
+    key: 'staff',
+    href: '/login',
+    title: 'Staff Portal',
+    desc: 'Management dashboard · Schedules · Client records',
+    icon: <IconDashboard />,
+    external: false,
   },
 ] as const
 
@@ -87,6 +95,17 @@ function IconCafe() {
   )
 }
 
+function IconDashboard() {
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
+      <rect x="14" y="1" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
+      <rect x="14" y="14" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
+      <rect x="1" y="14" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────
 // PAGE
 // ─────────────────────────────────────────────────────────────
@@ -122,6 +141,7 @@ export default function Home() {
         .anim-nav-1   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 480ms both; }
         .anim-nav-2   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 560ms both; }
         .anim-nav-3   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 640ms both; }
+        .anim-nav-4   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 720ms both; }
         .anim-footer  { animation: dissolve  800ms ease                        820ms both; }
 
         /* ── Modern 2x2 Grid Layout ── */
@@ -137,6 +157,12 @@ export default function Home() {
           .nav-grid {
             grid-template-columns: 1fr 1fr;
             gap: 24px;
+          }
+          /* 5th item spans full width but is visually centered */
+          .fifth-card {
+            grid-column: 1 / -1;
+            justify-self: center;
+            width: calc(50% - 12px);
           }
         }
 
@@ -208,7 +234,6 @@ export default function Home() {
         WebkitFontSmoothing: 'antialiased',
       }}>
 
-        {/* max-w-4xl centered container to accommodate grid */}
         <div style={{
           width: '100%', maxWidth: 880,
           display: 'flex', flexDirection: 'column',
@@ -248,7 +273,8 @@ export default function Home() {
           {/* ══ NAVIGATION GRID ══ */}
           <nav className="nav-grid" aria-label="Main navigation">
             {NAV_ITEMS.map((item, i) => {
-              const cardClass = `nav-card anim-nav-${i}`
+              const isFifth = i === 4;
+              const cardClass = `nav-card anim-nav-${i} ${isFifth ? 'fifth-card' : ''}`
 
               const CardContent = () => (
                 <>
