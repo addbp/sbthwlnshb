@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/clients/page.tsx
-// Unified Ledger: Client Directory + Therapist Commission Calendar (Fixed Display)
+// Unified Ledger: Client Directory + Therapist Commission Calendar (Strict "Completed" Tracking)
 
 export const dynamic = 'force-dynamic'
 
@@ -108,12 +108,12 @@ export default function ClientsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allMemberships: any[] = []
 
-    // 1. Fetch HISTORICAL Bookings
+    // 1. Fetch HISTORICAL Bookings (Included 'status')
     let fromHist = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings_import')
-        .select('date, client_name, service, received_payment, service_amount, therapist, discount_pct, therapist_comm_pct')
+        .select('date, client_name, service, received_payment, service_amount, therapist, discount_pct, therapist_comm_pct, status')
         .range(fromHist, fromHist + PAGE - 1)
       if (error || !data || data.length === 0) break
       allBookings.push(...data)
@@ -121,12 +121,12 @@ export default function ClientsPage() {
       fromHist += PAGE
     }
 
-    // 2. Fetch LIVE Bookings
+    // 2. Fetch LIVE Bookings (Included 'status')
     let fromLive = 0
     for (; ;) {
       const { data, error } = await supabase
         .from('bookings')
-        .select('appointment_date, created_at, client_name, service_name, service, price, amount, received_payment, therapist_name, therapist, discount_pct, therapist_comm_pct')
+        .select('appointment_date, created_at, client_name, service_name, service, price, amount, received_payment, therapist_name, therapist, discount_pct, therapist_comm_pct, status')
         .range(fromLive, fromLive + PAGE - 1)
       if (error || !data || data.length === 0) break
       allBookings.push(...data)
@@ -178,10 +178,12 @@ export default function ClientsPage() {
       const commission = net * (commPct / 100)
       const therapist = String(r.therapist_name || r.therapist || 'Unassigned').toUpperCase()
       const svcName = r.service || r.service_name || 'Massage Service'
+      const bookingStatus = String(r.status || 'Completed').toUpperCase()
 
       const name = r.client_name || r.name || 'Guest'
 
-      if (name.toLowerCase() !== 'guest' && name !== '—') {
+      // STRICTLY TRACK ONLY COMPLETED VISITS FOR CLIENT PROFILE
+      if (name.toLowerCase() !== 'guest' && name !== '—' && bookingStatus === 'COMPLETED') {
         const client = getClient(name)
         client.totalVisits += 1
         client.totalSpend += rev
@@ -191,8 +193,8 @@ export default function ClientsPage() {
         }
       }
 
-      // ─── FIXED: ALWAYS TRACK CALENDAR DATA IF A THERAPIST IS ASSIGNED ───
-      if (dateStr && therapist !== 'UNASSIGNED' && therapist !== '—') {
+      // STRICTLY TRACK ONLY COMPLETED APPOINTMENTS FOR COMMISSION
+      if (bookingStatus === 'COMPLETED' && dateStr && therapist !== 'UNASSIGNED' && therapist !== '—') {
         commArray.push({ dateStr, therapist, net, commission, client: name, service: svcName })
       }
     })
@@ -372,7 +374,7 @@ export default function ClientsPage() {
             </div>
             <div style={{ padding: '30px', overflowY: 'auto' }}>
               {selectedDateCommissions.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#666', fontStyle: 'italic' }}>No commissions were recorded on this date.</div>
+                <div style={{ textAlign: 'center', padding: '40px', color: '#666', fontStyle: 'italic' }}>No completed sessions recorded for this date.</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
                   <thead>
