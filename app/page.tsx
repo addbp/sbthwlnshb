@@ -12,14 +12,6 @@ import Link from 'next/link'
 // ─────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   {
-    key: 'staff',
-    href: '/login',
-    title: 'Staff Portal',
-    desc: 'Management dashboard · Schedules · Client records',
-    icon: <IconDashboard />,
-    external: false,
-  },
-  {
     key: 'booking',
     href: '/booking',
     title: 'Book a Session',
@@ -56,17 +48,6 @@ const NAV_ITEMS = [
 // ─────────────────────────────────────────────────────────────
 // ICONS — gold fill/stroke on light background
 // ─────────────────────────────────────────────────────────────
-function IconDashboard() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <rect x="1" y="1" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
-      <rect x="14" y="1" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
-      <rect x="14" y="14" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
-      <rect x="1" y="14" width="9" height="9" rx="2" stroke="#C58F3B" strokeWidth="1.6" />
-    </svg>
-  )
-}
-
 function IconCalendar() {
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
@@ -137,12 +118,10 @@ export default function Home() {
 
         .anim-logo    { animation: slideDown 680ms cubic-bezier(0.22,1,0.36,1) 60ms  both; }
         .anim-tagline { animation: dissolve  700ms ease                        240ms both; }
-        .anim-divider { animation: dissolve  600ms ease                        340ms both; }
         .anim-nav-0   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 400ms both; }
         .anim-nav-1   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 480ms both; }
         .anim-nav-2   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 560ms both; }
         .anim-nav-3   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 640ms both; }
-        .anim-nav-4   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 720ms both; }
         .anim-footer  { animation: dissolve  800ms ease                        820ms both; }
 
         /* ── Modern 2x2 Grid Layout ── */
@@ -158,12 +137,6 @@ export default function Home() {
           .nav-grid {
             grid-template-columns: 1fr 1fr;
             gap: 24px;
-          }
-          /* Sabasu spans full width but is visually centered */
-          .sabasu-card {
-            grid-column: 1 / -1;
-            justify-self: center;
-            width: calc(50% - 12px);
           }
         }
 
@@ -243,7 +216,7 @@ export default function Home() {
         }}>
 
           {/* ══ LOGO ══ */}
-          <div className="anim-logo" style={{ marginBottom: 28 }}>
+          <div className="anim-logo" style={{ marginBottom: 16 }}>
             <Image
               src="/sabbath-logo.png"
               alt="Sabbath Spa & Wellness Hub"
@@ -259,26 +232,14 @@ export default function Home() {
             />
           </div>
 
-          {/* ══ TITLE & TAGLINE ══ */}
-          <h1 className="anim-tagline" style={{
-            fontFamily: "'Cormorant Garamond', Georgia, serif",
-            fontSize: 'clamp(2rem, 4.5vw, 3rem)',
-            fontWeight: 400,
-            color: '#1A1A1A',
-            margin: '0 0 8px',
-            textAlign: 'center',
-            lineHeight: 1.1,
-          }}>
-            Sabbath Spa & Wellness Hub
-          </h1>
-
+          {/* ══ TAGLINE ONLY ══ */}
           <p className="anim-tagline" style={{
             fontSize: 'clamp(0.65rem, 1.2vw, 0.75rem)',
             fontWeight: 700,
             letterSpacing: '0.25em',
             textTransform: 'uppercase',
             color: '#C58F3B',
-            margin: '0 0 34px',
+            margin: '0 0 48px',
             textAlign: 'center',
           }}>
             Digital Operations Portal
@@ -287,7 +248,7 @@ export default function Home() {
           {/* ══ NAVIGATION GRID ══ */}
           <nav className="nav-grid" aria-label="Main navigation">
             {NAV_ITEMS.map((item, i) => {
-              const cardClass = `nav-card anim-nav-${i} ${item.key === 'sabasu' ? 'sabasu-card' : ''}`
+              const cardClass = `nav-card anim-nav-${i}`
 
               const CardContent = () => (
                 <>
