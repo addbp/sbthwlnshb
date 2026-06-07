@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/clients/page.tsx
-// Unified Ledger: Client Directory + Therapist Commission Calendar
+// Unified Ledger: Client Directory + Therapist Commission Calendar (Fixed Display)
 
 export const dynamic = 'force-dynamic'
 
@@ -191,8 +191,8 @@ export default function ClientsPage() {
         }
       }
 
-      // Track Commission
-      if (commission > 0 && dateStr) {
+      // ─── FIXED: ALWAYS TRACK CALENDAR DATA IF A THERAPIST IS ASSIGNED ───
+      if (dateStr && therapist !== 'UNASSIGNED' && therapist !== '—') {
         commArray.push({ dateStr, therapist, net, commission, client: name, service: svcName })
       }
     })

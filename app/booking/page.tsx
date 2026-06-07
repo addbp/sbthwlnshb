@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 19 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (30-Min Interval Dropdown, Visual Availability Grid, Smart Overrides)
+// app/booking/page.tsx  —  Phase 20 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (12AM Max Cutoff, Disabled Booked Slots, Safe Select)
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +18,7 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// STRICT CUTOFF: 12:00 AM IS THE ABSOLUTE LATEST FOR ALL DAYS
 const MON_SAT_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -27,7 +28,7 @@ const MON_SAT_SLOTS = [
 const SUN_SLOTS = [
   '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM',
   '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
-  '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM', '1:00 AM'
+  '11:00 PM', '11:30 PM', '12:00 AM'
 ];
 
 const INPUT: React.CSSProperties = {
@@ -427,7 +428,6 @@ export default function BookingPage() {
     });
   }
 
-  // Filter out off-duty therapists for the selected date
   if (date) {
     const [y, m, d] = date.split('-').map(Number);
     const selectedDateObj = new Date(y, m - 1, d);
@@ -533,10 +533,8 @@ export default function BookingPage() {
       let isConflict = false;
       if (therapistId) {
         const tName = therapists.find(th => th.id === therapistId)?.name;
-        // Check if this specific therapist has an active booking at this time
         isConflict = dateBookings.some(b => b.appointment_time === t && b.therapist_name === tName);
       } else {
-        // If no specific therapist selected, check if ALL therapists are booked
         const bookedCount = dateBookings.filter(b => b.appointment_time === t).length;
         isConflict = (therapists.length > 0 && bookedCount >= therapists.length);
       }
@@ -551,6 +549,11 @@ export default function BookingPage() {
 
   }, [date, therapistId, dateBookings, therapists, getTodayStr]);
 
+
+  // ─── STRICT VALIDATION TO PREVENT UNAVAILABLE SUBMISSIONS ───
+  const selectedSlot = availableSlots.find(s => s.time === time);
+  const isTimeInvalid = !selectedSlot || !selectedSlot.available;
+
   const validation = {
     firstName: firstName.trim().length < 2,
     lastName: lastName.trim().length < 2,
@@ -558,7 +561,7 @@ export default function BookingPage() {
     email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    time: time === '',
+    time: time === '' || isTimeInvalid,
   }
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
@@ -566,7 +569,10 @@ export default function BookingPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
-    if (!isValid || loading) return
+    if (!isValid || loading) {
+      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. Please choose another time.");
+      return;
+    }
     setLoading(true); setSubmitError(null)
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
@@ -873,7 +879,7 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ─── NEW 30-MIN INTERVAL TIME DROPDOWN ─── */}
+                {/* ─── STRICT 30-MIN INTERVAL TIME DROPDOWN (DISABLED UNAVAILABLE SLOTS) ─── */}
                 <Field label="Preferred Time *">
                   <select
                     className="bk-in"
@@ -883,7 +889,7 @@ export default function BookingPage() {
                   >
                     <option value="">--:-- --</option>
                     {availableSlots.map(s => (
-                      <option key={s.time} value={s.time}>
+                      <option key={s.time} value={s.time} disabled={!s.available}>
                         {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
                       </option>
                     ))}
