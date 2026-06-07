@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 18 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Custom Native Time Picker, Smart Operating Hours, Conflict Checking)
+// app/booking/page.tsx  —  Phase 19 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (30-Min Interval Dropdown, Visual Availability Grid, Smart Overrides)
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef, FormEvent } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS
+// DESIGN TOKENS & TIME SLOTS
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -17,6 +17,18 @@ const GOLD = '#C58F3B'
 const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
+
+const MON_SAT_SLOTS = [
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
+  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
+  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
+];
+
+const SUN_SLOTS = [
+  '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM',
+  '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
+  '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM', '1:00 AM'
+];
 
 const INPUT: React.CSSProperties = {
   display: 'block', width: '100%', height: 54,
@@ -46,10 +58,10 @@ const LABEL: React.CSSProperties = {
 }
 
 // ─────────────────────────────────────────────────────────────
-// TYPES & CONSTANTS
+// TYPES
 // ─────────────────────────────────────────────────────────────
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string; savings?: string }
-interface Therapist { id: string; name: string; status: string; role: string }
+interface Therapist { id: string; name: string; status: string; role: string; off_days?: string[] }
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
@@ -101,7 +113,6 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       )}
       <span style={{ fontSize: 14, fontWeight: 600, color: selected ? BLACK : 'rgba(26,26,26,0.75)', fontFamily: BODY, lineHeight: 1.3, paddingRight: 20 }}>{item.name}</span>
       <span style={{ fontSize: 12, color: 'rgba(26,26,26,0.40)', fontFamily: BODY, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-
         {hasPrice ? (
           discountPct > 0 ? (
             <>
@@ -114,14 +125,12 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
         ) : (
           <strong style={{ color: GOLD, letterSpacing: '0.05em' }}>Contact Us</strong>
         )}
-
         {item.savings && (
           <span style={{ backgroundColor: 'rgba(61,122,74,0.1)', color: '#3D7A4A', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
             {item.savings}
           </span>
         )}
       </span>
-
       {selected && item.description && (
         <div style={{ marginTop: 8, padding: '10px 12px', backgroundColor: WHITE, borderRadius: 6, border: '1px solid rgba(197,143,59,0.15)', width: '100%', boxSizing: 'border-box' }}>
           <span style={{ fontSize: 11, color: 'rgba(26,26,26,0.65)', lineHeight: 1.5, fontFamily: BODY, display: 'block', whiteSpace: 'pre-line' }}>
@@ -177,9 +186,9 @@ export default function BookingPage() {
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
 
-  const [rawTime, setRawTime] = useState('') // The value from <input type="time"> (HH:mm)
-  const [time, setTime] = useState('') // The validated 12-hour format string sent to DB
-  const [timeError, setTimeError] = useState<string | null>(null)
+  const [time, setTime] = useState('')
+  const [availableSlots, setAvailableSlots] = useState<{ time: string, available: boolean }[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [dateBookings, setDateBookings] = useState<any[]>([])
 
   const [therapistSearch, setTherapistSearch] = useState('')
@@ -236,7 +245,8 @@ export default function BookingPage() {
               id: String(t.id),
               name: t.name || t.therapist_name || 'Staff',
               status: t.status,
-              role: t.role || t.specialty || 'Massage Therapist'
+              role: t.role || t.specialty || 'Massage Therapist',
+              off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : []
             })))
         }
 
@@ -266,7 +276,6 @@ export default function BookingPage() {
             let duration = String(s.duration || '60 min');
             const upName = rawName.toUpperCase();
 
-            // REMOVE DURATION FOR EVENTS/CONTACT US ITEMS
             if (upName.includes('GIFT CERTIFICATE') || upName.includes('BRIDAL SHOWER') || upName.includes('BIRTHDAY TREAT') || upName.includes('CORPORATE EVENT')) {
               duration = '';
             }
@@ -277,7 +286,6 @@ export default function BookingPage() {
             else if (upName === 'PACKAGE D') { desc = "ManiGel CUCCIO, PediGel CUCCIO, Foot Massage"; saveTag = "SAVE ₱300.00 !!"; }
             else if (upName === 'PACKAGE E') { desc = "Mani, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱300.00 !!"; }
             else if (upName === 'PACKAGE F') { desc = "ManiGel ORLY, PediGel ORLY, Hand Paraffin"; saveTag = "SAVE ₱450.00 !!"; }
-
             else if (upName.includes('GIFT CERTIFICATE') && !upName.includes('CUSTOM') && !upName.includes('10+1')) {
               desc = 'A thoughtful gift of rest and relaxation.\n🎉 10 + 1 Promo - Book 10 services, get 1 FREE!';
             }
@@ -289,72 +297,6 @@ export default function BookingPage() {
             }
             else if (upName.includes('CORPORATE EVENT')) {
               desc = 'FREE 1 round of Coffee or Tea for groups of 10+ dining at Sabasu ☕\n\nCelebrate. Relax. Indulge. Make your next event a Sabbath to Remember.';
-            }
-
-            else if (!upName.includes('LE NAILS') && !upName.includes('MANI') && !upName.includes('PEDI')) {
-              if (upName === 'SABBATH SIGNATURE' || upName.includes('SABBATH SIGNATURE MASSAGE')) {
-                desc = "Our signature treatment is a personalized massage crafted exclusively for Sabbath Wellness clients. You won't find this unique experience anywhere else. Designed to be deeply holistic and profoundly calming, it promotes healing by easing physical tension and lifting emotional heaviness—leaving you feeling light, balanced, and renewed.";
-                duration = "90 min";
-              }
-              else if (upName === 'COMBINATION' || (upName.includes('COMBINATION') && !upName.includes('STONE'))) {
-                desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
-                duration = "60 min";
-              }
-              else if (upName.includes('COMBINATION') && upName.includes('STONE')) {
-                desc = "Enjoy a personalized massage that blends Swedish, Shiatsu, and Thai techniques for a relaxing and holistic experience.";
-                duration = "75 min";
-              }
-              else if (upName === 'SWEDISH' || upName === 'SWEDISH MASSAGE') {
-                desc = "A relaxing full-body massage using gentle to firm strokes to relieve tension, improve circulation, and promote overall well-being, ideal for stress relief.";
-                duration = "60 min";
-              }
-              else if (upName === 'SHIATSU' || upName === 'SHIATSU MASSAGE') {
-                desc = "A Japanese massage using firm thumb and palm pressure to increase short-term flexibility and significantly reduces muscle pains and soreness.";
-                duration = "60 min";
-              }
-              else if (upName.includes('FOOT REFLEX')) {
-                desc = "Our exclusive, soothing treatment that gently restores balance through calming pressure and wooden sticks, bringing deep relaxation from the ground up.";
-                duration = "60 min";
-              }
-              else if (upName.includes('HEAD,BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER') || upName.includes('HEAD, BACK, SHOULDER, & HAND')) {
-                desc = "Focuses on relieving tension in the head, back, shoulder and hand which are common areas of stress buildup.";
-                duration = "40 min";
-              }
-              else if (upName.includes('THAI MASSAGE') || upName.includes('THAI SIGNATURE')) {
-                desc = "A luxurious Thai therapy unique to Sabbath that involves stretching, pressure, and yoga-like movements. Techniques Used: Stretching, deep compressions, joint mobilization, and acupressure.";
-                duration = upName.includes('90') ? "90 min" : "60 min";
-              }
-              else if (upName.includes('AROMATHERAPY') || upName.includes('HERBAL BALL')) {
-                desc = "A soothing Swedish massage using essential oils to enhance relaxation and promote emotional well-being.";
-                duration = "60 min";
-              }
-              else if (upName.includes('NATAL WITH LACTATION') || upName.includes('PRE & POST NATAL') || upName.includes('LACTATION')) {
-                desc = "A gentle massage for moms before or after birth to ease pain, reduce stress, improve sleep, and support breastfeeding.\n\nBenefits:\n• Relieves back pain, leg cramps, and swelling\n• Improves sleep and prepares the body for labor\n• Enhances milk flow and reduces breast discomfort\n• Prevents clogged ducts and engorgement\n\nPrenatal massage is safest during the 2nd-3rd trimester with OB clearance. Postnatal massage may begin 2-6 weeks after normal delivery or 6-8 weeks after C-section.";
-                duration = "60 min";
-              }
-              else if (upName === 'BODY SCRUBS' || upName === 'BODY SCRUB' || (upName.includes('BODY SCRUB') && !upName.includes('WITH REGULAR MASSAGE'))) {
-                desc = "By appointment. Walk-ins accepted if willing to wait. Private room shower use only.\nTotal Duration: 80 minutes (includes shower & dressing).\n• 20 mins: Scalp massage (cream bath or oil-based)\n• 40 mins: Full-body scrub to exfoliate and refresh skin.\n\nBody Scrubs Options:\n• Coffee Scrub: Detoxifies, firms, and minimize cellulite.\n• Oat Scrub: Soothes and nourishes sensitive skin.";
-                duration = "80 min";
-              }
-              else if (upName.includes('FOOT, HEAD, NECK, & SHOULDER') || upName.includes('FOOT, HEAD, NECK')) {
-                desc = "Boosts circulation, soothes tired feet, and eases head, neck, and shoulder tension.";
-                duration = "75 min";
-              }
-              else if (upName.includes('GROWTH MASSAGE')) {
-                desc = "A gentle massage for kids and pre-teens that relieves stress, supports healthy growth, and encourages natural development.";
-                duration = "60 min";
-              }
-              else if (upName.includes('SLIMMING')) {
-                desc = "A slimming massage is a body-contouring treatment that uses deep strokes and lymphatic drainage to reduce fat, boost circulation, and firm the skin.";
-                duration = "75 min";
-              }
-              else if (upName.includes('HILOT') || upName.includes('VENTOSA')) {
-                desc = "A Filipino healing massage combined with cupping therapy to relieve body pain, improve blood flow, and ease nerve tension. Ideal for deep muscle relief and natural healing.";
-                duration = "75 min";
-              }
-              else if (upName.includes('FULL BODY') && (upName.includes('FEMALE') || upName.includes('MALE'))) {
-                desc = "Includes: Chest/Back, Bikini/Brazilian.\nUse of private room included.";
-              }
             }
 
             return {
@@ -411,21 +353,7 @@ export default function BookingPage() {
 
   const isExcluded = (name: string) => {
     const n = name.toUpperCase().trim();
-    return n === 'SOFT GEL' ||
-      n === 'SAUNA' ||
-      n === 'SHOWER' ||
-      n === 'JACUZZI' ||
-      n === 'SLIPPERS' ||
-      n === 'WAX' ||
-      n === 'BRAZILLIAN WAX' ||
-      n === 'REGULAR MASSAGE' ||
-      n.includes('SABBATH PACKAGE 1') ||
-      n.includes('SABBATH PACKAGE 2') ||
-      n.includes('PLATINUM') ||
-      n.includes('MEMBERSHIP') ||
-      n.includes('GIFT CERTIFICATE (10+1)') ||
-      n.includes('GIFT CERTIFICATE CUSTOM') ||
-      n.includes('THERAPIST REQUEST');
+    return n === 'SOFT GEL' || n === 'SAUNA' || n === 'SHOWER' || n === 'JACUZZI' || n === 'SLIPPERS' || n === 'WAX' || n === 'BRAZILLIAN WAX' || n === 'REGULAR MASSAGE' || n.includes('SABBATH PACKAGE 1') || n.includes('SABBATH PACKAGE 2') || n.includes('PLATINUM') || n.includes('MEMBERSHIP') || n.includes('GIFT CERTIFICATE (10+1)') || n.includes('GIFT CERTIFICATE CUSTOM') || n.includes('THERAPIST REQUEST');
   }
 
   const validServices = dbServices.filter(s => !isExcluded(s.name));
@@ -434,45 +362,25 @@ export default function BookingPage() {
   const WAX_KEYWORDS = ['UPPER LIP', 'LOWER LIP', 'UNDERARMS', 'ARMS FEMALE', 'ARMS MALE', 'HALF LEGS', 'FULL LEGS', 'FULL BODY']
   const NAIL_KEYWORDS = ['SOFT GEL NAIL EXTENSION', 'FULL SET BASIC NAIL ART', '3D GEL NAIL ART/EMBOSSED', 'NAIL GEL REMOVER', 'SOFT GEL REMOVER', 'RHINESTONES', 'GEL POLISH', 'ACCENT', 'POLISH', 'NAIL ART', 'GEL REMOVAL']
 
-  const isWaxService = (s: ServiceItem) => {
-    const n = s.name.toUpperCase();
-    return WAX_KEYWORDS.some(keyword => n.includes(keyword));
-  }
-
+  const isWaxService = (s: ServiceItem) => WAX_KEYWORDS.some(k => s.name.toUpperCase().includes(k));
   const isNailService = (s: ServiceItem) => {
     const cat = s.category?.toLowerCase() || '';
     const nameUpper = s.name.toUpperCase();
-    if (NAIL_KEYWORDS.some(keyword => nameUpper.includes(keyword))) return true;
+    if (NAIL_KEYWORDS.some(k => nameUpper.includes(k))) return true;
     if (cat.includes('nail') || cat.includes('le') || cat.includes('hands') || cat.includes('feet')) return true;
     return false;
   }
 
-  const packageServices = allAvailableServices.filter(s => {
-    const n = s.name.toUpperCase();
-    return n === 'PACKAGE A' || n === 'PACKAGE B' || n === 'PACKAGE C' || n === 'PACKAGE D' || n === 'PACKAGE E' || n === 'PACKAGE F';
-  });
-
+  const packageServices = allAvailableServices.filter(s => ['PACKAGE A', 'PACKAGE B', 'PACKAGE C', 'PACKAGE D', 'PACKAGE E', 'PACKAGE F'].includes(s.name.toUpperCase()));
   const wellnessPackages = allAvailableServices.filter(s => {
     const n = s.name.toUpperCase();
     if (packageServices.includes(s)) return false;
     return n.includes('WELLNESS SUITE') || n.includes('BODY SCRUBS WITH REGULAR MASSAGE') || n.includes('PACKAGE') || n.includes('GIFT CERTIFICATE') || n.includes('BIRTHDAY TREATS') || n.includes('CORPORATE EVENTS');
   });
 
-  const waxServices = allAvailableServices.filter(s => {
-    if (packageServices.includes(s) || wellnessPackages.includes(s)) return false;
-    return isWaxService(s);
-  });
-
-  const nailServices = allAvailableServices.filter(s => {
-    if (packageServices.includes(s) || wellnessPackages.includes(s) || waxServices.includes(s)) return false;
-    return isNailService(s);
-  });
-
-  const massageServices = allAvailableServices.filter(s => {
-    if (packageServices.includes(s) || wellnessPackages.includes(s) || waxServices.includes(s) || nailServices.includes(s)) return false;
-    if (s.category === 'Custom') return false;
-    return true;
-  });
+  const waxServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && isWaxService(s));
+  const nailServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && isNailService(s));
+  const massageServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && !nailServices.includes(s) && s.category !== 'Custom');
 
   function toggleService(id: string) {
     setSelectedIds(prev => {
@@ -509,7 +417,7 @@ export default function BookingPage() {
       const role = (t.role || '').toLowerCase();
       const isMassageTech = role.includes('massage') || role.includes('therapist') || role.includes('spa');
       const isNailTech = role.includes('nail');
-      const isWaxTech = isMassageTech || isNailTech; // Both can do wax
+      const isWaxTech = isMassageTech || isNailTech;
 
       if (needsTherapist && needsNailTech) return isMassageTech || isNailTech;
       if (needsTherapist) return isMassageTech;
@@ -518,6 +426,19 @@ export default function BookingPage() {
       return true;
     });
   }
+
+  // Filter out off-duty therapists for the selected date
+  if (date) {
+    const [y, m, d] = date.split('-').map(Number);
+    const selectedDateObj = new Date(y, m - 1, d);
+    const dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
+
+    allowedTherapists = allowedTherapists.filter(t => {
+      if (t.off_days && t.off_days.includes(dayName)) return false;
+      return true;
+    });
+  }
+
   const filteredTherapists = allowedTherapists.filter(t => t.name.toLowerCase().includes(therapistSearch.toLowerCase()))
 
   const rawNailSubtotal = selectedServices.filter(isNailService).reduce((a, s) => a + Number(s.price || 0), 0)
@@ -560,99 +481,75 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
-
-  // ─── SMART TIME ENGINE: LIVE CONFLICT FETCH ───
+  // ─── SMART TIME ENGINE: LIVE CONFLICT FETCH & SLOT GENERATION ───
   useEffect(() => {
     if (!date) return;
     const fetchDateBookings = async () => {
       const { data } = await supabase
         .from('bookings')
         .select('appointment_time, therapist_name')
-        .eq('appointment_date', date);
+        .eq('appointment_date', date)
+        .neq('status', 'Cancelled')
+        .neq('status', 'Completed');
       if (data) setDateBookings(data);
     }
     fetchDateBookings();
   }, [date, supabase]);
 
-  // ─── SMART TIME ENGINE: VALIDATION & COMPLIANCE RULES ───
   useEffect(() => {
-    if (!rawTime || !date) {
-      setTimeError(null);
-      setTime('');
+    if (!date) {
+      setAvailableSlots([]);
       return;
     }
 
-    const [hhStr, mmStr] = rawTime.split(':');
-    const hh = parseInt(hhStr, 10);
-    const mm = parseInt(mmStr, 10);
-
-    // Safely parse Date to get correct Day of Week
     const [y, m, d] = date.split('-').map(Number);
-    const selectedDateObj = new Date(y, m - 1, d);
-    const day = selectedDateObj.getDay(); // 0 = Sunday
+    const dObj = new Date(y, m - 1, d);
+    const day = dObj.getDay();
 
-    // Time Travel Check (Prevent picking a time in the past for today)
-    if (date === getTodayStr()) {
-      const now = new Date();
-      const currH = now.getHours();
-      const currM = now.getMinutes();
-      if (hh < currH || (hh === currH && mm < currM)) {
-        setTimeError("Cannot book a time in the past.");
-        setTime(''); return;
+    // Operating Hours logic
+    const baseSlots = day === 0 ? SUN_SLOTS : MON_SAT_SLOTS;
+    const isToday = date === getTodayStr();
+    const now = new Date();
+    const currH = now.getHours();
+    const currM = now.getMinutes();
+
+    const calculatedSlots = baseSlots.map(t => {
+      let isPast = false;
+      if (isToday) {
+        const match = t.match(/(\d+):(\d+)\s(AM|PM)/i);
+        if (match) {
+          let h = parseInt(match[1], 10);
+          const mins = parseInt(match[2], 10);
+          const ampm = match[3].toUpperCase();
+          if (ampm === 'PM' && h !== 12) h += 12;
+          if (ampm === 'AM' && h === 12) h = 0;
+
+          if (h < currH || (h === currH && mins <= currM)) {
+            isPast = true;
+          }
+        }
       }
-    }
 
-    const isLateNight = (hh === 0) || (hh === 1 && mm === 0);
-
-    // 1. Enforce Closing Time (Strictly 1:00 AM)
-    if (hh === 1 && mm > 0) {
-      setTimeError("Spa closes at 1:00 AM exactly.");
-      setTime(''); return;
-    }
-    if (hh > 1 && hh < 11) {
-      setTimeError("Spa is closed during these hours.");
-      setTime(''); return;
-    }
-
-    // 2. Enforce Opening Times
-    if (day === 0) { // Sunday
-      if (!isLateNight && hh < 13) {
-        setTimeError("Sundays: Open 1:00 PM to 1:00 AM.");
-        setTime(''); return;
+      let isConflict = false;
+      if (therapistId) {
+        const tName = therapists.find(th => th.id === therapistId)?.name;
+        // Check if this specific therapist has an active booking at this time
+        isConflict = dateBookings.some(b => b.appointment_time === t && b.therapist_name === tName);
+      } else {
+        // If no specific therapist selected, check if ALL therapists are booked
+        const bookedCount = dateBookings.filter(b => b.appointment_time === t).length;
+        isConflict = (therapists.length > 0 && bookedCount >= therapists.length);
       }
-    } else { // Mon - Sat
-      if (!isLateNight && hh < 11) {
-        setTimeError("Mon-Sat: Open 11:00 AM to 1:00 AM.");
-        setTime(''); return;
+
+      return {
+        time: t,
+        available: !isPast && !isConflict
       }
-    }
+    });
 
-    // 3. Format Time to Database Standard (12-hour format)
-    const ampm = hh >= 12 ? 'PM' : 'AM';
-    const h12 = hh % 12 || 12;
-    const formatted12h = `${h12}:${mm.toString().padStart(2, '0')} ${ampm}`;
+    setAvailableSlots(calculatedSlots);
 
-    // 4. Overlap & Conflict Database Check
-    if (therapistId) {
-      const therapistName = therapists.find(t => t.id === therapistId)?.name;
-      const isBooked = dateBookings.some(b => b.appointment_time === formatted12h && b.therapist_name === therapistName);
-      if (isBooked) {
-        setTimeError(`${therapistName} is already booked at ${formatted12h}.`);
-        setTime(''); return;
-      }
-    } else {
-      const bookingsAtTime = dateBookings.filter(b => b.appointment_time === formatted12h).length;
-      if (therapists.length > 0 && bookingsAtTime >= therapists.length) {
-        setTimeError(`All staff are fully booked at ${formatted12h}.`);
-        setTime(''); return;
-      }
-    }
-
-    setTimeError(null);
-    setTime(formatted12h);
-
-  }, [rawTime, date, therapistId, dateBookings, therapists, getTodayStr]);
-
+  }, [date, therapistId, dateBookings, therapists, getTodayStr]);
 
   const validation = {
     firstName: firstName.trim().length < 2,
@@ -661,7 +558,7 @@ export default function BookingPage() {
     email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    time: time === '' || timeError !== null,
+    time: time === '',
   }
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
@@ -684,6 +581,7 @@ export default function BookingPage() {
     }
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
         booking_id: generatedBookingId,
         client_name: constructedFullName,
@@ -778,27 +676,23 @@ export default function BookingPage() {
           <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Wellness Hub</p>
           <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Booking Receipt</p>
         </div>
-
         <div style={{ marginBottom: 15 }}>
           <p style={{ margin: 0 }}><strong>Date:</strong> {date}</p>
           <p style={{ margin: 0 }}><strong>Time:</strong> {time}</p>
           <p style={{ margin: 0 }}><strong>Client:</strong> {displayFullName}</p>
           <p style={{ margin: 0 }}><strong>Therapist:</strong> {selectedTherapistDisplay}</p>
         </div>
-
         <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '10px 0', margin: '15px 0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', marginBottom: 10 }}>
             <span>Item</span>
             <span>Amount</span>
           </div>
-
           {selectedServices.map(s => (
             <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
               <span style={{ paddingRight: 10 }}>{s.name}</span>
               <span>{s.price > 0 ? fmt(s.price) : 'Contact Us'}</span>
             </div>
           ))}
-
           {promoDeduction > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontStyle: 'italic' }}>
               <span>Discount ({appliedPromoText})</span>
@@ -806,12 +700,10 @@ export default function BookingPage() {
             </div>
           )}
         </div>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: 18 }}>
           <span>Total:</span>
           <span>{fmt(finalTotalAmount)}</span>
         </div>
-
         <div style={{ marginTop: 30, textAlign: 'center' }}>
           <p style={{ margin: 0, textTransform: 'uppercase', fontSize: 12, fontWeight: 'bold' }}>Payment Method: PAY AT COUNTER</p>
           <p style={{ margin: '15px 0 0', fontSize: 12 }}>Thank you for choosing Sabbath Spa!</p>
@@ -980,20 +872,22 @@ export default function BookingPage() {
                 <Field label="Preferred Date *">
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
+
+                {/* ─── NEW 30-MIN INTERVAL TIME DROPDOWN ─── */}
                 <Field label="Preferred Time *">
-                  <input
-                    suppressHydrationWarning
+                  <select
                     className="bk-in"
-                    type="time"
-                    style={{ ...INPUT, ...eb(validation.time) }}
-                    value={rawTime}
-                    onChange={e => setRawTime(e.target.value)}
-                  />
-                  {timeError && (
-                    <span style={{ color: '#C83232', fontSize: 11, marginTop: 6, fontWeight: 700 }}>
-                      {timeError}
-                    </span>
-                  )}
+                    style={{ ...SELECT, ...eb(validation.time) }}
+                    value={time}
+                    onChange={e => setTime(e.target.value)}
+                  >
+                    <option value="">--:-- --</option>
+                    {availableSlots.map(s => (
+                      <option key={s.time} value={s.time}>
+                        {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </Row2>
 
@@ -1009,6 +903,28 @@ export default function BookingPage() {
                   </p>
                 )}
               </Field>
+
+              {/* ─── NEW VISUAL AVAILABILITY GRID ─── */}
+              {availableSlots.length > 0 && (
+                <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
+                    Visual Availability Grid for {date}
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
+                    {availableSlots.map(s => (
+                      <div key={s.time} style={{
+                        padding: '8px', textAlign: 'center', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                        backgroundColor: s.available ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.05)',
+                        color: s.available ? '#3D7A4A' : '#aaa',
+                        border: s.available ? '1px solid rgba(61,122,74,0.2)' : '1px solid transparent',
+                        textDecoration: s.available ? 'none' : 'line-through'
+                      }}>
+                        {s.time}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Section>
 
             <Section

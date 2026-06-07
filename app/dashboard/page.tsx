@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 26: POS Refinement (Added "Change" calculation inside Payment Details)
+// Phase 30: Omni-Synced Overview POS (Connected Time Slots, Extensions, and Staff Availability)
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// INITIALIZATION
+// INITIALIZATION & CONSTANTS
 // ─────────────────────────────────────────────────────────────
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -21,6 +21,13 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// Master Time Slots (Connected to Booking Engine)
+const ALL_TIME_SLOTS = [
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
+  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
+  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM', '12:30 AM', '1:00 AM'
+];
+
 // ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
@@ -30,18 +37,19 @@ function parseCurrency(val: any): number {
 
 function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
-  const clean = String(raw).trim();
+  let clean = String(raw).trim();
   const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
   const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
   if (dashMatch) {
     let year = dashMatch[3];
     if (year.length === 2) year = '20' + year;
-    const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
-    if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+    clean = `${dashMatch[2]} ${dashMatch[1]}, ${year}`;
   }
-  const fallback = new Date(clean);
-  if (!isNaN(fallback.getTime())) return fallback;
+  let d = new Date(clean);
+  if (!isNaN(d.getTime())) {
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
+  }
   return null;
 }
 
@@ -80,6 +88,7 @@ interface StaffMember {
   id: string;
   name: string;
   role: string;
+  off_days: string[];
 }
 
 export default function OverviewDashboard() {
@@ -129,12 +138,14 @@ export default function OverviewDashboard() {
       const mappedStaff = rawStaff.map(t => ({
         id: String(t.id),
         name: String(t.name || t.therapist_name || 'Unnamed Staff').trim(),
-        role: String(t.role || t.specialty || 'Staff')
+        role: String(t.role || t.specialty || 'Staff'),
+        off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : []
       })).sort((a, b) => a.name.localeCompare(b.name));
       setStaffList(mappedStaff);
 
       const uniqueRows = new Map<string, LiveBooking>();
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const processRow = (r: any, source: 'live' | 'import', idField: string) => {
         const amt = parseCurrency(r.price || r.amount || r.service_amount || 0);
         const client = String(r.client_name || 'Guest').trim();
@@ -236,7 +247,8 @@ export default function OverviewDashboard() {
 
 
   // ─── SMART DATABASE UPDATES ───
-  const handleUpdate = async (id: string, field: keyof LiveBooking, value: any) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
@@ -245,10 +257,11 @@ export default function OverviewDashboard() {
     try {
       const table = booking.source === 'live' ? 'bookings' : 'bookings_import';
       const idField = booking.source === 'live' ? 'booking_id' : 'id';
+      const actualDbField = dbFieldOverride || field;
 
-      const { error } = await supabase.from(table).update({ [field]: value }).eq(idField, booking.rawId);
+      const { error } = await supabase.from(table).update({ [actualDbField]: value }).eq(idField, booking.rawId);
       if (error) {
-        console.warn(`Could not save ${field}. Did you add the column to Supabase?`, error);
+        console.warn(`Could not save ${field}.`, error);
       }
     } catch (e) {
       console.error(e);
@@ -292,7 +305,7 @@ export default function OverviewDashboard() {
     }
   };
 
-  const TOTAL_MINUTES = 14 * 60;
+  const TOTAL_MINUTES = 14 * 60; // 14 hours (11am to 1am)
   const getMinutesFrom11AM = (timeStr: string) => {
     if (!timeStr || timeStr === '—') return 0;
     const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -378,41 +391,54 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* Time & Client */}
+                        {/* Time & Client (EDITABLE TIME DROPDOWN) */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <strong style={{ color: BLACK, fontSize: 14 }}>{b.time}</strong><br />
-                          <span style={{ color: '#666', fontWeight: 600 }}>{b.client}</span>
+                          <select
+                            value={b.time}
+                            onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
+                            style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 13, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, cursor: 'pointer' }}
+                          >
+                            <option value="—">--:-- --</option>
+                            {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <br />
+                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4 }}>{b.client}</span>
                         </td>
 
-                        {/* Service & Notes */}
+                        {/* Service & Notes (EDITABLE TEXTAREA FOR CONTINUOUS EXTENSION) */}
                         <td style={{ padding: '16px 12px' }}>
-                          <div style={{ color: '#2A2A2A', fontWeight: 600, marginBottom: 8, whiteSpace: 'pre-wrap' }}>{b.service}</div>
+                          <textarea
+                            value={b.service}
+                            onChange={e => handleUpdate(b.id, 'service', e.target.value, b.source === 'live' ? 'service_name' : 'service')}
+                            placeholder="Add continuous services..."
+                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(197,143,59,0.4)', backgroundColor: 'rgba(197,143,59,0.02)', fontSize: 11, fontWeight: 600, color: '#2A2A2A', fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', marginBottom: 8, outline: 'none' }}
+                          />
                           <textarea
                             value={b.notes}
                             onChange={e => handleUpdate(b.id, 'notes', e.target.value)}
                             placeholder="Add client notes..."
-                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box' }}
+                            style={{ width: '100%', minHeight: 40, padding: 8, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
                           />
                         </td>
 
                         {/* Therapist */}
                         <td style={{ padding: '16px 12px' }}>
-                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
+                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value, b.source === 'live' ? 'therapist_name' : 'therapist')} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
                             <option value="Unassigned">Unassigned</option>
                             {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
                           </select>
                         </td>
 
-                        {/* Amount (Financials) */}
+                        {/* Amount (Financials - EDITABLE FOR EXTENSIONS) */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Base:</span>
-                              <strong>{formatCurrency(b.amount)}</strong>
+                              <input type="number" value={b.amount} onChange={e => handleUpdate(b.id, 'amount', Number(e.target.value), b.source === 'live' ? 'price' : 'service_amount')} style={{ width: 60, padding: 4, textAlign: 'right', border: '1px solid rgba(197,143,59,0.5)', borderRadius: 4, fontWeight: 700, color: BLACK, outline: 'none' }} />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Disc %:</span>
-                              <input type="number" value={b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4 }} />
+                              <input type="number" value={b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 4, marginTop: 2 }}>
                               <span style={{ color: GOLD, fontWeight: 700 }}>Net:</span>
@@ -426,7 +452,7 @@ export default function OverviewDashboard() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Comm %:</span>
-                              <input type="number" value={b.therapist_comm_pct} onChange={e => handleUpdate(b.id, 'therapist_comm_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4 }} />
+                              <input type="number" value={b.therapist_comm_pct} onChange={e => handleUpdate(b.id, 'therapist_comm_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 4, marginTop: 2 }}>
                               <span style={{ color: '#666', fontWeight: 600 }}>Earned:</span>
@@ -435,7 +461,7 @@ export default function OverviewDashboard() {
                           </div>
                         </td>
 
-                        {/* Payment Details (WITH CHANGE CALCULATION) */}
+                        {/* Payment Details */}
                         <td style={{ padding: '16px 12px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
@@ -461,10 +487,9 @@ export default function OverviewDashboard() {
 
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
                               <span style={{ fontSize: 10, color: '#666' }}>Paid:</span>
-                              <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box' }} />
+                              <input type="number" value={b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box', outline: 'none' }} />
                             </div>
 
-                            {/* SMART CHANGE CALCULATION */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', backgroundColor: 'rgba(26,26,26,0.03)', borderRadius: 4, marginTop: 2 }}>
                               <span style={{ fontSize: 10, color: '#666', fontWeight: 600 }}>Change:</span>
                               <strong style={{ fontSize: 11, color: BLACK }}>{formatCurrency(calculatedChange)}</strong>
@@ -492,7 +517,7 @@ export default function OverviewDashboard() {
                         {/* General Status */}
                         <td style={{ padding: '16px 12px' }}>
                           <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '6px', borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }}>
-                            <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option>
+                            <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option><option value="Cancelled">Cancelled</option>
                           </select>
                         </td>
 
@@ -509,7 +534,7 @@ export default function OverviewDashboard() {
         {view === 'GRID' && (
           <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
-              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Click any block to view details.</span>
+              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Grayed-out rows represent staff on their scheduled day off.</span>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -530,22 +555,40 @@ export default function OverviewDashboard() {
                 {loading ? (
                   <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Generating timeline visualization...</div>
                 ) : (
-                  [{ name: 'Unassigned', role: 'Requires Assignment' }, ...staffList].map((staff) => {
+                  [{ id: 'unassigned-row', name: 'Unassigned', role: 'Requires Assignment', off_days: [] }, ...staffList].map((staff) => {
                     const staffBookings = dailyBookings.filter(b => {
                       const dbTherapist = String(b.therapist || 'unassigned').trim().toLowerCase();
                       const targetTherapist = staff.name.toLowerCase();
                       return dbTherapist === targetTherapist;
                     });
 
+                    // Off-Duty Calculation
+                    let isOffDuty = false;
+                    if (selectedDate && staff.name !== 'Unassigned') {
+                      const [y, m, d] = selectedDate.split('-').map(Number);
+                      const selectedDateObj = new Date(y, m - 1, d);
+                      const dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
+                      if (staff.off_days && staff.off_days.includes(dayName)) {
+                        isOffDuty = true;
+                      }
+                    }
+
                     return (
                       <div key={staff.name} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', minHeight: '90px' }}>
-                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: staff.name === 'Unassigned' ? '#FAFAFA' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: BLACK }}>{staff.name.toUpperCase()}</span>
-                          {staff.role && <span style={{ fontSize: 9, color: staff.name === 'Unassigned' ? '#C83232' : '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{staff.role}</span>}
+                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: staff.name === 'Unassigned' || isOffDuty ? '#FAFAFA' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: isOffDuty ? '#aaa' : BLACK }}>{staff.name.toUpperCase()}</span>
+                          {staff.role && <span style={{ fontSize: 9, color: staff.name === 'Unassigned' ? '#C83232' : '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{isOffDuty ? 'OFF DUTY TODAY' : staff.role}</span>}
                         </div>
 
-                        <div style={{ flexGrow: 1, position: 'relative', backgroundImage: 'linear-gradient(to right, transparent 99%, rgba(26,26,26,0.05) 100%)', backgroundSize: `${100 / 14}% 100%` }}>
-                          {staffBookings.map(b => {
+                        <div style={{ flexGrow: 1, position: 'relative', backgroundColor: isOffDuty ? 'rgba(26,26,26,0.03)' : 'transparent', backgroundImage: isOffDuty ? 'none' : 'linear-gradient(to right, transparent 99%, rgba(26,26,26,0.05) 100%)', backgroundSize: `${100 / 14}% 100%` }}>
+
+                          {isOffDuty && (
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.3 }}>
+                              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '0.2em', color: '#1A1A1A' }}>UNAVAILABLE</span>
+                            </div>
+                          )}
+
+                          {!isOffDuty && staffBookings.map(b => {
                             if (!b.time || b.time === '—') return null;
                             const startMins = getMinutesFrom11AM(b.time);
                             const leftPercent = (startMins / TOTAL_MINUTES) * 100;
