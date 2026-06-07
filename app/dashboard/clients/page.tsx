@@ -290,8 +290,10 @@ export default function ClientsPage() {
                 </div>
               </div>
 
+              {/* ─── CONNECTED WAIVER DATA DISPLAY ─── */}
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 20, color: '#1A1A1A', margin: '0 0 12px', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 8 }}>Waiver Data</h3>
+
                 {selectedClient.waiver ? (
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
                     <div style={{ flex: '1 1 250px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12, padding: '16px' }}>
@@ -304,6 +306,7 @@ export default function ClientsPage() {
                         <span style={{ fontSize: 13, color: '#1A1A1A', fontWeight: 600 }}>{selectedClient.waiver.focus_areas}</span>
                       </div>
                     </div>
+
                     <div style={{ flex: '1 1 200px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12, padding: '16px' }}>
                       <span style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 8 }}>Digital Signature</span>
                       <div style={{ backgroundColor: '#fafafa', border: '1px dashed #ccc', borderRadius: 8, padding: '10px', textAlign: 'center', height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
