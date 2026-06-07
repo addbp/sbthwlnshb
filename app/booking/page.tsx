@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 20 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (12AM Max Cutoff, Disabled Booked Slots, Safe Select)
+// app/booking/page.tsx  —  Phase 21 Booking Engine
+// STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix)
 
 export const dynamic = 'force-dynamic'
 
@@ -188,7 +188,6 @@ export default function BookingPage() {
   const [minApptDate, setMinApptDate] = useState('')
 
   const [time, setTime] = useState('')
-  const [availableSlots, setAvailableSlots] = useState<{ time: string, available: boolean }[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [dateBookings, setDateBookings] = useState<any[]>([])
 
@@ -408,6 +407,7 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
+  // ─── FILTER ALLOWED THERAPISTS ───
   let allowedTherapists = therapists;
   if (selectedServices.length > 0) {
     const needsTherapist = selectedServices.some(s => massageServices.includes(s) || wellnessPackages.includes(s));
@@ -428,6 +428,7 @@ export default function BookingPage() {
     });
   }
 
+  // Filter out off-duty therapists for the selected date
   if (date) {
     const [y, m, d] = date.split('-').map(Number);
     const selectedDateObj = new Date(y, m - 1, d);
@@ -481,7 +482,7 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
-  // ─── SMART TIME ENGINE: LIVE CONFLICT FETCH & SLOT GENERATION ───
+  // ─── FETCH LIVE CONFLICTS ───
   useEffect(() => {
     if (!date) return;
     const fetchDateBookings = async () => {
@@ -496,12 +497,11 @@ export default function BookingPage() {
     fetchDateBookings();
   }, [date, supabase]);
 
-  useEffect(() => {
-    if (!date) {
-      setAvailableSlots([]);
-      return;
-    }
 
+  // ─── DYNAMIC AVAILABILITY GENERATOR ───
+  let availableSlots: { time: string, available: boolean }[] = [];
+
+  if (date) {
     const [y, m, d] = date.split('-').map(Number);
     const dObj = new Date(y, m - 1, d);
     const day = dObj.getDay();
@@ -513,7 +513,7 @@ export default function BookingPage() {
     const currH = now.getHours();
     const currM = now.getMinutes();
 
-    const calculatedSlots = baseSlots.map(t => {
+    availableSlots = baseSlots.map(t => {
       let isPast = false;
       if (isToday) {
         const match = t.match(/(\d+):(\d+)\s(AM|PM)/i);
@@ -524,6 +524,9 @@ export default function BookingPage() {
           if (ampm === 'PM' && h !== 12) h += 12;
           if (ampm === 'AM' && h === 12) h = 0;
 
+          // FIX: Treat late night (midnight) as hour 24 so it doesn't get blocked in the afternoon
+          if (t === '12:00 AM') h = 24;
+
           if (h < currH || (h === currH && mins <= currM)) {
             isPast = true;
           }
@@ -532,11 +535,21 @@ export default function BookingPage() {
 
       let isConflict = false;
       if (therapistId) {
+        // SCENARIO 1: Specific Therapist Selected. Only block if *they* are booked.
         const tName = therapists.find(th => th.id === therapistId)?.name;
         isConflict = dateBookings.some(b => b.appointment_time === t && b.therapist_name === tName);
       } else {
-        const bookedCount = dateBookings.filter(b => b.appointment_time === t).length;
-        isConflict = (therapists.length > 0 && bookedCount >= therapists.length);
+        // SCENARIO 2: "Any Available Staff". Only block if ALL allowed therapists are booked.
+        if (allowedTherapists.length === 0) {
+          isConflict = true; // No staff on duty for this service
+        } else {
+          // Find if AT LEAST ONE allowed therapist is free
+          const freeTherapist = allowedTherapists.find(th => {
+            // A therapist is free if they DO NOT have a booking at this exact time
+            return !dateBookings.some(b => b.appointment_time === t && b.therapist_name === th.name);
+          });
+          isConflict = !freeTherapist; // Conflict is true only if NO free therapist was found
+        }
       }
 
       return {
@@ -544,10 +557,7 @@ export default function BookingPage() {
         available: !isPast && !isConflict
       }
     });
-
-    setAvailableSlots(calculatedSlots);
-
-  }, [date, therapistId, dateBookings, therapists, getTodayStr]);
+  }
 
 
   // ─── STRICT VALIDATION TO PREVENT UNAVAILABLE SUBMISSIONS ───
