@@ -1,7 +1,7 @@
 'use client'
 
 // app/page.tsx
-// Sabbath Wellness — Luxury Vertical Kiosk
+// Sabbath Wellness — Luxury 2x2 Grid Kiosk
 // Light spa background (#F9F4EB) · /sabbath-logo.png · Dark charcoal text
 
 import Image from 'next/image'
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
     title: 'Staff Portal',
     desc: 'Management dashboard · Schedules · Client records',
     icon: <IconDashboard />,
+    external: false,
   },
   {
     key: 'booking',
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
     title: 'Book a Session',
     desc: 'Reserve your appointment · Choose service & therapist',
     icon: <IconCalendar />,
+    external: false,
   },
   {
     key: 'waiver',
@@ -31,6 +33,7 @@ const NAV_ITEMS = [
     title: 'Digital Waiver',
     desc: 'Health intake form · Liability waiver',
     icon: <IconFileText />,
+    external: false,
   },
   {
     key: 'membership',
@@ -38,13 +41,15 @@ const NAV_ITEMS = [
     title: 'Membership',
     desc: 'Exclusive discounts · VIP packages · Priority booking',
     icon: <IconCrown />,
+    external: false,
   },
   {
     key: 'sabasu',
-    href: '/sabasu',
+    href: 'https://sabasupos.sabbathspa.com/', // DIRECT EXTERNAL LINK
     title: 'Sabasu',
     desc: 'Order coffee, pasta & pastries to your room',
     icon: <IconCafe />,
+    external: true,
   },
 ] as const
 
@@ -140,68 +145,85 @@ export default function Home() {
         .anim-nav-4   { animation: slideUp   560ms cubic-bezier(0.22,1,0.36,1) 720ms both; }
         .anim-footer  { animation: dissolve  800ms ease                        820ms both; }
 
-        /* ── Nav link — dark text on light background ── */
-        .nav-link {
-          display:         flex;
-          align-items:     center;
-          gap:             18px;
-          width:           100%;
-          padding:         20px 0;
+        /* ── Modern 2x2 Grid Layout ── */
+        .nav-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 20px;
+          width: 100%;
+          margin-bottom: 48px;
+        }
+
+        @media (min-width: 768px) {
+          .nav-grid {
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+          }
+          /* Sabasu spans full width but is visually centered */
+          .sabasu-card {
+            grid-column: 1 / -1;
+            justify-self: center;
+            width: calc(50% - 12px);
+          }
+        }
+
+        /* ── Nav Card Design ── */
+        .nav-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 20px;
+          padding: 28px;
+          background-color: rgba(255, 255, 255, 0.5);
+          border: 1px solid rgba(26,26,26,0.08);
+          border-radius: 16px;
           text-decoration: none;
-          position:        relative;
-          cursor:          pointer;
-          /* Subtle rule on light bg */
-          border-bottom:   1px solid rgba(26,26,26,0.10);
-          transition:      border-color 260ms ease;
+          cursor: pointer;
+          transition: all 300ms cubic-bezier(0.22,1,0.36,1);
         }
-        .nav-link:last-child { border-bottom: none; }
-        .nav-link:hover      { border-bottom-color: rgba(26,26,26,0.20); }
-
-        /* Gold underline slides in from left — same motion as before */
-        .nav-link::after {
-          content:          '';
-          position:         absolute;
-          bottom:           -1px; left: 0;
-          width:            0; height: 2px;
-          background-color: #C58F3B;
-          transition:       width 340ms cubic-bezier(0.22,1,0.36,1);
+        
+        .nav-card:hover {
+          background-color: #FFFFFF;
+          border-color: rgba(197,143,59,0.35);
+          box-shadow: 0 12px 40px rgba(197,143,59,0.08);
+          transform: translateY(-2px);
         }
-        .nav-link:hover::after { width: 100%; }
 
-        /* Icon scale */
-        .nav-icon  { flex-shrink:0; transition: transform 280ms cubic-bezier(0.22,1,0.36,1); }
-        .nav-link:hover .nav-icon { transform: scale(1.12); }
+        .nav-icon  { 
+          flex-shrink: 0; 
+          margin-top: 4px;
+          transition: transform 300ms cubic-bezier(0.22,1,0.36,1); 
+        }
+        
+        .nav-card:hover .nav-icon { 
+          transform: scale(1.1); 
+        }
 
-        /* Title: charcoal on light bg */
         .nav-title {
-          color: rgba(26,26,26,0.62);
+          color: #1A1A1A;
           transition: color 200ms ease;
         }
-        .nav-link:hover .nav-title { color: #1A1A1A; }
+        
+        .nav-card:hover .nav-title { 
+          color: #C58F3B; 
+        }
 
-        /* Sub-label: muted charcoal */
         .nav-desc {
-          color: rgba(26,26,26,0.36);
+          color: rgba(26,26,26,0.45);
           transition: color 200ms ease;
         }
-        .nav-link:hover .nav-desc { color: rgba(197,143,59,0.80); }
-
-        /* Arrow fade-in */
-        .nav-arrow {
-          opacity:0; transform:translateX(-8px);
-          transition: opacity 230ms ease, transform 270ms cubic-bezier(0.22,1,0.36,1);
+        
+        .nav-card:hover .nav-desc { 
+          color: rgba(26,26,26,0.65); 
         }
-        .nav-link:hover .nav-arrow { opacity:1; transform:translateX(0); }
 
-        .nav-link:focus-visible {
-          outline:        2px solid #C58F3B;
+        .nav-card:focus-visible {
+          outline: 2px solid #C58F3B;
           outline-offset: 4px;
-          border-radius:  4px;
         }
       `}</style>
 
       <main style={{
-        backgroundColor: '#F9F4EB',   /* Light spa beige */
+        backgroundColor: '#F9F4EB',
         backgroundImage: 'none',
         minHeight: '100dvh',
         display: 'flex',
@@ -213,14 +235,14 @@ export default function Home() {
         WebkitFontSmoothing: 'antialiased',
       }}>
 
-        {/* max-w-2xl centered column */}
+        {/* max-w-4xl centered container to accommodate grid */}
         <div style={{
-          width: '100%', maxWidth: 672,
+          width: '100%', maxWidth: 880,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', flex: 1,
         }}>
 
-          {/* ══ LOGO — /sabbath-logo.png, priority load ══ */}
+          {/* ══ LOGO ══ */}
           <div className="anim-logo" style={{ marginBottom: 28 }}>
             <Image
               src="/sabbath-logo.png"
@@ -230,112 +252,116 @@ export default function Home() {
               priority={true}
               style={{
                 objectFit: 'contain',
-                width: 'clamp(160px, 32vw, 240px)',
-                height: 'clamp(160px, 32vw, 240px)',
+                width: 'clamp(140px, 28vw, 200px)',
+                height: 'clamp(140px, 28vw, 200px)',
                 display: 'block',
               }}
             />
           </div>
 
-          {/* ══ TAGLINE — gold italic, only text element ══ */}
-          <p
-            className="anim-tagline"
-            style={{
-              fontFamily: "'Cormorant Garamond', Georgia, serif",
-              fontSize: 'clamp(1rem, 2.6vw, 1.35rem)',
-              fontStyle: 'italic',
-              fontWeight: 400,
-              letterSpacing: '0.07em',
-              color: '#C58F3B',
-              margin: '0 0 34px',
-              textAlign: 'center',
-              lineHeight: 1,
-            }}
-          >
-            Embrace the Gift of Rest
-          </p>
-
-          {/* ══ ORNAMENTAL DIVIDER ══ */}
-          <div
-            className="anim-divider"
-            aria-hidden="true"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              width: '100%', marginBottom: 34,
-            }}
-          >
-            {/* Rules are charcoal-tinted on light bg */}
-            <div style={{ flex: 1, height: 1, backgroundColor: 'rgba(26,26,26,0.12)' }} />
-            <svg width="7" height="7" viewBox="0 0 7 7" fill="#C58F3B" opacity="0.70">
-              <polygon points="3.5,0 7,3.5 3.5,7 0,3.5" />
-            </svg>
-            <div style={{ flex: 1, height: 1, backgroundColor: 'rgba(26,26,26,0.12)' }} />
-          </div>
-
-          {/* ══ NAVIGATION LINKS ══ */}
-          <nav aria-label="Main navigation" style={{ width: '100%', marginBottom: 48 }}>
-            {NAV_ITEMS.map((item, i) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={`nav-link anim-nav-${i}`}
-                aria-label={`${item.title}: ${item.desc}`}
-              >
-                <span className="nav-icon">{item.icon}</span>
-
-                <span style={{
-                  flex: 1, display: 'flex', flexDirection: 'column',
-                  gap: 5, paddingTop: 8, paddingBottom: 8,
-                }}>
-                  <span className="nav-title" style={{
-                    fontFamily: "'Cormorant Garamond', Georgia, serif",
-                    fontSize: 'clamp(1.55rem, 3.5vw, 2rem)',
-                    fontWeight: 400,
-                    letterSpacing: '0.02em',
-                    lineHeight: 1.1,
-                  }}>
-                    {item.title}
-                  </span>
-                  <span className="nav-desc" style={{
-                    fontFamily: "'Inter', system-ui, sans-serif",
-                    fontSize: 'clamp(0.70rem, 1.4vw, 0.78rem)',
-                    fontWeight: 400,
-                    letterSpacing: '0.09em',
-                    textTransform: 'uppercase',
-                    lineHeight: 1,
-                  }}>
-                    {item.desc}
-                  </span>
-                </span>
-
-                <span className="nav-arrow" aria-hidden="true"
-                  style={{ color: '#C58F3B', fontSize: '1.05rem', flexShrink: 0, paddingLeft: 8 }}
-                >
-                  →
-                </span>
-              </Link>
-            ))}
-          </nav>
-        </div>
-
-        {/* ══ FOOTER ══ */}
-        <footer
-          className="anim-footer"
-          style={{
-            width: '100%', maxWidth: 672, textAlign: 'center',
-            paddingTop: 18, borderTop: '1px solid rgba(26,26,26,0.09)',
-          }}
-        >
-          <p style={{
-            fontFamily: "'Inter', system-ui, sans-serif",
-            fontSize: 11, fontWeight: 400,
-            letterSpacing: '0.13em', textTransform: 'uppercase',
-            color: 'rgba(26,26,26,0.32)',
-            margin: 0,
+          {/* ══ TITLE & TAGLINE ══ */}
+          <h1 className="anim-tagline" style={{
+            fontFamily: "'Cormorant Garamond', Georgia, serif",
+            fontSize: 'clamp(2rem, 4.5vw, 3rem)',
+            fontWeight: 400,
+            color: '#1A1A1A',
+            margin: '0 0 8px',
+            textAlign: 'center',
+            lineHeight: 1.1,
           }}>
-            © {year} Sabbath Spa & Wellness Hub · All rights reserved
+            Sabbath Spa & Wellness Hub
+          </h1>
+
+          <p className="anim-tagline" style={{
+            fontSize: 'clamp(0.65rem, 1.2vw, 0.75rem)',
+            fontWeight: 700,
+            letterSpacing: '0.25em',
+            textTransform: 'uppercase',
+            color: '#C58F3B',
+            margin: '0 0 34px',
+            textAlign: 'center',
+          }}>
+            Digital Operations Portal
           </p>
-        </footer>
+
+          {/* ══ NAVIGATION GRID ══ */}
+          <nav className="nav-grid" aria-label="Main navigation">
+            {NAV_ITEMS.map((item, i) => {
+              const cardClass = `nav-card anim-nav-${i} ${item.key === 'sabasu' ? 'sabasu-card' : ''}`
+
+              const CardContent = () => (
+                <>
+                  <span className="nav-icon">{item.icon}</span>
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <span className="nav-title" style={{
+                      fontFamily: "'Cormorant Garamond', Georgia, serif",
+                      fontSize: 'clamp(1.5rem, 2.5vw, 1.85rem)',
+                      fontWeight: 400,
+                      lineHeight: 1.1,
+                    }}>
+                      {item.title}
+                    </span>
+                    <span className="nav-desc" style={{
+                      fontFamily: "'Inter', system-ui, sans-serif",
+                      fontSize: 'clamp(0.55rem, 1vw, 0.65rem)',
+                      fontWeight: 700,
+                      letterSpacing: '0.1em',
+                      textTransform: 'uppercase',
+                      lineHeight: 1.4,
+                    }}>
+                      {item.desc}
+                    </span>
+                  </span>
+                </>
+              )
+
+              if (item.external) {
+                return (
+                  <a
+                    key={item.key}
+                    href={item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cardClass}
+                    aria-label={`Open ${item.title} in new tab`}
+                  >
+                    <CardContent />
+                  </a>
+                )
+              }
+
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={cardClass}
+                  aria-label={`${item.title}: ${item.desc}`}
+                >
+                  <CardContent />
+                </Link>
+              )
+            })}
+          </nav>
+
+          {/* ══ FOOTER ══ */}
+          <footer
+            className="anim-footer"
+            style={{
+              width: '100%', textAlign: 'center',
+              paddingTop: 24, borderTop: '1px solid rgba(26,26,26,0.08)',
+            }}
+          >
+            <p style={{
+              fontFamily: "'Inter', system-ui, sans-serif",
+              fontSize: 10, fontWeight: 700,
+              letterSpacing: '0.15em', textTransform: 'uppercase',
+              color: 'rgba(26,26,26,0.3)',
+              margin: 0,
+            }}>
+              © {year} Sabbath Spa & Wellness Hub · All rights reserved
+            </p>
+          </footer>
+        </div>
       </main>
     </>
   )
