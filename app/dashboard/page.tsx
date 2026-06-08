@@ -2,7 +2,7 @@
 
 // app/dashboard/overview/page.tsx
 // Phase 31: Omni-Synced Overview POS (Added Explicit User Tracking for Audit Logs)
-// NEW: Fully Responsive Horizontal Scrolling
+// NEW: Perfect Responsive Tablet & iPad Horizontal Scrolling
 
 export const dynamic = 'force-dynamic'
 
@@ -338,8 +338,8 @@ export default function OverviewDashboard() {
   const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: '40px', fontFamily: BODY }}>
-      <div style={{ maxWidth: '1600px', margin: '0 auto' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(20px, 4vw, 40px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
 
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
           <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview POS</h1>
@@ -377,7 +377,7 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
@@ -547,12 +547,12 @@ export default function OverviewDashboard() {
 
         {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW) ─── */}
         {view === 'GRID' && (
-          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
               <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Grayed-out rows represent staff on their scheduled day off.</span>
             </div>
 
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <div style={{ minWidth: '1200px' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
                   <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
