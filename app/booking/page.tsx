@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 23 Booking Engine (Multi-Branch Architecture + Confirmation Modal)
+// app/booking/page.tsx  —  Phase 24 Booking Engine (Optional Email Update)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -596,7 +596,8 @@ export default function BookingPage() {
     firstName: firstName.trim().length < 2,
     lastName: lastName.trim().length < 2,
     mobile: mobile.trim().length < 7,
-    email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
+    // Email is now optional, so it's only invalid if they typed something AND it's incorrectly formatted
+    email: email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
     time: time === '' || isTimeInvalid,
@@ -638,7 +639,7 @@ export default function BookingPage() {
         branch: branch, // <--- INJECTING THE BRANCH TO DB!
         client_name: constructedFullName,
         client_mobile: mobile.trim(),
-        client_email: email.trim(),
+        client_email: email.trim(), // Will just be empty string if not provided
         service_name: selectedServices.map(s => s.name).join(', '),
         price: finalTotalAmount,
         therapist_name: selectedTherapist?.name ?? null,
@@ -652,23 +653,27 @@ export default function BookingPage() {
       const { error: dbErr } = await supabase.from('bookings').insert(payload)
       if (dbErr) throw new Error(dbErr.message)
 
-      try {
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: firstName.trim(),
-            email: email.trim(),
-            date: date,
-            time: time,
-            services: selectedServices.map(s => s.name).join(', '),
-            totalAmount: finalTotalAmount,
-            branch: branch
+      // Only attempt to send the email if they actually provided an email address
+      if (email.trim() !== '') {
+        try {
+          await fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: firstName.trim(),
+              email: email.trim(),
+              date: date,
+              time: time,
+              services: selectedServices.map(s => s.name).join(', '),
+              totalAmount: finalTotalAmount,
+              branch: branch
+            })
           })
-        })
-      } catch (e) {
-        console.error("Email notification skipped", e)
+        } catch (e) {
+          console.error("Email notification skipped", e)
+        }
       }
+
       setSubmitted(true)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed.')
@@ -701,10 +706,14 @@ export default function BookingPage() {
         </p>
 
         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
-          <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>✉️</span> Please check your inbox for the receipt <span style={{ color: GOLD }}>{email}</span>
-          </p>
-          <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
+          {email.trim() && (
+            <>
+              <p style={{ fontSize: 14, color: BLACK, margin: '0 0 12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>✉️</span> Please check your inbox for the receipt <span style={{ color: GOLD }}>{email}</span>
+              </p>
+              <div style={{ height: 1, backgroundColor: 'rgba(26,26,26,0.05)', margin: '16px 0' }} />
+            </>
+          )}
           <p style={{ fontSize: 13, color: 'rgba(26,26,26,0.65)', margin: '0 0 8px', lineHeight: 1.5 }}>
             <strong style={{ color: BLACK }}>Important:</strong> Sabbath Spa will confirm your appointment 1 hour before your check-in via SMS or Call.
           </p>
@@ -851,7 +860,8 @@ export default function BookingPage() {
                 <Field label="Mobile Number *">
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.mobile) }} type="tel" inputMode="numeric" value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, ''))} placeholder="09XX XXX XXXX" />
                 </Field>
-                <Field label="Email Address *">
+                {/* REMOVED ASTERISK FROM EMAIL LABEL */}
+                <Field label="Email Address (Optional)">
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
               </Row2>
