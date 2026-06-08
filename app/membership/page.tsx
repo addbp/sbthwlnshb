@@ -100,7 +100,12 @@ export default function MembershipPortal() {
     ]
 
     const [selectedTier, setSelectedTier] = useState<string>('')
-    const [name, setName] = useState('')
+
+    // Split Name States
+    const [firstName, setFirstName] = useState('')
+    const [middleInitial, setMiddleInitial] = useState('')
+    const [lastName, setLastName] = useState('')
+
     const [mobile, setMobile] = useState('')
     const [email, setEmail] = useState('')
     const [address, setAddress] = useState('')
@@ -110,7 +115,15 @@ export default function MembershipPortal() {
     const [submitted, setSubmitted] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const isValid = selectedTier !== '' && name.length > 2 && mobile.length > 7 && email.includes('@') && address.length > 5
+    const autoCapitalize = (val: string) => {
+        if (!val) return '';
+        return val.charAt(0).toUpperCase() + val.slice(1);
+    }
+
+    const miStr = middleInitial.trim() ? ` ${middleInitial.trim()}.` : '';
+    const constructedFullName = `${firstName.trim()}${miStr} ${lastName.trim()}`;
+
+    const isValid = selectedTier !== '' && firstName.trim().length > 1 && lastName.trim().length > 1 && mobile.length > 7 && email.includes('@') && address.length > 5
     const activePackage = TIERS.find(t => t.id === selectedTier)
 
     function handleFormSubmit(e: FormEvent) {
@@ -129,7 +142,7 @@ export default function MembershipPortal() {
         try {
             const { error: dbErr } = await supabase.from('memberships').insert({
                 id: transactionId,
-                client_name: name.trim(),
+                client_name: constructedFullName,
                 client_mobile: mobile.trim(),
                 client_email: email.trim(),
                 client_address: address.trim(),
@@ -159,7 +172,7 @@ export default function MembershipPortal() {
             <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
             <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Membership Activated</h2>
             <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-                Congratulations, <strong style={{ color: BLACK }}>{name}</strong>! You are officially a <strong style={{ color: GOLD }}>{selectedTier}</strong> member.
+                Congratulations, <strong style={{ color: BLACK }}>{constructedFullName}</strong>! You are officially a <strong style={{ color: GOLD }}>{selectedTier}</strong> member.
             </p>
             <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
                 <p style={{ fontSize: 14, color: BLACK, fontWeight: 600, margin: 0 }}>
@@ -251,20 +264,30 @@ export default function MembershipPortal() {
                         <div style={{ backgroundColor: WHITE, padding: '32px', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
                             <h2 style={{ fontFamily: DSP, fontSize: 24, color: BLACK, margin: '0 0 24px' }}>Client Details</h2>
 
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 20 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, marginBottom: 20, alignItems: 'start' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <label style={LABEL}>Full Name *</label>
-                                    <input style={INPUT} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Maria Santos" required />
+                                    <label style={LABEL}>First Name *</label>
+                                    <input style={INPUT} value={firstName} onChange={e => setFirstName(autoCapitalize(e.target.value))} placeholder="Maria" required />
                                 </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <label style={{ ...LABEL, textAlign: 'center' }}>M.I.</label>
+                                    <input maxLength={1} style={{ ...INPUT, textAlign: 'center' }} value={middleInitial} onChange={e => setMiddleInitial(e.target.value.toUpperCase())} placeholder="A" />
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <label style={LABEL}>Last Name *</label>
+                                    <input style={INPUT} value={lastName} onChange={e => setLastName(autoCapitalize(e.target.value))} placeholder="Santos" required />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 20, marginBottom: 20 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                     <label style={LABEL}>Mobile Number *</label>
                                     <input style={INPUT} type="tel" value={mobile} onChange={e => setMobile(e.target.value)} placeholder="09XX XXX XXXX" required />
                                 </div>
-                            </div>
-
-                            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 20 }}>
-                                <label style={LABEL}>Email Address *</label>
-                                <input style={INPUT} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" required />
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <label style={LABEL}>Email Address *</label>
+                                    <input style={INPUT} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" required />
+                                </div>
                             </div>
 
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
