@@ -12,17 +12,16 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No file attachment provided.' }, { status: 400 })
         }
 
-        // STRICT CHECK: Ensure the Folder ID is loaded from Vercel
         if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
             console.error("CRITICAL ERROR: GOOGLE_DRIVE_FOLDER_ID is missing in environment variables.");
             return NextResponse.json({ error: 'Server misconfiguration: Google Drive Folder ID missing.' }, { status: 500 })
         }
 
-        // 1. Authenticate with Google Cloud Service Account
+        // 1. Authenticate with the NEW Free Gmail Service Account
         const auth = new google.auth.GoogleAuth({
             credentials: {
                 client_email: process.env.GOOGLE_CLIENT_EMAIL,
-                private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'), // Fixes line breaks from Vercel encryption
+                private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
             },
             scopes: ['https://www.googleapis.com/auth/drive.file'],
         })
@@ -40,7 +39,7 @@ export async function POST(req: Request) {
         const safeName = (clientName || 'guest').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
         const finalFileName = `${safeName}-${Date.now()}.${fileExt}`
 
-        // 4. Upload directly into your shared Sabbath Waivers folder
+        // 4. Upload directly into your new Google Drive folder
         const response = await drive.files.create({
             requestBody: {
                 name: finalFileName,
@@ -51,7 +50,7 @@ export async function POST(req: Request) {
                 body: stream,
             },
             fields: 'id, webViewLink',
-            supportsAllDrives: true, // <--- THIS IS THE MAGIC FIX FOR THE QUOTA ERROR
+            supportsAllDrives: true,
         })
 
         // Return the secure cloud viewing link to store in your database logs
