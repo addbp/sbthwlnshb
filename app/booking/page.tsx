@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 22 Booking Engine (Multi-Branch Architecture)
+// app/booking/page.tsx  —  Phase 23 Booking Engine (Multi-Branch Architecture + Confirmation Modal)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -160,6 +160,9 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // ─── CONFIRMATION MODAL STATE ───
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
 
   // ─── BRANCH SELECTOR STATE ───
   const [branch, setBranch] = useState('Sabbath Malolos')
@@ -601,13 +604,20 @@ export default function BookingPage() {
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
-  async function handleSubmit(e: FormEvent) {
+  // ─── INTERCEPT FORM SUBMISSION TO SHOW MODAL ───
+  function handleFormPreSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
     if (!isValid || loading) {
       if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. Please choose another time.");
       return;
     }
+    setShowConfirmModal(true)
+  }
+
+  // ─── ACTUAL DATABASE SUBMISSION ───
+  async function executeBooking() {
+    setShowConfirmModal(false)
     setLoading(true); setSubmitError(null)
 
     const selectedTherapist = therapists.find(t => t.id === therapistId)
@@ -652,7 +662,8 @@ export default function BookingPage() {
             date: date,
             time: time,
             services: selectedServices.map(s => s.name).join(', '),
-            totalAmount: finalTotalAmount
+            totalAmount: finalTotalAmount,
+            branch: branch
           })
         })
       } catch (e) {
@@ -765,7 +776,54 @@ export default function BookingPage() {
         .svc-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.02); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
+        .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
       `}</style>
+
+      {/* ─── CONFIRMATION POPUP MODAL ─── */}
+      {showConfirmModal && (
+        <div className="modal-overlay" onClick={() => setShowConfirmModal(false)}>
+          <div style={{ backgroundColor: '#F9F4EB', width: '100%', maxWidth: 500, borderRadius: 16, padding: 32, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: BODY }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontFamily: DSP, fontSize: 32, margin: '0 0 8px', color: BLACK, lineHeight: 1.1 }}>Acknowledge & Confirm</h3>
+            <p style={{ fontSize: 14, color: '#666', margin: '0 0 24px', lineHeight: 1.5 }}>
+              Please review the exact booking details and location before finalizing the transaction.
+            </p>
+
+            <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, padding: 20, marginBottom: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 14, marginBottom: 14 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: GOLD, textTransform: 'uppercase' }}>Booking Summary</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: BLACK }}>{fmt(finalTotalAmount)}</span>
+              </div>
+
+              <div style={{ fontSize: 13, color: BLACK, lineHeight: 1.6 }}>
+                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Client:</strong> <span>{displayFullName}</span></div>
+                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Branch:</strong> <span style={{ fontWeight: 700, color: GOLD }}>{branch}</span></div>
+                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Schedule:</strong> <span>{date} at {time}</span></div>
+                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Therapist:</strong> <span>{selectedTherapistDisplay}</span></div>
+
+                <div style={{ marginTop: 16, padding: '12px 14px', backgroundColor: 'rgba(61,122,74,0.05)', borderRadius: 8, border: '1px solid rgba(61,122,74,0.1)' }}>
+                  <p style={{ margin: '0 0 6px', fontSize: 10, fontWeight: 800, color: '#3D7A4A', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Services Selected:</p>
+                  <p style={{ margin: 0, fontSize: 13, color: BLACK, fontWeight: 600, lineHeight: 1.4 }}>
+                    {selectedServices.map(s => s.name).join(', ')}
+                  </p>
+                </div>
+
+                {appliedPromoText && (
+                  <p style={{ margin: '12px 0 0', fontSize: 12, color: '#C83232', fontWeight: 600 }}>Discount Applied: {appliedPromoText} (-₱{promoDeduction.toLocaleString()})</p>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12 }}>
+              <button type="button" onClick={() => setShowConfirmModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 10, color: BLACK, fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
+                Decline / Cancel
+              </button>
+              <button type="button" onClick={executeBooking} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer', transition: 'all 200ms ease' }}>
+                Confirm Transaction
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -775,21 +833,7 @@ export default function BookingPage() {
             <h1 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 8px', lineHeight: 1.1 }}>Book a Session</h1>
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} noValidate>
-
-            {/* ─── NEW BRANCH SELECTION UI ─── */}
-            <Section title="Select Branch" note="Please choose your preferred location">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Malolos' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Malolos' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
-                  <input type="radio" name="branch" value="Sabbath Malolos" checked={branch === 'Sabbath Malolos'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
-                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Malolos</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Pulilan' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Pulilan' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
-                  <input type="radio" name="branch" value="Sabbath Pulilan" checked={branch === 'Sabbath Pulilan'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
-                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Pulilan</span>
-                </label>
-              </div>
-            </Section>
+          <form onSubmit={handleFormPreSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} noValidate>
 
             <Section title="Client Information">
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, alignItems: 'start' }}>
@@ -811,6 +855,21 @@ export default function BookingPage() {
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
               </Row2>
+            </Section>
+
+            {/* ─── MOVED & UPDATED BRANCH SELECTION UI ─── */}
+            <Section title="Select Branch" note="Please confirm your preferred location">
+              <Field label="Branch Location *">
+                <select
+                  className="bk-in"
+                  style={SELECT}
+                  value={branch}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  <option value="Sabbath Malolos">Sabbath Malolos</option>
+                  <option value="Sabbath Pulilan">Sabbath Pulilan</option>
+                </select>
+              </Field>
             </Section>
 
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
@@ -1024,6 +1083,7 @@ export default function BookingPage() {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* This button now triggers the handleFormPreSubmit function which opens the modal */}
               <button type="submit" disabled={loading || !isValid} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading || !isValid ? 'not-allowed' : 'pointer', opacity: loading || !isValid ? 0.4 : 1, transition: 'opacity 200ms ease' }}>
                 {loading ? 'Sending request…' : `Confirm Booking · ${fmt(finalTotalAmount)}`}
               </button>
