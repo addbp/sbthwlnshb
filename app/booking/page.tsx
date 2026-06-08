@@ -1,7 +1,7 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 21 Booking Engine
-// STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix)
+// app/booking/page.tsx  —  Phase 22 Booking Engine (Multi-Branch Architecture)
+// STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
 
@@ -62,7 +62,7 @@ const LABEL: React.CSSProperties = {
 // TYPES
 // ─────────────────────────────────────────────────────────────
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string; savings?: string }
-interface Therapist { id: string; name: string; status: string; role: string; off_days?: string[] }
+interface Therapist { id: string; name: string; status: string; role: string; off_days?: string[]; branch: string; }
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
 interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
 
@@ -161,6 +161,9 @@ export default function BookingPage() {
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // ─── BRANCH SELECTOR STATE ───
+  const [branch, setBranch] = useState('Sabbath Malolos')
+
   const [firstName, setFirstName] = useState('')
   const [middleInitial, setMiddleInitial] = useState('')
   const [lastName, setLastName] = useState('')
@@ -246,7 +249,8 @@ export default function BookingPage() {
               name: t.name || t.therapist_name || 'Staff',
               status: t.status,
               role: t.role || t.specialty || 'Massage Therapist',
-              off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : []
+              off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : [],
+              branch: t.branch || 'Sabbath Malolos' // Default gracefully if old DB entries exist
             })))
         }
 
@@ -382,6 +386,22 @@ export default function BookingPage() {
   const nailServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && isNailService(s));
   const massageServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && !nailServices.includes(s) && s.category !== 'Custom');
 
+  // AUTOMATICALLY CLEAR LE NAILS IF USER SWITCHES TO PULILAN BRANCH
+  useEffect(() => {
+    if (branch === 'Sabbath Pulilan') {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        let changed = false;
+        nailServices.forEach(ns => { if (next.has(ns.id)) { next.delete(ns.id); changed = true; } });
+        packageServices.forEach(ps => { if (next.has(ps.id)) { next.delete(ps.id); changed = true; } });
+        return changed ? next : prev;
+      });
+      // Also unassign therapist if they switch branches and the therapist isn't in Pulilan
+      setTherapistId('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branch])
+
   function toggleService(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -407,14 +427,15 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
-  // ─── FILTER ALLOWED THERAPISTS ───
-  let allowedTherapists = therapists;
+  // ─── FILTER ALLOWED THERAPISTS (NOW WITH BRANCH FILTERING!) ───
+  let allowedTherapists = therapists.filter(t => t.branch === branch);
+
   if (selectedServices.length > 0) {
     const needsTherapist = selectedServices.some(s => massageServices.includes(s) || wellnessPackages.includes(s));
     const needsNailTech = selectedServices.some(s => nailServices.includes(s) || packageServices.includes(s));
     const needsWaxTech = selectedServices.some(s => waxServices.includes(s));
 
-    allowedTherapists = therapists.filter(t => {
+    allowedTherapists = allowedTherapists.filter(t => {
       const role = (t.role || '').toLowerCase();
       const isMassageTech = role.includes('massage') || role.includes('therapist') || role.includes('spa');
       const isNailTech = role.includes('nail');
@@ -482,20 +503,21 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
-  // ─── FETCH LIVE CONFLICTS ───
+  // ─── FETCH LIVE CONFLICTS (Now restricted by branch logically) ───
   useEffect(() => {
     if (!date) return;
     const fetchDateBookings = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('appointment_time, therapist_name')
+        .select('appointment_time, therapist_name, branch')
         .eq('appointment_date', date)
+        .eq('branch', branch) // Strict branch separation for availability
         .neq('status', 'Cancelled')
         .neq('status', 'Completed');
       if (data) setDateBookings(data);
     }
     fetchDateBookings();
-  }, [date, supabase]);
+  }, [date, branch, supabase]);
 
 
   // ─── DYNAMIC AVAILABILITY GENERATOR ───
@@ -524,7 +546,6 @@ export default function BookingPage() {
           if (ampm === 'PM' && h !== 12) h += 12;
           if (ampm === 'AM' && h === 12) h = 0;
 
-          // FIX: Treat late night (midnight) as hour 24 so it doesn't get blocked in the afternoon
           if (t === '12:00 AM') h = 24;
 
           if (h < currH || (h === currH && mins <= currM)) {
@@ -535,31 +556,23 @@ export default function BookingPage() {
 
       let isConflict = false;
       if (therapistId) {
-        // SCENARIO 1: Specific Therapist Selected. Only block if *they* are booked.
         const tName = therapists.find(th => th.id === therapistId)?.name;
         isConflict = dateBookings.some(b => b.appointment_time === t && b.therapist_name === tName);
       } else {
-        // SCENARIO 2: "Any Available Staff". Only block if ALL allowed therapists are booked.
         if (allowedTherapists.length === 0) {
-          isConflict = true; // No staff on duty for this service
+          isConflict = true;
         } else {
-          // Find if AT LEAST ONE allowed therapist is free
           const freeTherapist = allowedTherapists.find(th => {
-            // A therapist is free if they DO NOT have a booking at this exact time
             return !dateBookings.some(b => b.appointment_time === t && b.therapist_name === th.name);
           });
-          isConflict = !freeTherapist; // Conflict is true only if NO free therapist was found
+          isConflict = !freeTherapist;
         }
       }
 
-      return {
-        time: t,
-        available: !isPast && !isConflict
-      }
+      return { time: t, available: !isPast && !isConflict }
     });
   }
 
-  // ─── DYNAMIC THERAPIST STATUS GENERATOR ───
   const getTherapistStatus = (t: Therapist) => {
     if (time) {
       const isConflict = dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
@@ -569,13 +582,10 @@ export default function BookingPage() {
   }
 
   const isTherapistDisabled = (t: Therapist) => {
-    if (time) {
-      return dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
-    }
+    if (time) return dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
     return false;
   }
 
-  // ─── STRICT VALIDATION TO PREVENT UNAVAILABLE SUBMISSIONS ───
   const selectedSlot = availableSlots.find(s => s.time === time);
   const isTimeInvalid = !selectedSlot || !selectedSlot.available;
 
@@ -615,6 +625,7 @@ export default function BookingPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
         booking_id: generatedBookingId,
+        branch: branch, // <--- INJECTING THE BRANCH TO DB!
         client_name: constructedFullName,
         client_mobile: mobile.trim(),
         client_email: email.trim(),
@@ -629,7 +640,6 @@ export default function BookingPage() {
       };
 
       const { error: dbErr } = await supabase.from('bookings').insert(payload)
-
       if (dbErr) throw new Error(dbErr.message)
 
       try {
@@ -638,7 +648,9 @@ export default function BookingPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: firstName.trim(),
-            email: email.trim(), date: date, time: time,
+            email: email.trim(),
+            date: date,
+            time: time,
             services: selectedServices.map(s => s.name).join(', '),
             totalAmount: finalTotalAmount
           })
@@ -674,7 +686,7 @@ export default function BookingPage() {
         <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
         <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar. Please proceed to the cashier for payment processing.
+          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment at <strong style={{ color: GOLD }}>{branch}</strong> on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
         </p>
 
         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -703,7 +715,7 @@ export default function BookingPage() {
       {/* HIDDEN POS PRINT TEMPLATE */}
       <div className="print-only" style={{ padding: '20px', maxWidth: '400px', margin: '0 auto', color: '#000', fontFamily: 'monospace', fontSize: '14px', lineHeight: 1.5 }}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <h1 style={{ margin: '0 0 5px', fontSize: 22, fontWeight: 'bold' }}>SABBATH SPA</h1>
+          <h1 style={{ margin: '0 0 5px', fontSize: 22, fontWeight: 'bold' }}>{branch.toUpperCase()}</h1>
           <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Wellness Hub</p>
           <p style={{ margin: 0, fontSize: 12, textTransform: 'uppercase' }}>Booking Receipt</p>
         </div>
@@ -765,6 +777,20 @@ export default function BookingPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }} noValidate>
 
+            {/* ─── NEW BRANCH SELECTION UI ─── */}
+            <Section title="Select Branch" note="Please choose your preferred location">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Malolos' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Malolos' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
+                  <input type="radio" name="branch" value="Sabbath Malolos" checked={branch === 'Sabbath Malolos'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Malolos</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Pulilan' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Pulilan' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
+                  <input type="radio" name="branch" value="Sabbath Pulilan" checked={branch === 'Sabbath Pulilan'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Pulilan</span>
+                </label>
+              </div>
+            </Section>
+
             <Section title="Client Information">
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, alignItems: 'start' }}>
                 <Field label="First Name *">
@@ -779,15 +805,7 @@ export default function BookingPage() {
               </div>
               <Row2>
                 <Field label="Mobile Number *">
-                  <input
-                    className="bk-in"
-                    style={{ ...INPUT, ...eb(validation.mobile) }}
-                    type="tel"
-                    inputMode="numeric"
-                    value={mobile}
-                    onChange={e => setMobile(e.target.value.replace(/\D/g, ''))}
-                    placeholder="09XX XXX XXXX"
-                  />
+                  <input className="bk-in" style={{ ...INPUT, ...eb(validation.mobile) }} type="tel" inputMode="numeric" value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, ''))} placeholder="09XX XXX XXXX" />
                 </Field>
                 <Field label="Email Address *">
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
@@ -796,7 +814,6 @@ export default function BookingPage() {
             </Section>
 
             <Section title="Select Services" note={selectedIds.size > 0 ? `${selectedIds.size} selected` : 'Choose one or more'}>
-
               {detectedMembership && (
                 <div style={{ backgroundColor: 'rgba(197,143,59,0.08)', border: '1px solid rgba(197,143,59,0.3)', padding: '16px 20px', borderRadius: 12, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div style={{ width: 44, height: 44, borderRadius: '50%', backgroundColor: GOLD, display: 'flex', alignItems: 'center', justifyContent: 'center', color: WHITE, fontSize: 20 }}>👑</div>
@@ -829,7 +846,8 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {nailServices.length > 0 && (
+                  {/* ONLY SHOW LE NAILS IF BRANCH IS MALOLOS */}
+                  {branch !== 'Sabbath Pulilan' && nailServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails Salon</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
@@ -864,7 +882,8 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {packageServices.length > 0 && (
+                  {/* ONLY SHOW NAIL PACKAGES IF BRANCH IS MALOLOS */}
+                  {branch !== 'Sabbath Pulilan' && packageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Savings</div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(220px,100%),1fr))', gap: 10 }}>
@@ -904,14 +923,8 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ─── STRICT 30-MIN INTERVAL TIME DROPDOWN (DISABLED UNAVAILABLE SLOTS) ─── */}
                 <Field label="Preferred Time *">
-                  <select
-                    className="bk-in"
-                    style={{ ...SELECT, ...eb(validation.time) }}
-                    value={time}
-                    onChange={e => setTime(e.target.value)}
-                  >
+                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
                     <option value="">--:-- --</option>
                     {availableSlots.map(s => (
                       <option key={s.time} value={s.time} disabled={!s.available}>
@@ -922,8 +935,8 @@ export default function BookingPage() {
                 </Field>
               </Row2>
 
-              <Field label={therapistLoad ? 'Staff Selection (loading…)' : `Staff Selection`}>
-                <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder="Search for a staff member..." value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
+              <Field label={therapistLoad ? 'Staff Selection (loading…)' : `Staff Selection (${branch})`}>
+                <input className="bk-in" style={{ ...INPUT, marginBottom: 10, height: 44, fontSize: 14 }} placeholder={`Search staff in ${branch}...`} value={therapistSearch} onChange={e => setTherapistSearch(e.target.value)} />
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
                   <option value="">Any Available Staff / No Preference</option>
                   {filteredTherapists.map(t => (
@@ -939,7 +952,6 @@ export default function BookingPage() {
                 )}
               </Field>
 
-              {/* ─── NEW VISUAL AVAILABILITY GRID ─── */}
               {availableSlots.length > 0 && (
                 <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
@@ -968,12 +980,7 @@ export default function BookingPage() {
             >
               <Field label="Choose Available Discount">
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <select
-                    className="bk-in"
-                    style={{ ...SELECT, flex: 2 }}
-                    value={discountMode}
-                    onChange={e => { setDiscountMode(e.target.value); setCustomDiscountVal(''); }}
-                  >
+                  <select className="bk-in" style={{ ...SELECT, flex: 2 }} value={discountMode} onChange={e => { setDiscountMode(e.target.value); setCustomDiscountVal(''); }}>
                     <option value="none">No Discount</option>
                     <option value="senior">Senior Citizen (20%)</option>
                     <option value="pwd">PWD (20%)</option>
@@ -989,14 +996,7 @@ export default function BookingPage() {
                       <span style={{ position: 'absolute', left: 14, top: 18, fontSize: 14, color: '#666', fontWeight: 700 }}>
                         {discountMode === 'custom_amount' ? '₱' : '%'}
                       </span>
-                      <input
-                        className="bk-in"
-                        style={{ ...INPUT, paddingLeft: 34 }}
-                        type="number"
-                        value={customDiscountVal}
-                        onChange={e => setCustomDiscountVal(e.target.value)}
-                        placeholder={discountMode === 'custom_amount' ? 'Amount' : 'Percentage'}
-                      />
+                      <input className="bk-in" style={{ ...INPUT, paddingLeft: 34 }} type="number" value={customDiscountVal} onChange={e => setCustomDiscountVal(e.target.value)} placeholder={discountMode === 'custom_amount' ? 'Amount' : 'Percentage'} />
                     </div>
                   )}
                 </div>

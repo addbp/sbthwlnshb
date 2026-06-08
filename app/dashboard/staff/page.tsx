@@ -12,7 +12,8 @@ interface StaffMember {
     name: string;
     role: string;
     status: string;
-    off_days: string[]; // NEW: Array of days off
+    off_days: string[];
+    branch: string; // NEW: Branch assignment
     dynamicStatus?: string;
 }
 
@@ -68,7 +69,10 @@ export default function StaffPage() {
     const [staffList, setStaffList] = useState<StaffMember[]>([])
     const [liveBookings, setLiveBookings] = useState<BookingRecord[]>([])
     const [loading, setLoading] = useState(true)
+
+    // ─── FILTERS ───
     const [filter, setFilter] = useState<string>('All')
+    const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos') // NEW: Branch Toggle View
     const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table')
 
     // ─── SECURITY STATE ───
@@ -83,7 +87,7 @@ export default function StaffPage() {
     // ─── CRUD MODAL STATE ───
     const [showStaffModal, setShowStaffModal] = useState(false)
     const [editingId, setEditingId] = useState<string | number | null>(null)
-    const [formData, setFormData] = useState({ name: '', role: 'Massage Therapist', status: 'Available', off_days: [] as string[] })
+    const [formData, setFormData] = useState({ name: '', role: 'Massage Therapist', status: 'Available', branch: 'Sabbath Malolos', off_days: [] as string[] })
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     // ─── DATA FETCHING ───
@@ -124,6 +128,7 @@ export default function StaffPage() {
                     name: t.name || t.full_name || 'Unknown',
                     role: t.role || t.specialty || 'Massage Therapist',
                     status: t.status || 'Available',
+                    branch: t.branch || 'Sabbath Malolos', // Ensure backward compatibility
                     off_days: t.off_days ? t.off_days.split(',').filter(Boolean) : []
                 }))
                 setStaffList(formatted)
@@ -187,13 +192,13 @@ export default function StaffPage() {
     // ─── CRUD ACTIONS ───
     const handleOpenAdd = () => {
         setEditingId(null)
-        setFormData({ name: '', role: 'Massage Therapist', status: 'Available', off_days: [] })
+        setFormData({ name: '', role: 'Massage Therapist', status: 'Available', branch: viewBranch, off_days: [] })
         setShowStaffModal(true)
     }
 
     const handleOpenEdit = (s: StaffMember) => {
         setEditingId(s.id)
-        setFormData({ name: s.name, role: s.role, status: s.status, off_days: s.off_days })
+        setFormData({ name: s.name, role: s.role, status: s.status, branch: s.branch, off_days: s.off_days })
         setShowStaffModal(true)
     }
 
@@ -226,6 +231,7 @@ export default function StaffPage() {
                 name: formData.name.trim(),
                 role: formData.role,
                 status: formData.status,
+                branch: formData.branch, // SAVES THE ASSIGNED BRANCH
                 off_days: formData.off_days.join(',')
             }
 
@@ -237,21 +243,23 @@ export default function StaffPage() {
             setShowStaffModal(false)
             loadData()
         } catch (err) {
-            alert("Database Error: Make sure your 'staff' table is configured properly with the off_days column.")
+            alert("Database Error: Make sure your 'staff' table is configured properly with the branch column.")
         } finally {
             setIsSubmitting(false)
         }
     }
 
-    // ─── KPIs & FILTERS ───
+    // ─── KPIs & FILTERS (NOW BRANCH-SPECIFIC) ───
+    const branchFilteredStaff = dynamicStaff.filter(s => s.branch === viewBranch)
+
     const counts = {
-        total: dynamicStaff.length,
-        available: dynamicStaff.filter(s => s.dynamicStatus === 'Available').length,
-        inSession: dynamicStaff.filter(s => s.dynamicStatus === 'In Session').length,
-        offDuty: dynamicStaff.filter(s => s.dynamicStatus === 'Off Duty').length,
+        total: branchFilteredStaff.length,
+        available: branchFilteredStaff.filter(s => s.dynamicStatus === 'Available').length,
+        inSession: branchFilteredStaff.filter(s => s.dynamicStatus === 'In Session').length,
+        offDuty: branchFilteredStaff.filter(s => s.dynamicStatus === 'Off Duty').length,
     }
 
-    const displayedStaff = filter === 'All' ? dynamicStaff : dynamicStaff.filter(s => s.dynamicStatus === filter)
+    const displayedStaff = filter === 'All' ? branchFilteredStaff : branchFilteredStaff.filter(s => s.dynamicStatus === filter)
 
     return (
         <>
@@ -310,25 +318,36 @@ export default function StaffPage() {
                                     style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
                             </div>
 
+                            {/* BRANCH SELECTOR */}
                             <div style={{ marginBottom: 16 }}>
-                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Role</label>
-                                <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
+                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Branch Location</label>
+                                <select value={formData.branch} onChange={e => setFormData({ ...formData, branch: e.target.value })}
                                     style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
-                                    <option value="Massage Therapist">Massage Therapist</option>
-                                    <option value="Nail Technician">Nail Technician</option>
-                                    <option value="Maintenance">Maintenance</option>
-                                    <option value="Receptionist">Receptionist</option>
-                                    <option value="Manager">Manager</option>
+                                    <option value="Sabbath Malolos">Sabbath Malolos</option>
+                                    <option value="Sabbath Pulilan">Sabbath Pulilan</option>
                                 </select>
                             </div>
 
-                            <div style={{ marginBottom: 16 }}>
-                                <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Base Status</label>
-                                <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
-                                    <option value="Available">Available</option>
-                                    <option value="Off Duty">Off Duty</option>
-                                </select>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Role</label>
+                                    <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
+                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
+                                        <option value="Massage Therapist">Massage Therapist</option>
+                                        <option value="Nail Technician">Nail Technician</option>
+                                        <option value="Maintenance">Maintenance</option>
+                                        <option value="Receptionist">Receptionist</option>
+                                        <option value="Manager">Manager</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Base Status</label>
+                                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
+                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
+                                        <option value="Available">Available</option>
+                                        <option value="Off Duty">Off Duty</option>
+                                    </select>
+                                </div>
                             </div>
 
                             <div style={{ marginBottom: 24, padding: '16px', backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.08)', borderRadius: 12 }}>
@@ -384,12 +403,26 @@ export default function StaffPage() {
                     </div>
                 </div>
 
+                {/* ── BRANCH TOGGLE TABS ── */}
+                <div style={{ display: 'flex', gap: 8, padding: '6px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, width: 'fit-content' }}>
+                    <button
+                        onClick={() => { setViewBranch('Sabbath Malolos'); setFilter('All'); }}
+                        style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? '#fff' : 'transparent', color: viewBranch === 'Sabbath Malolos' ? '#C58F3B' : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+                        Malolos Branch
+                    </button>
+                    <button
+                        onClick={() => { setViewBranch('Sabbath Pulilan'); setFilter('All'); }}
+                        style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? '#fff' : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? '#C58F3B' : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+                        Pulilan Branch
+                    </button>
+                </div>
+
                 {/* 4 Stat Cards */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(200px,100%),1fr))', gap: 12 }}>
                     <div onClick={() => setFilter('All')} style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '18px', cursor: 'pointer', boxShadow: filter === 'All' ? '0 0 0 2px #1A1A1A' : '0 2px 8px rgba(0,0,0,0.05)' }}>
                         <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#7A6E65', margin: '0 0 8px' }}>Total Staff</p>
                         <p style={{ fontSize: 24, fontWeight: 700, color: '#1A1A1A', margin: '0 0 4px' }}>{counts.total}</p>
-                        <p style={{ fontSize: 11, color: '#9A8E85', margin: 0 }}>Registered</p>
+                        <p style={{ fontSize: 11, color: '#9A8E85', margin: 0 }}>Registered ({viewBranch.split(' ')[1]})</p>
                     </div>
 
                     <div onClick={() => setFilter('Available')} style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '18px', cursor: 'pointer', position: 'relative', overflow: 'hidden', boxShadow: filter === 'Available' ? '0 0 0 2px #3D7A4A' : '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -433,15 +466,15 @@ export default function StaffPage() {
                 {/* Staff List / Empty State / Calendar */}
                 {loading ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Aggregating staff data and live bookings...</div>
-                ) : staffList.length === 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
+                ) : branchFilteredStaff.length === 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>
                         <div style={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#F8F4EE', border: '1px solid rgba(197,143,59,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', color: '#C58F3B' }}>
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
                         </div>
-                        <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 24, color: '#1A1A1A', margin: '0 0 8px' }}>No staff yet</h3>
-                        <p style={{ color: '#7A6E65', fontSize: 14, margin: '0 0 24px' }}>Add your first therapist to get started.</p>
+                        <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 24, color: '#1A1A1A', margin: '0 0 8px' }}>No staff at {viewBranch}</h3>
+                        <p style={{ color: '#7A6E65', fontSize: 14, margin: '0 0 24px' }}>Add your first therapist to this branch to get started.</p>
                         <button onClick={() => executeProtectedAction(handleOpenAdd)} style={{ padding: '0 24px', height: 44, border: 'none', borderRadius: 8, backgroundColor: '#1A1A1A', color: '#C58F3B', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
-                            + Add First Therapist
+                            + Add Therapist to {viewBranch.split(' ')[1]}
                         </button>
                     </div>
                 ) : viewMode === 'calendar' ? (
@@ -449,7 +482,7 @@ export default function StaffPage() {
                     /* ─── NEW CALENDAR MATRIX VIEW ─── */
                     <div className="cal-scroll" style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
                         <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
-                            <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>Today's Therapist Schedule</h3>
+                            <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>{viewBranch} Today's Schedule</h3>
                             <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>Scroll right to view all appointments. Automated off-days block scheduling.</p>
                         </div>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1200 }}>
@@ -544,7 +577,7 @@ export default function StaffPage() {
                                             <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                                                 <button onClick={() => executeProtectedAction(() => handleOpenEdit(s))} style={{ background: 'none', border: 'none', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginRight: 16, textTransform: 'uppercase', textDecoration: 'underline', textDecorationColor: 'rgba(197,143,59,0.5)', textUnderlineOffset: 4 }}>Edit</button>
                                                 <button onClick={() => executeProtectedAction(() => handleDelete(s.id, s.name))} style={{ background: 'none', border: 'none', color: '#C83232', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>Delete</button>
-                                            </td>
+                                                "</td>
                                         </tr>
                                     ))}
                                     {displayedStaff.length === 0 && (

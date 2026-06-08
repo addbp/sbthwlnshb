@@ -3,7 +3,7 @@
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
 // Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export w/ All Time & Min Date
-// NEW: Interactive Payment Details Modal
+// NEW: Multi-Branch Ledger & Interactive Payment Details Modal
 
 export const dynamic = 'force-dynamic'
 
@@ -72,6 +72,7 @@ interface UnifiedRecord {
   id: string;
   rawDate: Date | null;
   displayDate: string;
+  branch: string; // NEW: Branch tracking
   client_name: string;
   service: string;
   therapist: string;
@@ -91,6 +92,7 @@ export default function DashboardBookings() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'ALL' | 'SABBATH' | 'LE NAILS'>('ALL')
+  const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos') // NEW: Branch Toggle State
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -143,6 +145,7 @@ export default function DashboardBookings() {
         const parsedDate = parseImportDate(r.appointment_date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
         const service = String(r.service_name || r.service || '—');
+        const branchAssigned = String(r.branch || 'Sabbath Malolos'); // Fallback to Malolos if old record
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
@@ -152,6 +155,7 @@ export default function DashboardBookings() {
           id: `live-${r.booking_id}`,
           rawDate: parsedDate,
           displayDate: formatDateToDDMMMYY(parsedDate),
+          branch: branchAssigned,
           client_name: client,
           service: service,
           therapist: String(r.therapist_name || '—').toUpperCase(),
@@ -174,6 +178,7 @@ export default function DashboardBookings() {
         const parsedDate = parseImportDate(r.date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
         const service = String(r.service || '—');
+        const branchAssigned = String(r.branch || 'Sabbath Malolos'); // Importers default to Malolos
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
@@ -184,6 +189,7 @@ export default function DashboardBookings() {
             id: `imp-${r.id}`,
             rawDate: parsedDate,
             displayDate: formatDateToDDMMMYY(parsedDate),
+            branch: branchAssigned,
             client_name: client,
             service: service,
             therapist: String(r.therapist || '—').toUpperCase(),
@@ -191,7 +197,7 @@ export default function DashboardBookings() {
             amount: amt,
             discount_pct: Number(r.discount_pct || 0),
             payment_method: String(r.payment_method || 'CASH').toUpperCase(),
-            payment_status: String(r.payment_status || 'PAID').toUpperCase(), // default past records to PAID usually
+            payment_status: String(r.payment_status || 'PAID').toUpperCase(),
             ref_no: String(r.ref_no || ''),
             receipt_url: String(r.receipt_url || ''),
             received_payment: parseCurrency(r.received_payment || amt),
@@ -236,9 +242,9 @@ export default function DashboardBookings() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [activeTab, searchQuery])
+  }, [activeTab, searchQuery, viewBranch])
 
-  // ─── FILTERING LOGIC ───
+  // ─── FILTERING LOGIC (NOW INCLUDES BRANCH) ───
   const filteredRecords = records.filter(record => {
     const matchesSearch =
       (record.client_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
@@ -246,7 +252,9 @@ export default function DashboardBookings() {
       (record.displayDate?.toLowerCase() || '').includes(searchQuery.toLowerCase())
 
     const matchesTab = activeTab === 'ALL' ? true : (record.category?.toUpperCase() === activeTab)
-    return matchesSearch && matchesTab
+    const matchesBranch = record.branch === viewBranch; // MUST Match selected dashboard branch
+
+    return matchesSearch && matchesTab && matchesBranch
   })
 
   const totalPagesCount = Math.max(1, Math.ceil(filteredRecords.length / itemsPerPage))
@@ -258,7 +266,7 @@ export default function DashboardBookings() {
   // ─── MODAL HANDLERS ───
   const openClientModal = (clientName: string) => {
     if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
-    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
+    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase() && r.branch === viewBranch);
     setSelectedClientHistory(history);
     setSelectedClientName(clientName);
     setShowModal(true);
@@ -266,7 +274,7 @@ export default function DashboardBookings() {
 
   const openPaymentModal = (clientName: string) => {
     if (!clientName || clientName.toLowerCase() === 'guest' || clientName === '—') return;
-    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase());
+    const history = records.filter(r => r.client_name.toLowerCase() === clientName.toLowerCase() && r.branch === viewBranch);
     setSelectedClientHistory(history);
     setSelectedClientName(clientName);
     setShowPaymentModal(true);
@@ -274,7 +282,7 @@ export default function DashboardBookings() {
 
   // ─── CSV EXPORT LOGIC WITH EXPLICIT OPTIONS ───
   const confirmCSVExport = () => {
-    let dataToExport = filteredRecords;
+    let dataToExport = filteredRecords; // ALREADY BRANCH-FILTERED!
 
     if (exportMode === 'RANGE') {
       if (!exportDateRange.start || !exportDateRange.end) {
@@ -298,9 +306,9 @@ export default function DashboardBookings() {
       return;
     }
 
-    const headers = ['Date', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Payment Status', 'Client Type'];
+    const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Payment Status', 'Client Type'];
     const csvRows = dataToExport.map(r => [
-      `"${r.displayDate}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
+      `"${r.displayDate}"`, `"${r.branch}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
       `"${r.category}"`, `"${r.amount}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
     ].join(','));
 
@@ -308,7 +316,7 @@ export default function DashboardBookings() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.setAttribute('download', `Sabbath_Bookings_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `${viewBranch.replace(' ', '_')}_Bookings_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -322,14 +330,14 @@ export default function DashboardBookings() {
 
         {/* HEADER SECTION */}
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
-          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Bookings</h1>
+          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Bookings Ledger</h1>
         </div>
 
         {/* CONTROLS SECTION */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px', flexWrap: 'wrap', gap: '20px' }}>
           <div>
             <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>DATA LEDGER</p>
-            <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Bookings Log</h2>
+            <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Operations Log</h2>
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
@@ -342,9 +350,23 @@ export default function DashboardBookings() {
           </div>
         </div>
 
+        {/* ── BRANCH TOGGLE TABS ── */}
+        <div style={{ display: 'flex', gap: 8, padding: '6px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, width: 'fit-content', marginBottom: '20px' }}>
+          <button
+            onClick={() => setViewBranch('Sabbath Malolos')}
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+            Malolos Branch
+          </button>
+          <button
+            onClick={() => setViewBranch('Sabbath Pulilan')}
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+            Pulilan Branch
+          </button>
+        </div>
+
         {/* SEARCH BAR */}
         <div style={{ marginBottom: '30px' }}>
-          <input type="search" placeholder="Search by customer, date, or service string..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', maxWidth: '500px', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '14px', color: BLACK, outline: 'none', fontFamily: BODY }} />
+          <input type="search" placeholder={`Search ${viewBranch} bookings by customer, date, or service...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', maxWidth: '500px', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '14px', color: BLACK, outline: 'none', fontFamily: BODY }} />
         </div>
 
         {/* TABS */}
@@ -375,7 +397,7 @@ export default function DashboardBookings() {
               {loading ? (
                 <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>Merging live data with historical records...</td></tr>
               ) : viewablePaginatedRows.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for this filter.</td></tr>
+                <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for {viewBranch}.</td></tr>
               ) : (
                 viewablePaginatedRows.map((record) => (
                   <tr key={record.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
@@ -441,7 +463,7 @@ export default function DashboardBookings() {
 
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
-                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>CLIENT PROFILE</p>
+                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>CLIENT PROFILE ({viewBranch})</p>
                   <h2 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
                 </div>
                 <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
@@ -557,7 +579,7 @@ export default function DashboardBookings() {
 
               <h2 style={{ fontFamily: DSP, fontSize: '24px', color: BLACK, margin: '0 0 16px 0' }}>Export CSV</h2>
               <p style={{ fontSize: '13px', color: '#666', marginBottom: '24px', lineHeight: 1.5 }}>
-                Choose how much data you want to download from your ledger.
+                Choose how much data you want to download from your <strong>{viewBranch}</strong> ledger.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>

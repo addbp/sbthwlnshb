@@ -2,16 +2,45 @@ import { getAllWaivers } from '@/lib/actions/waivers';
 import { FileText, ShieldCheck, ShieldAlert, ArrowUpRight, User, Calendar, Clock, Image as ImageIcon } from 'lucide-react';
 import Link from 'next/link';
 
-export default async function WaiversPage() {
-  const { data: waivers, error } = await getAllWaivers();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default async function WaiversPage(props: any) {
+  // Gracefully handle Next.js 13/14/15 search params for Server Components
+  const searchParams = props.searchParams || {};
+  const params = searchParams instanceof Promise ? await searchParams : searchParams;
+
+  // Determine which branch to view (Defaults to Malolos)
+  const viewBranch = params?.branch === 'Pulilan' ? 'Sabbath Pulilan' : 'Sabbath Malolos';
+
+  // Fetch all waivers from the server
+  const { data: allWaivers, error } = await getAllWaivers();
+
+  // Filter the waivers strictly by the selected branch tab
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const waivers = allWaivers?.filter((w: any) => (w.branch || 'Sabbath Malolos') === viewBranch) || [];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="flex justify-between items-end">
         <div className="space-y-1">
           <h1 className="brand-heading text-4xl">Document Registry</h1>
           <p className="text-brandAccent/60">Digital logs and attached physical health waivers.</p>
         </div>
+      </div>
+
+      {/* ── BRANCH TOGGLE TABS ── */}
+      <div className="flex gap-2 p-1.5 bg-brandAccent/5 rounded-xl w-fit">
+        <Link
+          href="?branch=Malolos"
+          className={`px-6 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200 ${viewBranch === 'Sabbath Malolos' ? 'bg-white text-brandAccent shadow-sm' : 'text-brandAccent/50 hover:text-brandAccent/80'}`}
+        >
+          Malolos Branch
+        </Link>
+        <Link
+          href="?branch=Pulilan"
+          className={`px-6 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200 ${viewBranch === 'Sabbath Pulilan' ? 'bg-white text-brandAccent shadow-sm' : 'text-brandAccent/50 hover:text-brandAccent/80'}`}
+        >
+          Pulilan Branch
+        </Link>
       </div>
 
       <div className="brand-card overflow-hidden">
@@ -96,7 +125,7 @@ export default async function WaiversPage() {
                       <div className="text-brandAccent/20">
                         <FileText size={48} className="mx-auto" />
                       </div>
-                      <p className="text-sm font-bold text-brandAccent/40">No waivers have been filed yet.</p>
+                      <p className="text-sm font-bold text-brandAccent/40">No waivers have been filed for {viewBranch} yet.</p>
                       <Link href="/waiver" className="btn-primary inline-block mt-4">Open Intake Form</Link>
                     </div>
                   </td>
