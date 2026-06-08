@@ -422,37 +422,6 @@ export default function WaiverPage() {
         </div>
       )}
 
-      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL CANVAS (PRESERVED INTACT) ── */}
-      {/* {showSignatureModal && (
-        <div className="signature-modal">
-          <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Please Draw Your Signature</h3>
-            <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
-          </div>
-
-          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed \${GOLD}`, overflow: 'hidden' }}>
-            <canvas
-              ref={canvasRef}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-              style={{ width: '100%', height: '100%', cursor: 'crosshair', touchAction: 'none' }}
-            />
-          </div>
-
-          <div style={{ padding: '20px', display: 'flex', gap: 12, backgroundColor: WHITE, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Undo</button>
-            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>Save</button>
-          </div>
-        </div>
-      )}
-      */}
-
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ textAlign: 'center' }}>
@@ -519,8 +488,8 @@ export default function WaiverPage() {
                   </div>
                 </div>
 
-                {showDropdown && dropdownOptions.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 180, overflowY: 'auto', zIndex: 50 }}>
+                {showDropdown && (dropdownOptions.length > 0 || currentFullName.trim().length > 0) && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 10, marginTop: 6, maxHeight: 220, overflowY: 'auto', zIndex: 50, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                     {dropdownOptions.map(n => (
                       <div
                         key={n}
@@ -531,6 +500,26 @@ export default function WaiverPage() {
                         {n}
                       </div>
                     ))}
+
+                    {/* NEW CLIENT EXPLICIT BUTTON */}
+                    {currentFullName.trim().length > 0 && (
+                      <div
+                        className="dropdown-item"
+                        onMouseDown={() => setShowDropdown(false)}
+                        style={{
+                          padding: '14px 15px',
+                          cursor: 'pointer',
+                          backgroundColor: '#fafafa',
+                          color: '#2e7d32',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          textAlign: 'center',
+                          borderTop: dropdownOptions.length > 0 ? '1px solid rgba(197,143,59,0.1)' : 'none'
+                        }}
+                      >
+                        + Continue as "{currentFullName}" (New Client)
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
