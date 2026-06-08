@@ -2,6 +2,7 @@
 
 // app/dashboard/clients/page.tsx
 // Unified Ledger: Client Directory + Therapist Commission Calendar (Strict "Completed" Tracking)
+// NEW: Dynamic Membership Deduction Engine
 
 export const dynamic = 'force-dynamic'
 
@@ -144,10 +145,10 @@ export default function ClientsPage() {
       fromWaiver += PAGE
     }
 
-    // 4. Fetch Memberships
+    // 4. Fetch Memberships (Included created_at for accurate dynamic deduction)
     let fromMem = 0
     for (; ;) {
-      const { data, error } = await supabase.from('memberships').select('client_name, membership_tier, remaining_massages').eq('status', 'Active').range(fromMem, fromMem + PAGE - 1)
+      const { data, error } = await supabase.from('memberships').select('client_name, membership_tier, remaining_massages, created_at').eq('status', 'Active').range(fromMem, fromMem + PAGE - 1)
       if (error || !data || data.length === 0) break
       allMemberships.push(...data)
       if (data.length < PAGE) break
@@ -166,6 +167,7 @@ export default function ClientsPage() {
       return clientMap.get(key)!
     }
 
+    // Process all bookings
     allBookings.forEach(r => {
       const rawDate = r.date || r.appointment_date || r.created_at
       const d = parseImportDate(rawDate)
@@ -199,11 +201,38 @@ export default function ClientsPage() {
       }
     })
 
+    // ─── DYNAMIC MEMBERSHIP DEDUCTION LOGIC ───
     allMemberships.forEach(m => {
       if (!m.client_name || m.client_name.toLowerCase() === 'guest' || m.client_name === '—') return
       const client = getClient(m.client_name)
-      client.membershipTier = (m.membership_tier || 'N/A').toUpperCase()
-      client.remainingMassages = m.remaining_massages || '—'
+      const tier = (m.membership_tier || 'N/A').toUpperCase()
+      client.membershipTier = tier
+
+      if (tier === 'PLATINUM' || tier === 'VIP') {
+        // Unlimited Plans stay purely Unlimited
+        client.remainingMassages = 'Unlimited'
+      } else if (tier === 'BASIC' || tier === 'GOLD') {
+        // Dynamic calculation for limited packages
+        const initialMassages = tier === 'BASIC' ? 6 : 20;
+        const membershipStartDate = m.created_at ? new Date(m.created_at).getTime() : 0;
+
+        let eligibleUsedCount = 0;
+
+        // Scan their history to count valid massages taken after buying the membership
+        client.history.forEach(b => {
+          if (b.date && b.date.getTime() >= membershipStartDate) {
+            const svc = String(b.service).toLowerCase();
+            if (svc.includes('swedish') || svc.includes('shiatsu') || svc.includes('foot reflexology')) {
+              eligibleUsedCount++;
+            }
+          }
+        });
+
+        const remaining = Math.max(0, initialMassages - eligibleUsedCount);
+        client.remainingMassages = remaining.toString();
+      } else {
+        client.remainingMassages = m.remaining_massages || '—'
+      }
     })
 
     allWaivers.forEach(w => {
@@ -488,7 +517,7 @@ export default function ClientsPage() {
                             </span>
                           </td>
 
-                          <td style={{ padding: '14px 20px', color: c.remainingMassages !== '—' ? '#3D7A4A' : '#666', fontWeight: c.remainingMassages !== '—' ? 700 : 400 }}>
+                          <td style={{ padding: '14px 20px', color: c.remainingMassages !== '—' && c.remainingMassages !== '0' ? '#3D7A4A' : '#666', fontWeight: c.remainingMassages !== '—' ? 700 : 400 }}>
                             {c.remainingMassages}
                           </td>
 
