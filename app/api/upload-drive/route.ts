@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { google } from 'googleapis'
-import { Readable } from 'stream'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(req: Request) {
     try {
@@ -12,55 +11,46 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No file attachment provided.' }, { status: 400 })
         }
 
-        if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
-            console.error("CRITICAL ERROR: GOOGLE_DRIVE_FOLDER_ID is missing in environment variables.");
-            return NextResponse.json({ error: 'Server misconfiguration: Google Drive Folder ID missing.' }, { status: 500 })
-        }
+        // 1. Authenticate directly with your existing Supabase project
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        )
 
-        // 1. Authenticate with the NEW Free Gmail Service Account
-        const auth = new google.auth.GoogleAuth({
-            credentials: {
-                client_email: process.env.GOOGLE_CLIENT_EMAIL,
-                private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-            },
-            scopes: ['https://www.googleapis.com/auth/drive.file'],
-        })
-
-        const drive = google.drive({ version: 'v3', auth })
-
-        // 2. Convert the frontend file arrayBuffer into a Node.js stream for Google Drive
-        const buffer = Buffer.from(await file.arrayBuffer())
-        const stream = new Readable()
-        stream.push(buffer)
-        stream.push(null)
-
-        // 3. Format clean file name matching your spa taxonomy
-        const fileExt = file.name.split('.').pop()
+        // 2. Format a clean, secure file name matching the client
+        const fileExt = file.name.split('.').pop() || 'png'
         const safeName = (clientName || 'guest').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
         const finalFileName = `${safeName}-${Date.now()}.${fileExt}`
 
-        // 4. Upload directly into your new Google Drive folder
-        const response = await drive.files.create({
-            requestBody: {
-                name: finalFileName,
-                parents: [process.env.GOOGLE_DRIVE_FOLDER_ID],
-            },
-            media: {
-                mimeType: file.type,
-                body: stream,
-            },
-            fields: 'id, webViewLink',
-            supportsAllDrives: true,
-        })
+        // 3. Convert the frontend file into a Buffer for Supabase
+        const arrayBuffer = await file.arrayBuffer()
+        const buffer = Buffer.from(arrayBuffer)
 
-        // Return the secure cloud viewing link to store in your database logs
+        // 4. Upload straight into your new Supabase 'waivers' bucket
+        const { error } = await supabase.storage
+            .from('waivers')
+            .upload(finalFileName, buffer, {
+                contentType: file.type,
+                upsert: false
+            })
+
+        if (error) {
+            throw new Error(`Supabase Storage Error: ${error.message}`)
+        }
+
+        // 5. Retrieve the public URL to save securely into your database
+        const { data: urlData } = supabase.storage
+            .from('waivers')
+            .getPublicUrl(finalFileName)
+
+        // Return the link seamlessly to the frontend
         return NextResponse.json({
             success: true,
-            url: response.data.webViewLink
+            url: urlData.publicUrl
         })
 
     } catch (error: any) {
-        console.error('Google Drive Server Route Error:', error)
-        return NextResponse.json({ error: error.message || 'Drive transfer failed' }, { status: 500 })
+        console.error('Supabase Upload Route Error:', error)
+        return NextResponse.json({ error: error.message || 'File transfer failed' }, { status: 500 })
     }
 }
