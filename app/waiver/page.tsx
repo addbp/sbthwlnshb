@@ -341,11 +341,13 @@ export default function WaiverPage() {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) return alert("Please fill out your first and last name completely.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
-    if (!photoAttachment) return alert("Please attach a photo of the signed physical waiver.")
+
+    // REMOVED STRICT REQUIREMENT FOR PHOTO:
+    // if (!photoAttachment) return alert("Please attach a photo of the signed physical waiver.")
 
     setLoading(true)
     try {
-      // 1. Upload Photo to Backend Google Drive Route
+      // 1. Upload Photo to Backend Google Drive Route (Only if photo is attached)
       let driveViewingUrl = '';
       if (photoAttachment) {
         const payloadData = new FormData();
@@ -372,7 +374,7 @@ export default function WaiverPage() {
         client_name: currentFullName,
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
-        photo_attachment_url: driveViewingUrl,
+        photo_attachment_url: driveViewingUrl, // Will be blank string if no photo
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -647,40 +649,12 @@ export default function WaiverPage() {
                   {agreed && <svg width="14" height="14" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke={WHITE} strokeWidth="2" strokeLinecap="round" /></svg>}
                 </div>
                 <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.85)', lineHeight: 1.6, textAlign: 'justify' }}>
-                  I understand that the treatment is for relaxation and wellness only, and not a form of medical treatment. I confirm that I have disclosed all relevant medical conditions, and I take full responsibility for any undisclosed or unknown conditions that may be affected during or after the treatment. I acknowledge that Sabbath Spa and its staff shall not be held liable for any injury, allergic reaction, illness, or other medical issue that may occur during or after the session. I agree that any complaints must be made within 24 hours of service. I also understand that Sabbath Spa may refuse or stop service at any time for health or safety reasons, or in the event of inappropriate behavior. I agree to communicate immediately if I feel any discomfort so that the pressure or strokes can be adjusted. I understand that any inappropriate, illicit, or sexually suggestive motion will result in the immediate termination of the session. I also agree to refrain from consuming alcohol, drugs, or smoking before or during my appointment. I authorize Sabbath Spa to collect, use, store, and process my personal data for service, records, and communication, including the use of trusted third-party platforms and tools (such as AI-assisted systems), in accordance with the Data Privacy Act of 2012.
+                  I understand that the treatment is for relaxation and wellness only, and not a form of medical treatment. I confirm that I have disclosed all relevant medical conditions, and I take full responsibility for any undisclosed or unknown conditions that may be affected during or after the treatment. I acknowledge that Sabbath Spa and staff shall not be held liable for any injury, allergic reaction, illness, or other medical issue that may occur during or after the session. I agree that any complaints must be made within 24 hours of service. I also understand that Sabbath Spa may refuse or stop service at any time for health or safety reasons, or in the event of inappropriate behavior. I agree to communicate immediately if I feel any discomfort so that the pressure or strokes can be adjusted. I understand that any inappropriate, illicit, or sexually suggestive motion will result in the immediate termination of the session. I also agree to refrain from consuming alcohol, drugs, or smoking before or during my appointment. I authorize Sabbath Spa to collect, use, store, and process my personal data for service, records, and communication, including the use of trusted third-party platforms and tools (such as AI-assisted systems), in accordance with the Data Privacy Act of 2012.
                 </p>
               </div>
             </Section>
 
-            {/* --- BACKED OFF DIGITAL SIGNATURE CANVAS UI BLOCK --- */}
-            {/*
-            <Section title="Signature & Date" note="Please sign and verify the date">
-              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                <div style={{ flex: '1 1 350px' }}>
-                  {signature ? (
-                    <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
-                      <img src={signature} alt="Client Signature" style={{ width: '100%', height: 160, objectFit: 'contain', display: 'block', backgroundColor: '#fafafa' }} />
-                      <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
-                        <button type="button" onClick={() => setShowSignatureModal(true)} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: BLACK }}>RE-SIGN</button>
-                        <div style={{ width: 1, backgroundColor: 'rgba(0,0,0,0.05)' }} />
-                        <button type="button" onClick={handleClearMainSignature} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#C83232' }}>REMOVE</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setShowSignatureModal(true)} style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed \${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
-                    </button>
-                  )}
-                </div>
-                <div style={{ flex: '1 1 200px' }}>
-                  <label style={LABEL}>Date Signed</label>
-                  <div style={{ ...INPUT, backgroundColor: '#F0F0F0', display: 'flex', alignItems: 'center', color: 'rgba(0,0,0,0.5)', fontWeight: 600 }}>{today}</div>
-                </div>
-              </div>
-            </Section>
-            */}
-
-            <Section title="Physical Waiver Documentation" note="Please attach a clear photo of the signed physical paper waiver">
+            <Section title="Physical Waiver Documentation (Optional)" note="You can attach a clear photo of the signed physical paper waiver if available">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>
                   {photoPreview ? (
