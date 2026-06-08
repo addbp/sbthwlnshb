@@ -345,7 +345,6 @@ export default function WaiverPage() {
 
     setLoading(true)
     try {
-
       // 1. Upload Photo to Backend Google Drive Route
       let driveViewingUrl = '';
       if (photoAttachment) {
@@ -363,17 +362,17 @@ export default function WaiverPage() {
           throw new Error(driveResult.error || "Google Infrastructure Upload Refused");
         }
 
-        driveViewingUrl = driveResult.url; // Google Drive Web View URL Link
+        driveViewingUrl = driveResult.url;
       }
 
       // 2. Insert Record log into Supabase
       const { error } = await supabase.from('waivers').insert({
         id: crypto.randomUUID(),
-        branch: branch, // <--- INJECTING THE BRANCH TO DB!
+        branch: branch,
         client_name: currentFullName,
         focus_areas: Array.from(selectedAreas).join(', ') || 'None',
         health_conditions: Array.from(selectedConditions).join(', ') || 'None',
-        photo_attachment_url: driveViewingUrl, // Stores direct Google link!
+        photo_attachment_url: driveViewingUrl,
         terms_agreed: agreed,
         date_signed: new Date().toISOString()
       })
@@ -422,6 +421,37 @@ export default function WaiverPage() {
         </div>
       )}
 
+      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL CANVAS (PRESERVED INTACT) ── */}
+      {/* {showSignatureModal && (
+        <div className="signature-modal">
+          <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Please Draw Your Signature</h3>
+            <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
+          </div>
+
+          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed \${GOLD}`, overflow: 'hidden' }}>
+            <canvas
+              ref={canvasRef}
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+              onTouchStart={startDrawing}
+              onTouchMove={draw}
+              onTouchEnd={stopDrawing}
+              style={{ width: '100%', height: '100%', cursor: 'crosshair', touchAction: 'none' }}
+            />
+          </div>
+
+          <div style={{ padding: '20px', display: 'flex', gap: 12, backgroundColor: WHITE, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
+            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Undo</button>
+            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+          </div>
+        </div>
+      )}
+      */}
+
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ textAlign: 'center' }}>
@@ -430,20 +460,7 @@ export default function WaiverPage() {
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-            {/* ─── NEW BRANCH SELECTION UI ─── */}
-            <Section title="Select Branch" note="Please choose the location for this waiver">
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Malolos' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Malolos' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
-                  <input type="radio" name="branch" value="Sabbath Malolos" checked={branch === 'Sabbath Malolos'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
-                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Malolos</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Pulilan' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Pulilan' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
-                  <input type="radio" name="branch" value="Sabbath Pulilan" checked={branch === 'Sabbath Pulilan'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
-                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Pulilan</span>
-                </label>
-              </div>
-            </Section>
-
+            {/* 1. MOVED TO TOP: CLIENT DETAILS */}
             <Section title="Client Details">
               <div style={{ position: 'relative' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 2fr', gap: 12, alignItems: 'start' }}>
@@ -501,7 +518,6 @@ export default function WaiverPage() {
                       </div>
                     ))}
 
-                    {/* NEW CLIENT EXPLICIT BUTTON */}
                     {currentFullName.trim().length > 0 && (
                       <div
                         className="dropdown-item"
@@ -535,6 +551,20 @@ export default function WaiverPage() {
                   )}
                 </div>
               )}
+            </Section>
+
+            {/* 2. MOVED TO SECOND: BRANCH SELECTION UI */}
+            <Section title="Select Branch" note="Please choose the location for this waiver">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Malolos' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Malolos' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
+                  <input type="radio" name="branch" value="Sabbath Malolos" checked={branch === 'Sabbath Malolos'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Malolos</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 18, border: `2px solid ${branch === 'Sabbath Pulilan' ? GOLD : 'rgba(26,26,26,0.1)'}`, borderRadius: 12, cursor: 'pointer', backgroundColor: branch === 'Sabbath Pulilan' ? 'rgba(197,143,59,0.05)' : WHITE, transition: 'all 200ms ease' }}>
+                  <input type="radio" name="branch" value="Sabbath Pulilan" checked={branch === 'Sabbath Pulilan'} onChange={(e) => setBranch(e.target.value)} style={{ width: 18, height: 18, accentColor: GOLD }} />
+                  <span style={{ fontSize: 16, fontWeight: 600, color: BLACK }}>Sabbath Pulilan</span>
+                </label>
+              </div>
             </Section>
 
             <Section title="Body Focus Areas (Optional)" note="Tap diagram or select from list">
@@ -622,7 +652,34 @@ export default function WaiverPage() {
               </div>
             </Section>
 
-            {/* --- NEW PHYSICAL WAIVER IMAGE CAPTURE UI --- */}
+            {/* --- BACKED OFF DIGITAL SIGNATURE CANVAS UI BLOCK --- */}
+            {/*
+            <Section title="Signature & Date" note="Please sign and verify the date">
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 350px' }}>
+                  {signature ? (
+                    <div style={{ border: '1px solid rgba(197,143,59,0.3)', borderRadius: 12, backgroundColor: WHITE, overflow: 'hidden' }}>
+                      <img src={signature} alt="Client Signature" style={{ width: '100%', height: 160, objectFit: 'contain', display: 'block', backgroundColor: '#fafafa' }} />
+                      <div style={{ display: 'flex', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                        <button type="button" onClick={() => setShowSignatureModal(true)} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: BLACK }}>RE-SIGN</button>
+                        <div style={{ width: 1, backgroundColor: 'rgba(0,0,0,0.05)' }} />
+                        <button type="button" onClick={handleClearMainSignature} style={{ flex: 1, padding: '12px', border: 'none', backgroundColor: WHITE, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#C83232' }}>REMOVE</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setShowSignatureModal(true)} style={{ width: '100%', height: 160, backgroundColor: '#fafafa', border: `2px dashed \${GOLD}`, borderRadius: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: BLACK, letterSpacing: '0.05em' }}>TAP HERE TO SIGN</span>
+                    </button>
+                  )}
+                </div>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label style={LABEL}>Date Signed</label>
+                  <div style={{ ...INPUT, backgroundColor: '#F0F0F0', display: 'flex', alignItems: 'center', color: 'rgba(0,0,0,0.5)', fontWeight: 600 }}>{today}</div>
+                </div>
+              </div>
+            </Section>
+            */}
+
             <Section title="Physical Waiver Documentation" note="Please attach a clear photo of the signed physical paper waiver">
               <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 350px' }}>

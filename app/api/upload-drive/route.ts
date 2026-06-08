@@ -12,6 +12,12 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'No file attachment provided.' }, { status: 400 })
         }
 
+        // STRICT CHECK: Ensure the Folder ID is loaded from Vercel
+        if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
+            console.error("CRITICAL ERROR: GOOGLE_DRIVE_FOLDER_ID is missing in environment variables.");
+            return NextResponse.json({ error: 'Server misconfiguration: Google Drive Folder ID missing.' }, { status: 500 })
+        }
+
         // 1. Authenticate with Google Cloud Service Account
         const auth = new google.auth.GoogleAuth({
             credentials: {
@@ -38,13 +44,14 @@ export async function POST(req: Request) {
         const response = await drive.files.create({
             requestBody: {
                 name: finalFileName,
-                parents: [process.env.GOOGLE_DRIVE_FOLDER_ID!],
+                parents: [process.env.GOOGLE_DRIVE_FOLDER_ID],
             },
             media: {
                 mimeType: file.type,
                 body: stream,
             },
             fields: 'id, webViewLink',
+            supportsAllDrives: true, // <--- THIS IS THE MAGIC FIX FOR THE QUOTA ERROR
         })
 
         // Return the secure cloud viewing link to store in your database logs
