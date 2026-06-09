@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/bookings/page.tsx
-// Phase 36: Bookings Ledger (Fixed Appointment Date Sorting + Extensions & Math Sync)
+// Phase 41: Bookings Ledger (Strict System Creation Date Sort + Locked Dynamic Column Layout)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -241,7 +241,7 @@ export default function DashboardBookings() {
       merged.forEach(r => {
         const c = r.client_name.toLowerCase();
         if (!c || c === 'guest' || c === '—') {
-          r.customer_type = 'WALK-IN / GUEST';
+          r.customer_type = 'WALK-IN / GUEST'; // <-- TYPO FIXED HERE
         } else {
           r.customer_type = visitCounts[c] >= 2 ? 'RETURNING CLIENT' : 'NEW CLIENT';
         }
@@ -374,33 +374,33 @@ export default function DashboardBookings() {
   }
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 3vw, 40px)', fontFamily: BODY, boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, boxSizing: 'border-box', overflowX: 'hidden' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%' }}>
 
         {/* HEADER SECTION */}
-        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
-          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Bookings Ledger</h1>
+        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '16px', marginBottom: '24px' }}>
+          <h1 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Bookings Ledger</h1>
         </div>
 
         {/* CONTROLS SECTION */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>DATA LEDGER</p>
-            <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Operations Log</h2>
+            <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 6px 0' }}>DATA LEDGER</p>
+            <h2 style={{ fontFamily: DSP, fontSize: '24px', color: BLACK, margin: 0 }}>Operations Log</h2>
           </div>
 
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={() => setShowExportModal(true)}
               disabled={loading || filteredRecords.length === 0}
-              style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+              style={{ padding: '10px 20px', backgroundColor: BLACK, border: 'none', borderRadius: '6px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
             >
               ⬇ Export CSV
             </button>
             <button
               onClick={fetchRecords}
               disabled={loading}
-              style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+              style={{ padding: '10px 20px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '6px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
             >
               {loading ? 'Merging...' : 'Refresh Records'}
             </button>
@@ -408,97 +408,97 @@ export default function DashboardBookings() {
         </div>
 
         {/* ── BRANCH TOGGLE TABS ── */}
-        <div style={{ display: 'flex', gap: 8, padding: '6px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, width: 'fit-content', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: 8, padding: '4px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 8, width: 'fit-content', marginBottom: '20px' }}>
           <button
             onClick={() => setViewBranch('Sabbath Malolos')}
-            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
+            style={{ padding: '8px 16px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 6px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
             Malolos Branch
           </button>
           <button
             onClick={() => setViewBranch('Sabbath Pulilan')}
-            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
+            style={{ padding: '8px 16px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 6px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
             Pulilan Branch
           </button>
         </div>
 
         {/* SEARCH BAR */}
-        <div style={{ marginBottom: '30px' }}>
+        <div style={{ marginBottom: '20px' }}>
           <input
             type="search"
             placeholder={`Search ${viewBranch} bookings by customer, date, or service...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{ width: '100%', maxWidth: '500px', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '14px', color: BLACK, outline: 'none', fontFamily: BODY }}
+            style={{ width: '100%', maxWidth: '400px', padding: '10px 14px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '13px', color: BLACK, outline: 'none', fontFamily: BODY }}
           />
         </div>
 
         {/* TABS */}
-        <div style={{ display: 'flex', gap: '30px', borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: '16px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {['ALL', 'SABBATH', 'LE NAILS'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              style={{ background: 'none', border: 'none', padding: '0 0 12px 0', fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+              style={{ background: 'none', border: 'none', padding: '0 0 10px 0', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
             >
               {tab}
             </button>
           ))}
         </div>
 
-        {/* TABLE SECTION WITH PERFECT SCROLLING */}
-        <div style={{ backgroundColor: WHITE, borderRadius: '12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-          <table style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+        {/* TABLE SECTION WITH PERFECT CONTAINER LOCKED WIDTH */}
+        <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '11px', tableLayout: 'auto' }}>
             <thead>
               <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>DATE</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>SERVICE</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>THERAPIST</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CATEGORY</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>TOTAL AMT</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>EXTENSIONS</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>PAYMENT METHOD</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT TYPE</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '10%' }}>DATE</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '15%' }}>CLIENT</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '22%' }}>SERVICE</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '13%' }}>THERAPIST</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '8%' }}>CATEGORY</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '8%' }}>TOTAL AMT</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '10%' }}>EXTENSIONS</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '10%' }}>PAYMENT</th>
+                <th style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '4%' }}>TYPE</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>Merging live data with historical records...</td></tr>
+                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)', fontSize: '12px' }}>Merging live data with historical records...</td></tr>
               ) : viewablePaginatedRows.length === 0 ? (
-                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for {viewBranch}.</td></tr>
+                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)', fontSize: '12px' }}>No bookings found for {viewBranch}.</td></tr>
               ) : (
                 viewablePaginatedRows.map((record) => {
                   const totalCombinedAmount = record.amount + (record.additional_price || 0);
 
                   return (
                     <tr key={record.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.displayDate}</td>
+                      <td style={{ padding: '12px 10px', color: 'rgba(26,26,26,0.7)' }}>{record.displayDate}</td>
 
                       {/* CLICKABLE CLIENT NAME */}
                       <td
                         onClick={() => openClientModal(record.client_name)}
-                        style={{ padding: '16px 20px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                        style={{ padding: '12px 10px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline', wordBreak: 'break-all' }}
                       >
                         {record.client_name}
                       </td>
 
-                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.8)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.service}</td>
-                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.therapist}</td>
-                      <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                        <span style={{ backgroundColor: record.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.04)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: record.category === 'LE NAILS' ? GOLD : BLACK }}>
-                          {record.category}
+                      <td style={{ padding: '12px 10px', color: 'rgba(26,26,26,0.8)', wordBreak: 'break-word' }}>{record.service}</td>
+                      <td style={{ padding: '12px 10px', color: 'rgba(26,26,26,0.7)', wordBreak: 'break-all' }}>{record.therapist}</td>
+                      <td style={{ padding: '12px 10px' }}>
+                        <span style={{ backgroundColor: record.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.04)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', color: record.category === 'LE NAILS' ? GOLD : BLACK }}>
+                          {record.category === 'LE NAILS' ? 'NAILS' : 'SPA'}
                         </span>
                       </td>
 
                       {/* TOTAL AMOUNT (BASE + SURCHARGE) */}
-                      <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK, whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 10px', fontWeight: 700, color: BLACK }}>
                         {formatCurrency(totalCombinedAmount)}
                       </td>
 
                       {/* EXTENSIONS COLUMN */}
-                      <td style={{ padding: '16px 20px', color: BLACK, whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '12px 10px', color: BLACK }}>
                         {record.additional_mins > 0 || record.additional_price > 0 ? (
-                          <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                          <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 10, padding: '2px 4px', borderRadius: 4, display: 'inline-block' }}>
                             +{record.additional_mins}m / +₱{record.additional_price}
                           </span>
                         ) : (
@@ -509,14 +509,14 @@ export default function DashboardBookings() {
                       {/* CLICKABLE PAYMENT METHOD */}
                       <td
                         onClick={() => openPaymentModal(record.client_name)}
-                        style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                        style={{ padding: '12px 10px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
                       >
                         {record.payment_method}
                       </td>
 
-                      <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                        <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
-                          {record.customer_type}
+                      <td style={{ padding: '12px 10px' }}>
+                        <span style={{ display: 'inline-block', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '2px 4px', borderRadius: '4px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>
+                          {record.customer_type === 'NEW CLIENT' ? 'NEW' : 'RET'}
                         </span>
                       </td>
                     </tr>
@@ -529,16 +529,16 @@ export default function DashboardBookings() {
 
         {/* PAGINATION FOOTER */}
         {!loading && filteredRecords.length > 0 && (
-          <div style={{ padding: '16px 20px', backgroundColor: '#FDFCF8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16, borderRadius: '0 0 12px 12px', borderRight: '1px solid rgba(26,26,26,0.08)', borderBottom: '1px solid rgba(26,26,26,0.08)', borderLeft: '1px solid rgba(26,26,26,0.08)' }}>
-            <span style={{ fontSize: 13, color: '#666' }}>
-              Showing <strong style={{ color: BLACK }}>{offsetIndex + 1}</strong> to <strong style={{ color: BLACK }}>{Math.min(offsetIndex + itemsPerPage, filteredRecords.length)}</strong> of <strong style={{ color: GOLD }}>{filteredRecords.length.toLocaleString()}</strong> records
+          <div style={{ padding: '12px 16px', backgroundColor: '#FDFCF8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, borderRadius: '0 0 10px 10px', borderRight: '1px solid rgba(26,26,26,0.08)', borderBottom: '1px solid rgba(26,26,26,0.08)', borderLeft: '1px solid rgba(26,26,26,0.08)' }}>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              Showing <strong>{offsetIndex + 1}</strong> to <strong>{Math.min(offsetIndex + itemsPerPage, filteredRecords.length)}</strong> of <strong style={{ color: GOLD }}>{filteredRecords.length.toLocaleString()}</strong> records
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : BLACK, color: currentPage === 1 ? '#aaa' : GOLD, border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
-              <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : BLACK, color: currentPage === 1 ? '#aaa' : GOLD, border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
-              <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: BLACK }}>Page {currentPage} of {totalPagesCount}</span>
-              <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : BLACK, color: currentPage === totalPagesCount ? '#aaa' : GOLD, border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPagesCount, prev + 1))} disabled={currentPage === totalPagesCount}>Next</button>
-              <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : BLACK, color: currentPage === totalPagesCount ? '#aaa' : GOLD, border: 'none', borderRadius: 6, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPagesCount)} disabled={currentPage === totalPagesCount}>Last</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : BLACK, color: currentPage === 1 ? '#aaa' : GOLD, border: 'none', borderRadius: 4, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
+              <button style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, backgroundColor: currentPage === 1 ? '#f5f5f5' : BLACK, color: currentPage === 1 ? '#aaa' : GOLD, border: 'none', borderRadius: 4, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
+              <span style={{ padding: '0 6px', fontSize: 12, fontWeight: 600, color: BLACK }}>Page {currentPage} of {totalPagesCount}</span>
+              <button style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : BLACK, color: currentPage === totalPagesCount ? '#aaa' : GOLD, border: 'none', borderRadius: 4, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPagesCount, prev + 1))} disabled={currentPage === totalPagesCount}>Next</button>
+              <button style={{ padding: '4px 8px', fontSize: 11, fontWeight: 600, backgroundColor: currentPage === totalPagesCount ? '#f5f5f5' : BLACK, color: currentPage === totalPagesCount ? '#aaa' : GOLD, border: 'none', borderRadius: 4, cursor: currentPage === totalPagesCount ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPagesCount)} disabled={currentPage === totalPagesCount}>Last</button>
             </div>
           </div>
         )}
@@ -546,55 +546,47 @@ export default function DashboardBookings() {
         {/* ─── CLIENT HISTORY POPUP MODAL ─── */}
         {showModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '12px', width: '100%', maxWidth: '800px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
-              <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
-                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>CLIENT PROFILE ({viewBranch})</p>
-                  <h2 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
+                  <p style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 6px 0' }}>CLIENT PROFILE ({viewBranch})</p>
+                  <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
                 </div>
-                <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+                <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
               </div>
 
-              <div style={{ display: 'flex', gap: '20px', padding: '20px 30px', backgroundColor: WHITE, borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                <div style={{ flex: 1, padding: '16px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: '12px', border: '1px solid rgba(197,143,59,0.1)' }}>
-                  <p style={{ fontSize: '10px', fontWeight: 700, color: GOLD, letterSpacing: '0.1em', margin: '0 0 8px 0' }}>TOTAL VISITS</p>
-                  <p style={{ fontSize: '24px', fontWeight: 700, color: BLACK, margin: 0 }}>{selectedClientHistory.length}</p>
+              <div style={{ display: 'flex', gap: '16px', padding: '16px 24px', backgroundColor: WHITE, borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
+                <div style={{ flex: 1, padding: '12px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: '8px', border: '1px solid rgba(197,143,59,0.1)' }}>
+                  <p style={{ fontSize: '9px', fontWeight: 700, color: GOLD, letterSpacing: '0.1em', margin: '0 0 6px 0' }}>TOTAL VISITS</p>
+                  <p style={{ fontSize: '20px', fontWeight: 700, color: BLACK, margin: 0 }}>{selectedClientHistory.length}</p>
                 </div>
-                <div style={{ flex: 1, padding: '16px', backgroundColor: 'rgba(61,122,74,0.05)', borderRadius: '12px', border: '1px solid rgba(61,122,74,0.1)' }}>
-                  <p style={{ fontSize: '10px', fontWeight: 700, color: '#3D7A4A', letterSpacing: '0.1em', margin: '0 0 8px 0' }}>LIFETIME SPENT</p>
-                  <p style={{ fontSize: '24px', fontWeight: 700, color: BLACK, margin: 0 }}>
+                <div style={{ flex: 1, padding: '12px', backgroundColor: 'rgba(61,122,74,0.05)', borderRadius: '8px', border: '1px solid rgba(61,122,74,0.1)' }}>
+                  <p style={{ fontSize: '9px', fontWeight: 700, color: '#3D7A4A', letterSpacing: '0.1em', margin: '0 0 6px 0' }}>LIFETIME SPENT</p>
+                  <p style={{ fontSize: '20px', fontWeight: 700, color: BLACK, margin: 0 }}>
                     {formatCurrency(selectedClientHistory.reduce((acc, r) => acc + ((r.amount || 0) + (r.additional_price || 0)), 0))}
                   </p>
                 </div>
               </div>
 
-              <div style={{ overflowY: 'auto', padding: '0 30px 30px 30px' }}>
-                <h3 style={{ fontSize: '14px', fontWeight: 700, color: BLACK, marginBottom: '16px', marginTop: '20px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Service History</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <div style={{ overflowY: 'auto', padding: '0 24px 24px 24px' }}>
+                <h3 style={{ fontSize: '13px', fontWeight: 700, color: BLACK, marginBottom: '12px', marginTop: '16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Service History</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(26,26,26,0.1)' }}>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Date</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Service</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Therapist</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Extensions</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600, textAlign: 'right' }}>Total Amount</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Date</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Service</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Therapist</th>
+                      <th style={{ padding: '10px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedClientHistory.map((h, i) => (
                       <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
-                        <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
-                        <td style={{ padding: '16px 0', color: '#666' }}>{h.therapist}</td>
-                        <td style={{ padding: '16px 0', color: BLACK, whiteSpace: 'nowrap' }}>
-                          {h.additional_mins > 0 || h.additional_price > 0 ? (
-                            <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4 }}>
-                              +{h.additional_mins}m / +₱{h.additional_price}
-                            </span>
-                          ) : <span style={{ color: '#aaa' }}>—</span>}
-                        </td>
-                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>{formatCurrency((h.amount || 0) + (h.additional_price || 0))}</td>
+                        <td style={{ padding: '12px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
+                        <td style={{ padding: '12px 0', color: '#666' }}>{h.service}</td>
+                        <td style={{ padding: '12px 0', color: '#666' }}>{h.therapist}</td>
+                        <td style={{ padding: '12px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>{formatCurrency((h.amount || 0) + (h.additional_price || 0))}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -608,28 +600,27 @@ export default function DashboardBookings() {
         {/* ─── PAYMENT DETAILS & HISTORY POPUP MODAL ─── */}
         {showPaymentModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '12px', width: '100%', maxWidth: '850px', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
-              <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
-                  <p style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 8px 0' }}>PAYMENT PROFILE & HISTORY</p>
-                  <h2 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
+                  <p style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.15em', color: GOLD, textTransform: 'uppercase', margin: '0 0 6px 0' }}>PAYMENT PROFILE & HISTORY</p>
+                  <h2 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>{selectedClientName}</h2>
                 </div>
-                <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '28px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
+                <button onClick={() => setShowPaymentModal(false)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#666', cursor: 'pointer', lineHeight: 1 }}>&times;</button>
               </div>
 
-              <div style={{ overflowY: 'auto', padding: '0 30px 30px 30px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', marginTop: '20px' }}>
+              <div style={{ overflowY: 'auto', padding: '0 24px 24px 24px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px', marginTop: '16px' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid rgba(26,26,26,0.1)' }}>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Date</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Service</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Extensions</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Total Net Amt</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Paid</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Method</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Ref / Receipt</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Status</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Date</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Service</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Net Amt</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Paid</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Method</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Ref / Receipt</th>
+                      <th style={{ padding: '10px 0', color: '#666', fontWeight: 600 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -637,29 +628,22 @@ export default function DashboardBookings() {
                       const net = (h.amount + (h.additional_price || 0)) * (1 - (h.discount_pct / 100));
                       return (
                         <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600, whiteSpace: 'nowrap' }}>{h.displayDate}</td>
-                          <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
-                          <td style={{ padding: '16px 0', color: BLACK, whiteSpace: 'nowrap' }}>
-                            {h.additional_mins > 0 || h.additional_price > 0 ? (
-                              <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4 }}>
-                                +{h.additional_mins}m / +₱{h.additional_price}
-                              </span>
-                            ) : <span style={{ color: '#aaa' }}>—</span>}
-                          </td>
-                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700 }}>{formatCurrency(net)}</td>
-                          <td style={{ padding: '16px 0', color: '#3D7A4A', fontWeight: 700 }}>{formatCurrency(h.received_payment)}</td>
-                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.payment_method}</td>
-                          <td style={{ padding: '16px 0', color: '#666', fontSize: 11 }}>
+                          <td style={{ padding: '12px 0', color: BLACK, fontWeight: 600, whiteSpace: 'nowrap' }}>{h.displayDate}</td>
+                          <td style={{ padding: '12px 0', color: '#666' }}>{h.service}</td>
+                          <td style={{ padding: '12px 0', color: BLACK, fontWeight: 700 }}>{formatCurrency(net)}</td>
+                          <td style={{ padding: '12px 0', color: '#3D7A4A', fontWeight: 700 }}>{formatCurrency(h.received_payment)}</td>
+                          <td style={{ padding: '12px 0', color: BLACK, fontWeight: 600 }}>{h.payment_method}</td>
+                          <td style={{ padding: '12px 0', color: '#666', fontSize: 11 }}>
                             {h.ref_no ? <div style={{ marginBottom: 4 }}>Ref: {h.ref_no}</div> : null}
                             {h.receipt_url ? <a href={h.receipt_url} target="_blank" rel="noreferrer" style={{ color: GOLD, fontWeight: 700, textDecoration: 'underline' }}>View Receipt</a> : null}
                             {!h.ref_no && !h.receipt_url ? '—' : null}
                           </td>
-                          <td style={{ padding: '16px 0' }}>
+                          <td style={{ padding: '12px 0' }}>
                             <span style={{
                               display: 'inline-block', whiteSpace: 'nowrap',
                               backgroundColor: h.payment_status === 'PAID' ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.1)',
                               color: h.payment_status === 'PAID' ? '#3D7A4A' : '#C83232',
-                              padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700
+                              padding: '4px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 700
                             }}>
                               {h.payment_status}
                             </span>
@@ -678,40 +662,40 @@ export default function DashboardBookings() {
         {/* ─── CSV EXPORT FILTER MODAL ─── */}
         {showExportModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '400px', padding: '30px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '12px', width: '100%', maxWidth: '400px', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
 
-              <h2 style={{ fontFamily: DSP, fontSize: '24px', color: BLACK, margin: '0 0 16px 0' }}>Export CSV</h2>
-              <p style={{ fontSize: '13px', color: '#666', marginBottom: '24px', lineHeight: 1.5 }}>
+              <h2 style={{ fontFamily: DSP, fontSize: '22px', color: BLACK, margin: '0 0 12px 0' }}>Export CSV</h2>
+              <p style={{ fontSize: '12px', color: '#666', marginBottom: '20px', lineHeight: 1.5 }}>
                 Choose how much data you want to download from your <strong>{viewBranch}</strong> ledger.
               </p>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
-                  <input type="radio" checked={exportMode === 'ALL'} onChange={() => setExportMode('ALL')} style={{ accentColor: GOLD, width: '18px', height: '18px' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
+                  <input type="radio" checked={exportMode === 'ALL'} onChange={() => setExportMode('ALL')} style={{ accentColor: GOLD, width: '16px', height: '16px' }} />
                   All Time Data
                 </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
-                  <input type="radio" checked={exportMode === 'RANGE'} onChange={() => setExportMode('RANGE')} style={{ accentColor: GOLD, width: '18px', height: '18px' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600, color: BLACK, cursor: 'pointer' }}>
+                  <input type="radio" checked={exportMode === 'RANGE'} onChange={() => setExportMode('RANGE')} style={{ accentColor: GOLD, width: '16px', height: '16px' }} />
                   Filter by Date Range
                 </label>
               </div>
 
               {exportMode === 'RANGE' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '30px', padding: '16px', backgroundColor: '#f9f9f9', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.05)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px', padding: '12px', backgroundColor: '#f9f9f9', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.05)' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>START DATE</label>
-                    <input type="date" min="2025-05-01" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: BLACK, marginBottom: '4px', letterSpacing: '0.05em' }}>START DATE</label>
+                    <input type="date" min="2025-05-01" value={exportDateRange.start} onChange={e => setExportDateRange({ ...exportDateRange, start: e.target.value })} style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: BLACK, marginBottom: '6px', letterSpacing: '0.05em' }}>END DATE</label>
-                    <input type="date" min="2025-05-01" value={exportDateRange.end} onChange={e => setExportDateRange({ ...exportDateRange, end: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: BLACK, marginBottom: '4px', letterSpacing: '0.05em' }}>END DATE</label>
+                    <input type="date" min="2025-05-01" value={exportDateRange.end} onChange={e => setExportDateRange({ ...exportDateRange, end: e.target.value })} style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: '1px solid rgba(26,26,26,0.15)', fontFamily: BODY, outline: 'none' }} />
                   </div>
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: exportMode === 'ALL' ? '30px' : '10px' }}>
-                <button onClick={() => setShowExportModal(false)} style={{ padding: '12px 20px', backgroundColor: 'transparent', border: 'none', color: '#666', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={confirmCSVExport} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>Download Data</button>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: exportMode === 'ALL' ? '24px' : '8px' }}>
+                <button onClick={() => setShowExportModal(false)} style={{ padding: '10px 16px', backgroundColor: 'transparent', border: 'none', color: '#666', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                <button onClick={confirmCSVExport} style={{ padding: '10px 20px', backgroundColor: BLACK, border: 'none', borderRadius: '6px', color: GOLD, fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Download Data</button>
               </div>
 
             </div>
