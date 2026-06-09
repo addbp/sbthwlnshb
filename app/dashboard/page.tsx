@@ -1,8 +1,8 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 35: Omni-Synced Overview POS (Fixed DB Save State, Perfect Responsive Scroll, Auto-Math)
-// FULL UN-SHORTENED SOURCE CODE PRESERVED
+// Phase 36: Omni-Synced Overview POS (Fixed DB Save Bug, Perfect Button Alignment, Responsive Layout)
+// FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +22,6 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-// Master Time Slots (Connected to Booking Engine)
 const ALL_TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -108,9 +107,6 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
-  // Store the active user's email to pass to the Audit Log
-  const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
-
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
   const [dailyBookings, setDailyBookings] = useState<LiveBooking[]>([])
   const [staffList, setStaffList] = useState<StaffMember[]>([])
@@ -124,11 +120,6 @@ export default function OverviewDashboard() {
   const fetchEverything = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email) {
-        setCurrentUserEmail(user.email);
-      }
-
       const fetchUnlimited = async (tableName: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allRecords: any[] = [];
@@ -163,10 +154,8 @@ export default function OverviewDashboard() {
         const addPrice = Number(r.additional_price || 0);
         const discPct = Number(r.discount_pct || 0);
 
-        // Accurate combined net total calculation
         const combinedNetSales = (amt + addPrice) * (1 - (discPct / 100));
 
-        // Smart fallback: if received_payment is completely empty/null, pre-fill it with combinedNetSales
         let recPay = combinedNetSales;
         if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
           recPay = parseCurrency(r.received_payment);
@@ -272,27 +261,28 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DATABASE UPDATES (WITH OPTIONAL DB SAVE FLAG) ───
+  // ─── SMART DATABASE UPDATES ───
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string, saveToDb: boolean = true) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
     let updatedBooking = { ...booking, [field]: value };
 
-    // PERFECT PRE-FILL LOGIC: Dynamically re-calculate Net Sales when Base or Surcharge changes locally
+    // Dynamic Net Sales Recalculation
     if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
       const base = field === 'amount' ? Number(value) : booking.amount;
       const extra = field === 'additional_price' ? Number(value) : Number(booking.additional_price || 0);
       const disc = field === 'discount_pct' ? Number(value) : booking.discount_pct;
 
       const newNetSales = (base + extra) * (1 - (disc / 100));
-      updatedBooking.received_payment = newNetSales; // Instantly overrides the Paid input box visually!
+      updatedBooking.received_payment = newNetSales;
     }
 
-    // Instantly update UI Local State
+    // Instantly update Local UI State
     setAllBookings(prev => prev.map(b => b.id === id ? updatedBooking : b));
 
-    // If we only want local state updates (for typing in Extra Mins/Prices), exit before DB call
+    // If typing in the Extra Mins/Prices fields, wait for the Save button to hit the DB
     if (!saveToDb) return;
 
     try {
@@ -301,11 +291,9 @@ export default function OverviewDashboard() {
       const actualDbField = dbFieldOverride || field;
 
       const payloadToUpdate: any = {
-        [actualDbField]: value,
-        receptionist_track: currentUserEmail
+        [actualDbField]: value
       };
 
-      // Ensure the database registers the new auto-calculated 'Paid' value as well
       if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
         payloadToUpdate.received_payment = updatedBooking.received_payment;
       }
@@ -328,18 +316,18 @@ export default function OverviewDashboard() {
 
       const netSales = (booking.amount + Number(booking.additional_price || 0)) * (1 - (booking.discount_pct / 100));
 
+      // Removed receptionist_track to fix the database crashing error
       const { error } = await supabase.from(table).update({
-        additional_mins: booking.additional_mins,
-        additional_price: booking.additional_price,
-        received_payment: netSales,
-        receptionist_track: currentUserEmail
+        additional_mins: Number(booking.additional_mins || 0),
+        additional_price: Number(booking.additional_price || 0),
+        received_payment: netSales
       }).eq(idField, booking.rawId);
 
       if (error) throw error;
       alert("Extension saved successfully!");
     } catch (err) {
       console.error(err);
-      alert("Failed to save extension.");
+      alert("Failed to save extension. Check your database connection.");
     }
   };
 
@@ -398,14 +386,14 @@ export default function OverviewDashboard() {
   const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 4vw, 40px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 4vw, 40px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box' }}>
       <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
 
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview POS</h1>
           <div style={{ display: 'flex', gap: 12 }}>
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)' }} />
-            <button onClick={fetchEverything} style={{ padding: '0 16px', height: 38, background: 'none', border: `1px solid ${GOLD}`, color: GOLD, borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>Live Synced</button>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none', cursor: 'pointer' }} />
+            <button onClick={fetchEverything} style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, color: GOLD, borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>Live Synced</button>
           </div>
         </div>
 
@@ -459,8 +447,8 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* CUSTOM EDITABLE TIME & SURCHARGE BLOCK */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
+                        {/* CUSTOM EDITABLE TIME & SURCHARGE BLOCK (WITH PERFECT ALIGNMENT) */}
+                        <td style={{ padding: '16px 12px', minWidth: '240px', verticalAlign: 'top' }}>
                           <input
                             type="text"
                             value={b.time}
@@ -470,8 +458,8 @@ export default function OverviewDashboard() {
                           />
                           <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'block', marginBottom: 10, fontSize: 13 }}>{b.client}</span>
 
-                          <div style={{ padding: '12px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)', marginTop: 12 }}>
-                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>EXTRA RUNTIME (MINS)</label>
+                          <div style={{ padding: '12px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)', marginTop: 12, display: 'flex', flexDirection: 'column' }}>
+                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, marginBottom: 6, letterSpacing: '0.05em' }}>EXTRA RUNTIME (MINS)</label>
                             <input
                               type="number"
                               value={b.additional_mins === 0 ? '' : b.additional_mins}
@@ -480,7 +468,7 @@ export default function OverviewDashboard() {
                               style={{ width: '100%', padding: '8px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 6, fontSize: 12, marginBottom: 12, boxSizing: 'border-box', outline: 'none' }}
                             />
 
-                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, display: 'block', marginBottom: 6, letterSpacing: '0.05em' }}>SURCHARGE PRICE (₱)</label>
+                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, marginBottom: 6, letterSpacing: '0.05em' }}>SURCHARGE PRICE (₱)</label>
                             <input
                               type="number"
                               value={b.additional_price === 0 ? '' : b.additional_price}
@@ -491,7 +479,7 @@ export default function OverviewDashboard() {
 
                             <button
                               onClick={() => saveExtras(b)}
-                              style={{ width: '100%', padding: '10px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 800, cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase', transition: 'all 0.2s' }}
+                              style={{ width: '100%', padding: '10px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 800, cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase', transition: 'all 0.2s', marginTop: '4px' }}
                             >
                               Save Extras
                             </button>
@@ -499,7 +487,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Service & Notes */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', minWidth: '240px' }}>
                           <textarea
                             value={b.service}
                             onChange={e => handleUpdate(b.id, 'service', e.target.value, b.source === 'live' ? 'service_name' : 'service')}
@@ -515,7 +503,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Therapist */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value, b.source === 'live' ? 'therapist_name' : 'therapist')} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
                             <option value="Unassigned">Unassigned</option>
                             {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
@@ -523,7 +511,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Amount */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
                               <span style={{ color: '#666' }}>Base:</span>
@@ -550,7 +538,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Commission */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
                               <span style={{ color: '#666' }}>Comm %:</span>
@@ -564,7 +552,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Payment Details */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
                               <option value="PAY AT COUNTER">PAY AT COUNTER</option>
@@ -600,7 +588,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* Payment Status */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <select
                             value={b.payment_status}
                             onChange={(e) => handleUpdate(b.id, 'payment_status', e.target.value)}
@@ -617,7 +605,7 @@ export default function OverviewDashboard() {
                         </td>
 
                         {/* General Status */}
-                        <td style={{ padding: '16px 12px' }}>
+                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }}>
                             <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option><option value="Cancelled">Cancelled</option>
                           </select>
