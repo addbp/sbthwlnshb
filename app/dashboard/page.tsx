@@ -1,8 +1,8 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 35: Omni-Synced Overview POS (Fixed DB Save State, Perfect Responsive Scroll, Auto-Math)
-// FULL UN-SHORTENED SOURCE CODE PRESERVED
+// Phase 36: Omni-Synced Overview POS (Flawless Auto-Prefill Paid Math + Surcharge Extensions + Responsive)
+// FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -406,14 +406,14 @@ export default function OverviewDashboard() {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1500px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>TIME & CLIENT</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>SERVICE & NOTES</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>THERAPIST</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>AMOUNT</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>COMMISSION</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>PAYMENT DETAILS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>PAYMENT STATUS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>STATUS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '180px' }}>TIME & CLIENT</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '220px' }}>SERVICE & NOTES</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '150px' }}>THERAPIST</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '120px' }}>AMOUNT</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '120px' }}>COMMISSION</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '160px' }}>PAYMENT DETAILS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>PAYMENT STATUS</th>
+                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>STATUS</th>
                 </tr>
               </thead>
               <tbody>
