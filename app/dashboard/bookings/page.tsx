@@ -1,8 +1,8 @@
 'use client'
 
 // app/dashboard/bookings/page.tsx
-// Phase 35: Bookings Ledger (Most-Recent CreatedAt Sort + Total Amount Math + Modals)
-// FULL UN-SHORTENED SOURCE CODE PRESERVED
+// Phase 36: Bookings Ledger (Fixed Appointment Date Sorting + Extensions & Math Sync)
+// FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -35,7 +35,11 @@ function parseImportDate(raw: string | null | undefined): Date | null {
   if (!raw) return null;
   const clean = String(raw).trim();
   const isoMatch = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
+
+  if (isoMatch) {
+    return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2]) - 1, parseInt(isoMatch[3]), 12, 0, 0);
+  }
+
   const dashMatch = clean.match(/^(\d{1,2})[-\s/]+([A-Za-z]{3,})[-\s/]+(\d{2,4})$/);
   if (dashMatch) {
     let year = dashMatch[3];
@@ -43,8 +47,10 @@ function parseImportDate(raw: string | null | undefined): Date | null {
     const d = new Date(`${dashMatch[2]} ${dashMatch[1]}, ${year}`);
     if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0);
   }
+
   const fallback = new Date(clean);
   if (!isNaN(fallback.getTime())) return fallback;
+
   return null;
 }
 
@@ -156,6 +162,7 @@ export default function DashboardBookings() {
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
 
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
+
         uniqueMap.set(key, {
           id: `live-${r.booking_id}`,
           rawDate: parsedDate,
@@ -195,6 +202,7 @@ export default function DashboardBookings() {
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
 
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
+
         if (!uniqueMap.has(key)) {
           uniqueMap.set(key, {
             id: `imp-${r.id}`,
@@ -239,8 +247,19 @@ export default function DashboardBookings() {
         }
       });
 
-      // 4. SORT BY MOST RECENT BOOKING (System creation date descending)
-      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      // 4. EXACT SORTING FIX: Appointment Date First -> Then Creation Date
+      merged.sort((a, b) => {
+        const dateA = a.rawDate?.getTime() || 0;
+        const dateB = b.rawDate?.getTime() || 0;
+
+        // 1. Sort by actual Appointment Date (June 9 above May 29)
+        if (dateB !== dateA) {
+          return dateB - dateA;
+        }
+
+        // 2. If same appointment date, sort by which was added to the system most recently
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
 
       setRecords(merged);
     } catch (error) {
@@ -321,17 +340,30 @@ export default function DashboardBookings() {
     }
 
     const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Base Amount', 'Extra Mins', 'Surcharge Price', 'Total Amount', 'Payment Method', 'Payment Status', 'Client Type'];
+
     const csvRows = dataToExport.map(r => {
       const totalAmount = r.amount + (r.additional_price || 0);
       return [
-        `"${r.displayDate}"`, `"${r.branch}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
-        `"${r.category}"`, `"${r.amount}"`, `"${r.additional_mins}"`, `"${r.additional_price}"`, `"${totalAmount}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
+        `"${r.displayDate}"`,
+        `"${r.branch}"`,
+        `"${r.client_name}"`,
+        `"${r.service}"`,
+        `"${r.therapist}"`,
+        `"${r.category}"`,
+        `"${r.amount}"`,
+        `"${r.additional_mins}"`,
+        `"${r.additional_price}"`,
+        `"${totalAmount}"`,
+        `"${r.payment_method}"`,
+        `"${r.payment_status}"`,
+        `"${r.customer_type}"`
       ].join(',')
     });
 
     const csvContent = [headers.join(','), ...csvRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
+
     link.href = URL.createObjectURL(blob);
     link.setAttribute('download', `${viewBranch.replace(' ', '_')}_Bookings_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
@@ -358,10 +390,18 @@ export default function DashboardBookings() {
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <button onClick={() => setShowExportModal(true)} disabled={loading || filteredRecords.length === 0} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+            <button
+              onClick={() => setShowExportModal(true)}
+              disabled={loading || filteredRecords.length === 0}
+              style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+            >
               ⬇ Export CSV
             </button>
-            <button onClick={fetchRecords} disabled={loading} style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+            <button
+              onClick={fetchRecords}
+              disabled={loading}
+              style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+            >
               {loading ? 'Merging...' : 'Refresh Records'}
             </button>
           </div>
@@ -383,13 +423,23 @@ export default function DashboardBookings() {
 
         {/* SEARCH BAR */}
         <div style={{ marginBottom: '30px' }}>
-          <input type="search" placeholder={`Search ${viewBranch} bookings by customer, date, or service...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', maxWidth: '500px', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '14px', color: BLACK, outline: 'none', fontFamily: BODY }} />
+          <input
+            type="search"
+            placeholder={`Search ${viewBranch} bookings by customer, date, or service...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: '100%', maxWidth: '500px', padding: '14px 16px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.1)', backgroundColor: 'transparent', fontSize: '14px', color: BLACK, outline: 'none', fontFamily: BODY }}
+          />
         </div>
 
         {/* TABS */}
         <div style={{ display: 'flex', gap: '30px', borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {['ALL', 'SABBATH', 'LE NAILS'].map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ background: 'none', border: 'none', padding: '0 0 12px 0', fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              style={{ background: 'none', border: 'none', padding: '0 0 12px 0', fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}
+            >
               {tab}
             </button>
           ))}
@@ -496,7 +546,7 @@ export default function DashboardBookings() {
         {/* ─── CLIENT HISTORY POPUP MODAL ─── */}
         {showModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
@@ -534,7 +584,7 @@ export default function DashboardBookings() {
                   <tbody>
                     {selectedClientHistory.map((h, i) => (
                       <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600, whiteSpace: 'nowrap' }}>{h.displayDate}</td>
+                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.therapist}</td>
                         <td style={{ padding: '16px 0', color: BLACK, whiteSpace: 'nowrap' }}>
@@ -558,7 +608,7 @@ export default function DashboardBookings() {
         {/* ─── PAYMENT DETAILS & HISTORY POPUP MODAL ─── */}
         {showPaymentModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '1000px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
