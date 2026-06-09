@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 27 Booking Engine (Custom Start-Time Input + Restored Visual Availability Grid)
+// app/booking/page.tsx  —  Phase 29 Booking Engine (Restored Dropdown + Dynamic Overlap)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +18,7 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-// Strict 30-Min Reference Slots for Availability Grid Matrix
+// STRICT CUTOFF: 12:00 AM IS THE ABSOLUTE LATEST FOR ALL DAYS
 const MON_SAT_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -104,7 +104,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
       backgroundColor: selected ? 'rgba(197,143,59,0.06)' : WHITE,
       border: `1.5px solid ${selected ? GOLD : 'rgba(26,26,26,0.13)'}`,
       borderRadius: 10, cursor: 'pointer', textAlign: 'left', transition: 'all 160ms ease',
-      boxShadow: selected ? '0 2px 10px rgba(197,143,59,0.15)' : 'none', position: 'relative',
+      boxShadow: selected ? '0 2px 10px rgba(197,143,59,0.15)' : 'none', position: 'relative', width: '100%'
     }}>
       {selected && (
         <span style={{ position: 'absolute', top: 8, right: 9, width: 18, height: 18, borderRadius: '50%', backgroundColor: GOLD, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -506,7 +506,7 @@ export default function BookingPage() {
     const fetchDateBookings = async () => {
       const { data } = await supabase
         .from('bookings')
-        .select('appointment_time, therapist_name, branch')
+        .select('appointment_time, therapist_name, branch, status, additional_mins')
         .eq('appointment_date', date)
         .eq('branch', branch)
         .neq('status', 'Cancelled')
@@ -516,32 +516,29 @@ export default function BookingPage() {
     fetchDateBookings();
   }, [date, branch, supabase]);
 
-  // ─── CRITICAL: TIME OVERLAP ENGINE (FOR CUSTOM RUNTIMES) ───
-  const checkTimeOverlap = (timeA: string, timeB: string) => {
-    if (!timeA || !timeB || timeA === '—' || timeB === '—') return false;
-
-    const getMinutes = (tStr: string) => {
-      const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (!match) return 0;
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && h !== 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      if (h < 11) h += 24;
-      return h * 60 + m;
-    };
-
-    const startA = getMinutes(timeA);
-    const endA = startA + 60;
-    const startB = getMinutes(timeB);
-    const endB = startB + 60;
-
-    return startA < endB && startB < endA;
+  // ─── CRITICAL: TIME OVERLAP ENGINE (FOR CUSTOM RUNTIMES & 15 MIN BUFFERS) ───
+  const getMinutesFromMidnight = (tStr: string) => {
+    const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (!match) return -1;
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    if (h < 11) h += 24;
+    return h * 60 + m;
   };
 
-  const timeRegex = /^(0?[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)$/i;
-  const isTimeFormatValid = timeRegex.test(time.trim());
+  const checkOverlapConstraint = useCallback((timeA: string, timeB: string, extraMinsA = 0) => {
+    const startA = getMinutesFromMidnight(timeA);
+    const startB = getMinutesFromMidnight(timeB);
+    if (startA === -1 || startB === -1) return false;
+
+    const endA = startA + 60 + extraMinsA;
+    const endB = startB + 60;
+
+    return (startA - 15) < endB && (startB - 15) < endA;
+  }, []);
 
   // ─── DYNAMIC AVAILABILITY GRID MATRIX GENERATOR ───
   let availableSlots: { time: string, available: boolean }[] = [];
@@ -554,37 +551,31 @@ export default function BookingPage() {
     const baseSlots = day === 0 ? SUN_SLOTS : MON_SAT_SLOTS;
     const isToday = date === getTodayStr();
     const now = new Date();
-    const currH = now.getHours();
-    const currM = now.getMinutes();
+
+    // Convert current real-world time to the same midnight offset logic
+    let currH = now.getHours();
+    if (currH < 11) currH += 24;
+    const currentMins = currH * 60 + now.getMinutes();
 
     availableSlots = baseSlots.map(t => {
       let isPast = false;
       if (isToday) {
-        const match = t.match(/(\d+):(\d+)\s(AM|PM)/i);
-        if (match) {
-          let h = parseInt(match[1], 10);
-          const mins = parseInt(match[2], 10);
-          const ampm = match[3].toUpperCase();
-          if (ampm === 'PM' && h !== 12) h += 12;
-          if (ampm === 'AM' && h === 12) h = 0;
-          if (t === '12:00 AM') h = 24;
-
-          if (h < currH || (h === currH && mins <= currM)) {
-            isPast = true;
-          }
+        const slotMins = getMinutesFromMidnight(t);
+        if (slotMins !== -1 && slotMins <= currentMins) {
+          isPast = true;
         }
       }
 
       let isConflict = false;
       if (therapistId) {
         const tName = therapists.find(th => th.id === therapistId)?.name;
-        isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, t) && b.therapist_name === tName);
+        isConflict = dateBookings.some(b => b.therapist_name === tName && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
       } else {
         if (allowedTherapists.length === 0) {
           isConflict = true;
         } else {
           const freeTherapist = allowedTherapists.find(th => {
-            return !dateBookings.some(b => checkTimeOverlap(b.appointment_time, t) && b.therapist_name === th.name);
+            return !dateBookings.some(b => b.therapist_name === th.name && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
           });
           isConflict = !freeTherapist;
         }
@@ -595,26 +586,18 @@ export default function BookingPage() {
   }
 
   const getTherapistStatus = (t: Therapist) => {
-    if (time && isTimeFormatValid) {
-      const isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === t.name);
-      if (isConflict) return ` (Booked around ${time.trim()})`;
+    if (time) {
+      const isConflict = dateBookings.some(b => b.therapist_name === t.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
+      if (isConflict) return ` (Booked around ${time})`;
     }
     return t.status ? ` (${t.status})` : '';
   }
 
   const isTherapistDisabled = (t: Therapist) => {
-    if (time && isTimeFormatValid) {
-      return dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === t.name);
+    if (time) {
+      return dateBookings.some(b => b.therapist_name === t.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
     }
     return false;
-  }
-
-  let isCustomTimeConflicted = false;
-  if (date && isTimeFormatValid && therapistId) {
-    const tName = therapists.find(th => th.id === therapistId)?.name;
-    if (tName) {
-      isCustomTimeConflicted = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === tName);
-    }
   }
 
   const validation = {
@@ -624,8 +607,10 @@ export default function BookingPage() {
     email: email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    time: !isTimeFormatValid || isCustomTimeConflicted,
+    // Enforces the selection to be a valid available slot from the Dropdown Array
+    time: time === '' || !availableSlots.find(s => s.time === time)?.available,
   }
+
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
@@ -803,7 +788,6 @@ export default function BookingPage() {
         .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
       `}</style>
 
-      {/* ─── CONFIRMATION POPUP MODAL ─── */}
       {showConfirmModal && (
         <div className="modal-overlay" onClick={() => setShowConfirmModal(false)}>
           <div style={{ backgroundColor: '#F9F4EB', width: '100%', maxWidth: 500, borderRadius: 16, padding: 32, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: BODY }} onClick={e => e.stopPropagation()}>
@@ -1003,21 +987,16 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
+                {/* ── RESTORED: SELECT DROPDOWN FOR PREFERRED TIME ── */}
                 <Field label="Preferred Time *">
-                  <input
-                    type="text"
-                    className="bk-in"
-                    style={{ ...INPUT, ...eb(validation.time) }}
-                    value={time}
-                    onChange={e => setTime(e.target.value)}
-                    placeholder="e.g. 7:15 PM"
-                  />
-                  {attempted && validation.time && !isCustomTimeConflicted && (
-                    <p style={{ fontSize: 11, color: '#C83232', marginTop: 4, marginBottom: 0 }}>Please format exactly as Hour:Minute AM/PM (e.g., 7:15 PM)</p>
-                  )}
-                  {attempted && isCustomTimeConflicted && (
-                    <p style={{ fontSize: 11, color: '#C83232', marginTop: 4, marginBottom: 0 }}>This therapist is booked around this custom time slot.</p>
-                  )}
+                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
+                    <option value="">--:-- --</option>
+                    {availableSlots.map(s => (
+                      <option key={s.time} value={s.time} disabled={!s.available}>
+                        {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </Row2>
 
@@ -1038,7 +1017,7 @@ export default function BookingPage() {
                 )}
               </Field>
 
-              {/* ─── RESTORED VISUAL MATRIX ENGINE ─── */}
+              {/* ── RESTORED VISUAL MATRIX ENGINE ── */}
               {availableSlots.length > 0 && (
                 <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>

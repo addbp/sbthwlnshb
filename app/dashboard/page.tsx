@@ -1,8 +1,8 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 32: Omni-Synced Overview POS (Fully Customisable Start Times)
-// NEW: Perfect Responsive Tablet & iPad Horizontal Scrolling
+// Phase 33: Omni-Synced Overview POS (Added Explicit User Tracking + Surcharge Extensions)
+// FULL UN-SHORTENED SOURCE CODE PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -21,6 +21,13 @@ const GOLD = '#C58F3B'
 const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
+
+// Master Time Slots (Connected to Booking Engine)
+const ALL_TIME_SLOTS = [
+  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
+  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
+  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
+];
 
 // ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -76,6 +83,8 @@ interface LiveBooking {
   status: string;
   therapist: string | null;
   createdAt: string;
+  additional_mins?: number;
+  additional_price?: number;
 }
 
 interface StaffMember {
@@ -99,7 +108,7 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
-  // Store the active user's email to pass to the Audit Log
+  // NEW: Store the active user's email to pass to the Audit Log
   const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
 
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
@@ -192,7 +201,9 @@ export default function OverviewDashboard() {
           received_payment: parseCurrency(r.received_payment || amt),
           status: currentStatus,
           therapist: r.therapist_name || r.therapist || null,
-          createdAt: r.created_at || new Date().toISOString()
+          createdAt: r.created_at || new Date().toISOString(),
+          additional_mins: Number(r.additional_mins || 0),
+          additional_price: Number(r.additional_price || 0)
         };
         const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
         const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate || rawDateStr}`;
@@ -370,7 +381,7 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
@@ -391,7 +402,8 @@ export default function OverviewDashboard() {
                   <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
                   dailyBookings.map((b) => {
-                    const netSales = b.amount * (1 - (b.discount_pct / 100));
+                    const extraCost = Number(b.additional_price || 0);
+                    const netSales = (b.amount + extraCost) * (1 - (b.discount_pct / 100));
                     const commAmount = netSales * (b.therapist_comm_pct / 100);
                     const isOnlinePay = ['GCASH', 'BANK TRANSFER', 'QRPH', 'MASTERCARD'].includes(b.payment_method);
                     const calculatedChange = Math.max(0, b.received_payment - netSales);
@@ -399,29 +411,35 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* Time & Client (Swapped from fixed dropdown to custom user input field) */}
+                        {/* ── CUSTOM EDITABLE TIME & SURCHARGE BLOCK ── */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <input
                             type="text"
                             value={b.time}
                             onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
                             placeholder="e.g. 7:15 PM"
-                            style={{
-                              width: '100%',
-                              padding: '6px 8px',
-                              borderRadius: 4,
-                              fontSize: 13,
-                              fontWeight: 800,
-                              border: '1px solid rgba(197,143,59,0.3)',
-                              backgroundColor: '#fff',
-                              color: BLACK,
-                              outline: 'none',
-                              marginBottom: 6,
-                              boxSizing: 'border-box'
-                            }}
+                            style={{ width: '100%', padding: '6px 8px', borderRadius: 4, fontSize: 13, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
                           />
-                          <br />
-                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4 }}>{b.client}</span>
+                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'block', marginBottom: 10 }}>{b.client}</span>
+
+                          <div style={{ padding: '10px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 6, border: '1px dashed rgba(197,143,59,0.4)' }}>
+                            <label style={{ fontSize: 9, fontWeight: 700, color: GOLD, display: 'block', marginBottom: 4 }}>EXTRA RUNTIME (MINS)</label>
+                            <input
+                              type="number"
+                              value={b.additional_mins || ''}
+                              onChange={(e) => handleUpdate(b.id, 'additional_mins', Number(e.target.value))}
+                              placeholder="e.g. 30"
+                              style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, marginBottom: 8, boxSizing: 'border-box', outline: 'none' }}
+                            />
+                            <label style={{ fontSize: 9, fontWeight: 700, color: GOLD, display: 'block', marginBottom: 4 }}>SURCHARGE PRICE (₱)</label>
+                            <input
+                              type="number"
+                              value={b.additional_price || ''}
+                              onChange={(e) => handleUpdate(b.id, 'additional_price', Number(e.target.value))}
+                              placeholder="e.g. 300"
+                              style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, boxSizing: 'border-box', outline: 'none' }}
+                            />
+                          </div>
                         </td>
 
                         {/* Service & Notes */}
@@ -455,6 +473,15 @@ export default function OverviewDashboard() {
                               <span style={{ color: '#666' }}>Base:</span>
                               <input type="number" value={b.amount} onChange={e => handleUpdate(b.id, 'amount', Number(e.target.value), b.source === 'live' ? 'price' : 'service_amount')} style={{ width: 60, padding: 4, textAlign: 'right', border: '1px solid rgba(197,143,59,0.5)', borderRadius: 4, fontWeight: 700, color: BLACK, outline: 'none' }} />
                             </div>
+
+                            {/* SURCHARGE ADDITION UI */}
+                            {extraCost > 0 && (
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                                <span style={{ color: GOLD, fontWeight: 700 }}>Extra:</span>
+                                <span style={{ color: GOLD, fontWeight: 700 }}>+{formatCurrency(extraCost)}</span>
+                              </div>
+                            )}
+
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Disc %:</span>
                               <input type="number" value={b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
@@ -549,14 +576,14 @@ export default function OverviewDashboard() {
           </div>
         )}
 
-        {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW) ─── */}
+        {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW WITH EXTENSIONS) ─── */}
         {view === 'GRID' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
-              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Grayed-out rows represent staff on their scheduled day off.</span>
+              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
             </div>
 
-            <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <div style={{ minWidth: '1200px' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
                   <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
@@ -611,7 +638,10 @@ export default function OverviewDashboard() {
                             if (!b.time || b.time === '—') return null;
                             const startMins = getMinutesFrom11AM(b.time);
                             const leftPercent = (startMins / TOTAL_MINUTES) * 100;
-                            const widthPercent = (60 / TOTAL_MINUTES) * 100;
+
+                            // ─── DYNAMIC WIDTH ENGINE (Base 60 min + Custom Surcharge Mins) ───
+                            const totalDuration = 60 + Number(b.additional_mins || 0);
+                            const widthPercent = (totalDuration / TOTAL_MINUTES) * 100;
                             const colors = getStatusColor(b.status);
 
                             return (
@@ -628,7 +658,7 @@ export default function OverviewDashboard() {
                                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
                                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                               >
-                                <span style={{ fontSize: 11, fontWeight: 800, color: BLACK }}>{b.time}</span>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: BLACK }}>{b.time} <span style={{ color: GOLD }}>({totalDuration}m)</span></span>
                                 <span style={{ fontSize: 12, fontWeight: 600, color: BLACK, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.client}</span>
                                 <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.service}</span>
                                 <span style={{ display: 'inline-block', backgroundColor: colors.bg, color: colors.color, padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, width: 'fit-content', marginTop: 'auto' }}>
@@ -661,6 +691,7 @@ export default function OverviewDashboard() {
               <div style={{ backgroundColor: '#FDFCF8', padding: 16, borderRadius: 8, border: '1px solid rgba(26,26,26,0.05)', marginBottom: 20 }}>
                 <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Service:</strong> {gridModalBooking.service}</p>
                 <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Assigned:</strong> {gridModalBooking.therapist || 'Unassigned'}</p>
+                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Added Runtime:</strong> {gridModalBooking.additional_mins || 0} minutes</p>
                 <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Status:</strong> <span style={{ color: getStatusColor(gridModalBooking.status).color, fontWeight: 700 }}>{gridModalBooking.status}</span></p>
                 <p style={{ margin: '0', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Notes:</strong> {gridModalBooking.notes || 'None'}</p>
               </div>
