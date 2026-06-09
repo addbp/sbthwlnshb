@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 24 Booking Engine (Optional Email Update)
+// app/booking/page.tsx  —  Phase 25 Booking Engine (Custom Start-Time Conflict Resolver - Fixed Syntax)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -523,6 +523,30 @@ export default function BookingPage() {
   }, [date, branch, supabase]);
 
 
+  // ─── CRITICAL: TIME OVERLAP ENGINE (FOR CUSTOM RUNTIMES) ───
+  const checkTimeOverlap = (timeA: string, timeB: string) => {
+    if (!timeA || !timeB || timeA === '—' || timeB === '—') return false;
+
+    const getMinutes = (tStr: string) => {
+      const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!match) return 0;
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && h !== 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      if (h < 11) h += 24; // Align with operational night cycle
+      return h * 60 + m;
+    };
+
+    const startA = getMinutes(timeA);
+    const endA = startA + 60; // Assuming standard 60 min session
+    const startB = getMinutes(timeB);
+    const endB = startB + 60;
+
+    return startA < endB && startB < endA;
+  };
+
   // ─── DYNAMIC AVAILABILITY GENERATOR ───
   let availableSlots: { time: string, available: boolean }[] = [];
 
@@ -560,13 +584,13 @@ export default function BookingPage() {
       let isConflict = false;
       if (therapistId) {
         const tName = therapists.find(th => th.id === therapistId)?.name;
-        isConflict = dateBookings.some(b => b.appointment_time === t && b.therapist_name === tName);
+        isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, t) && b.therapist_name === tName);
       } else {
         if (allowedTherapists.length === 0) {
           isConflict = true;
         } else {
           const freeTherapist = allowedTherapists.find(th => {
-            return !dateBookings.some(b => b.appointment_time === t && b.therapist_name === th.name);
+            return !dateBookings.some(b => checkTimeOverlap(b.appointment_time, t) && b.therapist_name === th.name);
           });
           isConflict = !freeTherapist;
         }
@@ -578,14 +602,14 @@ export default function BookingPage() {
 
   const getTherapistStatus = (t: Therapist) => {
     if (time) {
-      const isConflict = dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
-      if (isConflict) return ` (Booked at ${time})`;
+      const isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time) && b.therapist_name === t.name);
+      if (isConflict) return ` (Booked around ${time})`;
     }
     return t.status ? ` (${t.status})` : '';
   }
 
   const isTherapistDisabled = (t: Therapist) => {
-    if (time) return dateBookings.some(b => b.appointment_time === time && b.therapist_name === t.name);
+    if (time) return dateBookings.some(b => checkTimeOverlap(b.appointment_time, time) && b.therapist_name === t.name);
     return false;
   }
 
@@ -860,7 +884,6 @@ export default function BookingPage() {
                 <Field label="Mobile Number *">
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.mobile) }} type="tel" inputMode="numeric" value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, ''))} placeholder="09XX XXX XXXX" />
                 </Field>
-                {/* REMOVED ASTERISK FROM EMAIL LABEL */}
                 <Field label="Email Address (Optional)">
                   <input className="bk-in" style={{ ...INPUT, ...eb(validation.email) }} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="maria@example.com" />
                 </Field>
