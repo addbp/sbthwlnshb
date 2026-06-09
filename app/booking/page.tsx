@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 25 Booking Engine (Custom Start-Time Conflict Resolver - Fixed Syntax)
+// app/booking/page.tsx  —  Phase 27 Booking Engine (Custom Start-Time Input + Restored Visual Availability Grid)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -18,7 +18,7 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-// STRICT CUTOFF: 12:00 AM IS THE ABSOLUTE LATEST FOR ALL DAYS
+// Strict 30-Min Reference Slots for Availability Grid Matrix
 const MON_SAT_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -38,7 +38,6 @@ const INPUT: React.CSSProperties = {
   border: '1px solid rgba(26,26,26,0.14)',
   borderRadius: 10, fontSize: 16, color: BLACK,
   fontFamily: BODY, lineHeight: 1,
-  appearance: 'none', WebkitAppearance: 'none',
   boxSizing: 'border-box', outline: 'none',
   transition: 'border-color 180ms ease, box-shadow 180ms ease',
 }
@@ -253,7 +252,7 @@ export default function BookingPage() {
               status: t.status,
               role: t.role || t.specialty || 'Massage Therapist',
               off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : [],
-              branch: t.branch || 'Sabbath Malolos' // Default gracefully if old DB entries exist
+              branch: t.branch || 'Sabbath Malolos'
             })))
         }
 
@@ -303,7 +302,7 @@ export default function BookingPage() {
               desc = 'FREE home-baked chocolate cookies for the celebrant 🍪';
             }
             else if (upName.includes('CORPORATE EVENT')) {
-              desc = 'FREE 1 round of Coffee or Tea for groups of 10+ dining at Sabasu ☕\n\nCelebrate. Relax. Indulge. Make your next event a Sabbath to Remember.';
+              desc = 'FREE 1 round of Coffee or Tea for groups of 10+ dining at Sabasu ☕';
             }
 
             return {
@@ -389,7 +388,6 @@ export default function BookingPage() {
   const nailServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && isNailService(s));
   const massageServices = allAvailableServices.filter(s => !packageServices.includes(s) && !wellnessPackages.includes(s) && !waxServices.includes(s) && !nailServices.includes(s) && s.category !== 'Custom');
 
-  // AUTOMATICALLY CLEAR LE NAILS IF USER SWITCHES TO PULILAN BRANCH
   useEffect(() => {
     if (branch === 'Sabbath Pulilan') {
       setSelectedIds(prev => {
@@ -399,7 +397,6 @@ export default function BookingPage() {
         packageServices.forEach(ps => { if (next.has(ps.id)) { next.delete(ps.id); changed = true; } });
         return changed ? next : prev;
       });
-      // Also unassign therapist if they switch branches and the therapist isn't in Pulilan
       setTherapistId('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,7 +427,6 @@ export default function BookingPage() {
 
   const selectedServices = allAvailableServices.filter(s => selectedIds.has(s.id))
 
-  // ─── FILTER ALLOWED THERAPISTS (NOW WITH BRANCH FILTERING!) ───
   let allowedTherapists = therapists.filter(t => t.branch === branch);
 
   if (selectedServices.length > 0) {
@@ -452,7 +448,6 @@ export default function BookingPage() {
     });
   }
 
-  // Filter out off-duty therapists for the selected date
   if (date) {
     const [y, m, d] = date.split('-').map(Number);
     const selectedDateObj = new Date(y, m - 1, d);
@@ -506,7 +501,6 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
-  // ─── FETCH LIVE CONFLICTS (Now restricted by branch logically) ───
   useEffect(() => {
     if (!date) return;
     const fetchDateBookings = async () => {
@@ -514,14 +508,13 @@ export default function BookingPage() {
         .from('bookings')
         .select('appointment_time, therapist_name, branch')
         .eq('appointment_date', date)
-        .eq('branch', branch) // Strict branch separation for availability
+        .eq('branch', branch)
         .neq('status', 'Cancelled')
         .neq('status', 'Completed');
       if (data) setDateBookings(data);
     }
     fetchDateBookings();
   }, [date, branch, supabase]);
-
 
   // ─── CRITICAL: TIME OVERLAP ENGINE (FOR CUSTOM RUNTIMES) ───
   const checkTimeOverlap = (timeA: string, timeB: string) => {
@@ -535,19 +528,22 @@ export default function BookingPage() {
       const ampm = match[3].toUpperCase();
       if (ampm === 'PM' && h !== 12) h += 12;
       if (ampm === 'AM' && h === 12) h = 0;
-      if (h < 11) h += 24; // Align with operational night cycle
+      if (h < 11) h += 24;
       return h * 60 + m;
     };
 
     const startA = getMinutes(timeA);
-    const endA = startA + 60; // Assuming standard 60 min session
+    const endA = startA + 60;
     const startB = getMinutes(timeB);
     const endB = startB + 60;
 
     return startA < endB && startB < endA;
   };
 
-  // ─── DYNAMIC AVAILABILITY GENERATOR ───
+  const timeRegex = /^(0?[1-9]|1[0-2]):[0-5][0-9]\s*(AM|PM)$/i;
+  const isTimeFormatValid = timeRegex.test(time.trim());
+
+  // ─── DYNAMIC AVAILABILITY GRID MATRIX GENERATOR ───
   let availableSlots: { time: string, available: boolean }[] = [];
 
   if (date) {
@@ -555,7 +551,6 @@ export default function BookingPage() {
     const dObj = new Date(y, m - 1, d);
     const day = dObj.getDay();
 
-    // Operating Hours logic
     const baseSlots = day === 0 ? SUN_SLOTS : MON_SAT_SLOTS;
     const isToday = date === getTodayStr();
     const now = new Date();
@@ -572,7 +567,6 @@ export default function BookingPage() {
           const ampm = match[3].toUpperCase();
           if (ampm === 'PM' && h !== 12) h += 12;
           if (ampm === 'AM' && h === 12) h = 0;
-
           if (t === '12:00 AM') h = 24;
 
           if (h < currH || (h === currH && mins <= currM)) {
@@ -601,46 +595,47 @@ export default function BookingPage() {
   }
 
   const getTherapistStatus = (t: Therapist) => {
-    if (time) {
-      const isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time) && b.therapist_name === t.name);
-      if (isConflict) return ` (Booked around ${time})`;
+    if (time && isTimeFormatValid) {
+      const isConflict = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === t.name);
+      if (isConflict) return ` (Booked around ${time.trim()})`;
     }
     return t.status ? ` (${t.status})` : '';
   }
 
   const isTherapistDisabled = (t: Therapist) => {
-    if (time) return dateBookings.some(b => checkTimeOverlap(b.appointment_time, time) && b.therapist_name === t.name);
+    if (time && isTimeFormatValid) {
+      return dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === t.name);
+    }
     return false;
   }
 
-  const selectedSlot = availableSlots.find(s => s.time === time);
-  const isTimeInvalid = !selectedSlot || !selectedSlot.available;
+  let isCustomTimeConflicted = false;
+  if (date && isTimeFormatValid && therapistId) {
+    const tName = therapists.find(th => th.id === therapistId)?.name;
+    if (tName) {
+      isCustomTimeConflicted = dateBookings.some(b => checkTimeOverlap(b.appointment_time, time.trim()) && b.therapist_name === tName);
+    }
+  }
 
   const validation = {
     firstName: firstName.trim().length < 2,
     lastName: lastName.trim().length < 2,
     mobile: mobile.trim().length < 7,
-    // Email is now optional, so it's only invalid if they typed something AND it's incorrectly formatted
     email: email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    time: time === '' || isTimeInvalid,
+    time: !isTimeFormatValid || isCustomTimeConflicted,
   }
   const isValid = !Object.values(validation).some(Boolean)
   const eb = (hasErr: boolean): React.CSSProperties => attempted && hasErr ? { borderColor: 'rgba(139,58,58,0.65)', boxShadow: '0 0 0 3px rgba(139,58,58,0.10)' } : {}
 
-  // ─── INTERCEPT FORM SUBMISSION TO SHOW MODAL ───
   function handleFormPreSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
-    if (!isValid || loading) {
-      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. Please choose another time.");
-      return;
-    }
+    if (!isValid || loading) return;
     setShowConfirmModal(true)
   }
 
-  // ─── ACTUAL DATABASE SUBMISSION ───
   async function executeBooking() {
     setShowConfirmModal(false)
     setLoading(true); setSubmitError(null)
@@ -657,18 +652,17 @@ export default function BookingPage() {
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payload: any = {
         booking_id: generatedBookingId,
-        branch: branch, // <--- INJECTING THE BRANCH TO DB!
+        branch: branch,
         client_name: constructedFullName,
         client_mobile: mobile.trim(),
-        client_email: email.trim(), // Will just be empty string if not provided
+        client_email: email.trim(),
         service_name: selectedServices.map(s => s.name).join(', '),
         price: finalTotalAmount,
         therapist_name: selectedTherapist?.name ?? null,
         appointment_date: date,
-        appointment_time: time,
+        appointment_time: time.trim().toUpperCase(),
         payment_method: 'PAY AT COUNTER',
         status: 'Pending',
         notes: trackingNotes.trim(),
@@ -677,7 +671,6 @@ export default function BookingPage() {
       const { error: dbErr } = await supabase.from('bookings').insert(payload)
       if (dbErr) throw new Error(dbErr.message)
 
-      // Only attempt to send the email if they actually provided an email address
       if (email.trim() !== '') {
         try {
           await fetch('/api/send-email', {
@@ -687,7 +680,7 @@ export default function BookingPage() {
               name: firstName.trim(),
               email: email.trim(),
               date: date,
-              time: time,
+              time: time.trim().toUpperCase(),
               services: selectedServices.map(s => s.name).join(', '),
               totalAmount: finalTotalAmount,
               branch: branch
@@ -720,13 +713,12 @@ export default function BookingPage() {
         .print-only { display: none; }
       `}</style>
 
-      {/* STANDARD ONSCREEN CONFIRMATION */}
       <div className="no-print" style={{ backgroundColor: BG, minHeight: '100dvh', padding: '100px 20px', textAlign: 'center', fontFamily: BODY }}>
         <div style={{ fontSize: 44, color: GOLD, margin: '0 auto 22px', width: 70, height: 70, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</div>
         <h2 style={{ fontFamily: DSP, fontSize: 40, color: BLACK, margin: '0 0 14px' }}>Booking Received</h2>
 
         <p style={{ color: 'rgba(26,26,26,0.7)', fontSize: 16, maxWidth: 450, margin: '0 auto 24px', lineHeight: 1.6 }}>
-          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment at <strong style={{ color: GOLD }}>{branch}</strong> on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time}</strong> is officially on our calendar.
+          Thank you, <strong style={{ color: BLACK }}>{displayFullName}</strong>! Your appointment at <strong style={{ color: GOLD }}>{branch}</strong> on <strong style={{ color: BLACK }}>{date}</strong> at <strong style={{ color: BLACK }}>{time.toUpperCase()}</strong> is officially on our calendar.
         </p>
 
         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(197,143,59,0.3)', borderRadius: 16, padding: '24px', maxWidth: 450, margin: '0 auto 32px', textAlign: 'left', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
@@ -756,7 +748,6 @@ export default function BookingPage() {
         </div>
       </div>
 
-      {/* HIDDEN POS PRINT TEMPLATE */}
       <div className="print-only" style={{ padding: '20px', maxWidth: '400px', margin: '0 auto', color: '#000', fontFamily: 'monospace', fontSize: '14px', lineHeight: 1.5 }}>
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <h1 style={{ margin: '0 0 5px', fontSize: 22, fontWeight: 'bold' }}>{branch.toUpperCase()}</h1>
@@ -765,7 +756,7 @@ export default function BookingPage() {
         </div>
         <div style={{ marginBottom: 15 }}>
           <p style={{ margin: 0 }}><strong>Date:</strong> {date}</p>
-          <p style={{ margin: 0 }}><strong>Time:</strong> {time}</p>
+          <p style={{ margin: 0 }}><strong>Time:</strong> {time.toUpperCase()}</p>
           <p style={{ margin: 0 }}><strong>Client:</strong> {displayFullName}</p>
           <p style={{ margin: 0 }}><strong>Therapist:</strong> {selectedTherapistDisplay}</p>
         </div>
@@ -830,7 +821,7 @@ export default function BookingPage() {
               <div style={{ fontSize: 13, color: BLACK, lineHeight: 1.6 }}>
                 <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Client:</strong> <span>{displayFullName}</span></div>
                 <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Branch:</strong> <span style={{ fontWeight: 700, color: GOLD }}>{branch}</span></div>
-                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Schedule:</strong> <span>{date} at {time}</span></div>
+                <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Schedule:</strong> <span>{date} at {time.toUpperCase()}</span></div>
                 <div style={{ display: 'flex', marginBottom: 8 }}><strong style={{ width: 100, color: '#666' }}>Therapist:</strong> <span>{selectedTherapistDisplay}</span></div>
 
                 <div style={{ marginTop: 16, padding: '12px 14px', backgroundColor: 'rgba(61,122,74,0.05)', borderRadius: 8, border: '1px solid rgba(61,122,74,0.1)' }}>
@@ -890,7 +881,6 @@ export default function BookingPage() {
               </Row2>
             </Section>
 
-            {/* ─── MOVED & UPDATED BRANCH SELECTION UI ─── */}
             <Section title="Select Branch" note="Please confirm your preferred location">
               <Field label="Branch Location *">
                 <select
@@ -938,7 +928,6 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {/* ONLY SHOW LE NAILS IF BRANCH IS MALOLOS */}
                   {branch !== 'Sabbath Pulilan' && nailServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Le Nails Salon</div>
@@ -974,7 +963,6 @@ export default function BookingPage() {
                     </div>
                   )}
 
-                  {/* ONLY SHOW NAIL PACKAGES IF BRANCH IS MALOLOS */}
                   {branch !== 'Sabbath Pulilan' && packageServices.length > 0 && (
                     <div>
                       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: GOLD, marginBottom: 12 }}>Packages & Savings</div>
@@ -1016,14 +1004,20 @@ export default function BookingPage() {
                 </Field>
 
                 <Field label="Preferred Time *">
-                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
-                    <option value="">--:-- --</option>
-                    {availableSlots.map(s => (
-                      <option key={s.time} value={s.time} disabled={!s.available}>
-                        {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    className="bk-in"
+                    style={{ ...INPUT, ...eb(validation.time) }}
+                    value={time}
+                    onChange={e => setTime(e.target.value)}
+                    placeholder="e.g. 7:15 PM"
+                  />
+                  {attempted && validation.time && !isCustomTimeConflicted && (
+                    <p style={{ fontSize: 11, color: '#C83232', marginTop: 4, marginBottom: 0 }}>Please format exactly as Hour:Minute AM/PM (e.g., 7:15 PM)</p>
+                  )}
+                  {attempted && isCustomTimeConflicted && (
+                    <p style={{ fontSize: 11, color: '#C83232', marginTop: 4, marginBottom: 0 }}>This therapist is booked around this custom time slot.</p>
+                  )}
                 </Field>
               </Row2>
 
@@ -1044,6 +1038,7 @@ export default function BookingPage() {
                 )}
               </Field>
 
+              {/* ─── RESTORED VISUAL MATRIX ENGINE ─── */}
               {availableSlots.length > 0 && (
                 <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
@@ -1116,7 +1111,6 @@ export default function BookingPage() {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {/* This button now triggers the handleFormPreSubmit function which opens the modal */}
               <button type="submit" disabled={loading || !isValid} style={{ height: 58, backgroundColor: BLACK, color: GOLD, border: '1px solid rgba(197,143,59,0.35)', borderRadius: 11, fontSize: 13, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', cursor: loading || !isValid ? 'not-allowed' : 'pointer', opacity: loading || !isValid ? 0.4 : 1, transition: 'opacity 200ms ease' }}>
                 {loading ? 'Sending request…' : `Confirm Booking · ${fmt(finalTotalAmount)}`}
               </button>
