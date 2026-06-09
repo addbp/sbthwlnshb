@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 44 Booking Engine (Native Time Wheel & Extended Overlap Engine)
+// app/booking/page.tsx  —  Phase 45 Booking Engine (Native Time Wheel & Strict Operating Hours Matrix)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 // FULLY EXPANDED FORMATTING PRESERVED
 
@@ -444,7 +444,7 @@ export default function BookingPage() {
     });
   }
 
-  // Determine current day for off-duty and dynamic slot generation
+  // Determine current day for off-duty logic and operating hours limits
   let currentDayIndex = -1;
   let dayName = '';
   if (date) {
@@ -560,70 +560,6 @@ export default function BookingPage() {
     // Strict 15-minute padding intervals
     return (startA - 15) < endB && (startB - 15) < endA;
   }, []);
-
-  // ─── 15-MINUTE DYNAMIC INTERVAL GENERATOR ───
-  const generate15MinSlots = (isSunday: boolean) => {
-    const slots = [];
-    const startMins = isSunday ? 13 * 60 : 11 * 60; // 1pm on Sun, 11am Mon-Sat
-    const endMins = 24 * 60; // 12:00 AM (midnight)
-
-    for (let m = startMins; m <= endMins; m += 15) {
-      let h = Math.floor(m / 60);
-      let min = m % 60;
-      let ampm = 'AM';
-
-      if (h >= 12) {
-        ampm = 'PM';
-        if (h > 12 && h < 24) h -= 12;
-      }
-      if (h === 24) { h = 12; ampm = 'AM'; }
-      if (h === 0) { h = 12; ampm = 'AM'; }
-
-      slots.push(`${h}:${min.toString().padStart(2, '0')} ${ampm}`);
-    }
-    return slots;
-  };
-
-  // ─── DYNAMIC AVAILABILITY GRID MATRIX GENERATOR ───
-  let availableSlots: { time: string, available: boolean }[] = [];
-
-  if (date) {
-    const isSunday = currentDayIndex === 0;
-    const baseSlots = generate15MinSlots(isSunday);
-    const isToday = date === getTodayStr();
-    const now = new Date();
-
-    let currMins = now.getHours() * 60 + now.getMinutes();
-    if (now.getHours() < 11) currMins += 24 * 60;
-
-    availableSlots = baseSlots.map(t => {
-      let isPast = false;
-      if (isToday) {
-        const slotMins = getMinutesFromMidnight(t);
-        if (slotMins !== -1 && slotMins <= currMins) {
-          isPast = true;
-        }
-      }
-
-      let isConflict = false;
-      if (therapistId) {
-        const tName = therapists.find(th => th.id === therapistId)?.name;
-        isConflict = dateBookings.some(b => b.therapist_name === tName && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
-      } else {
-        if (allowedTherapists.length === 0) {
-          isConflict = true;
-        } else {
-          // It's free if AT LEAST ONE allowed therapist is free
-          const freeTherapist = allowedTherapists.find(th => {
-            return !dateBookings.some(b => b.therapist_name === th.name && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
-          });
-          isConflict = !freeTherapist;
-        }
-      }
-
-      return { time: t, available: !isPast && !isConflict }
-    });
-  }
 
   const getTherapistStatus = (t: Therapist) => {
     if (time) {
@@ -892,6 +828,10 @@ export default function BookingPage() {
         .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
         .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        input[type="time"]::-webkit-calendar-picker-indicator {
+          cursor: pointer;
+          filter: invert(0.5) sepia(1) saturate(5) hue-rotate(5deg);
+        }
       `}</style>
 
       {/* ─── CONFIRMATION POPUP MODAL ─── */}
@@ -1094,7 +1034,7 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ── NEW: NATIVE SCROLLABLE TIME WHEEL ── */}
+                {/* ── NATIVE SCROLLABLE TIME WHEEL WITH STRICT VALIDATION ── */}
                 <Field label="Preferred Time *">
                   <input
                     className="bk-in"
@@ -1104,7 +1044,7 @@ export default function BookingPage() {
                     onChange={e => setTime(to12Hour(e.target.value))}
                   />
                   {attempted && timeErrMsg && (
-                    <span style={{ marginTop: 6, fontSize: 11, color: '#8B3A3A', fontWeight: 600 }}>{timeErrMsg}</span>
+                    <span style={{ marginTop: 6, fontSize: 11, color: '#8B3A3A', fontWeight: 600, lineHeight: 1.4 }}>{timeErrMsg}</span>
                   )}
                 </Field>
               </Row2>
@@ -1126,35 +1066,23 @@ export default function BookingPage() {
                 )}
               </Field>
 
-              {/* ── PURE AVAILABILITY GRID (NO THERAPIST NAMES) ── */}
-              {date && availableSlots.length > 0 && (
-                <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 16, letterSpacing: '0.05em' }}>
-                    Available Time Slots for {date}
-                  </p>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(85px, 1fr))', gap: 8 }}>
-                    {availableSlots.map(s => (
-                      <button
-                        key={s.time}
-                        type="button"
-                        onClick={() => { if (s.available) setTime(s.time); }}
-                        disabled={!s.available}
-                        style={{
-                          padding: '10px 4px', textAlign: 'center', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                          backgroundColor: s.available ? (time === s.time ? GOLD : 'rgba(61,122,74,0.1)') : 'rgba(26,26,26,0.04)',
-                          color: s.available ? (time === s.time ? WHITE : '#3D7A4A') : '#aaa',
-                          border: s.available ? (time === s.time ? `1px solid ${GOLD}` : '1px solid rgba(61,122,74,0.2)') : '1px solid transparent',
-                          textDecoration: s.available ? 'none' : 'line-through',
-                          cursor: s.available ? 'pointer' : 'not-allowed',
-                          transition: 'all 0.2s'
-                        }}>
-                        {s.time}
-                      </button>
-                    ))}
+              {/* ── OPERATING HOURS INFO ── */}
+              <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 12, letterSpacing: '0.05em' }}>
+                  Sabbath Spa Operating Hours
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: BLACK, fontWeight: 600 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed rgba(26,26,26,0.1)', paddingBottom: 8 }}>
+                    <span>Monday – Saturday</span>
+                    <span style={{ color: GOLD }}>11:00 AM – 1:00 AM</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Sunday</span>
+                    <span style={{ color: GOLD }}>1:00 PM – 1:00 AM</span>
                   </div>
                 </div>
-              )}
+              </div>
+
             </Section>
 
             <Section
