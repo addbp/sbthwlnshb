@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 36: Omni-Synced Overview POS (Fixed DB Save Bug, Perfect Button Alignment, Responsive Layout)
+// Phase 37: Omni-Synced Overview POS (Fixed Save DB Bug, Strict Responsive Table Constraints)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +22,7 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// Master Time Slots (Connected to Booking Engine)
 const ALL_TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -261,7 +262,7 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DATABASE UPDATES ───
+  // ─── SMART DATABASE UPDATES (WITH OPTIONAL DB SAVE FLAG) ───
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string, saveToDb: boolean = true) => {
     const booking = allBookings.find(b => b.id === id);
@@ -301,10 +302,12 @@ export default function OverviewDashboard() {
       const { error } = await supabase.from(table).update(payloadToUpdate).eq(idField, booking.rawId);
 
       if (error) {
-        console.warn(`Could not save ${field}.`, error);
+        console.error(`Could not save ${field}. Supabase Error:`, error);
+        alert(`Auto-save failed for ${field}: ${error.message}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      alert(`Auto-save exception: ${e.message}`);
     }
   };
 
@@ -316,7 +319,6 @@ export default function OverviewDashboard() {
 
       const netSales = (booking.amount + Number(booking.additional_price || 0)) * (1 - (booking.discount_pct / 100));
 
-      // Removed receptionist_track to fix the database crashing error
       const { error } = await supabase.from(table).update({
         additional_mins: Number(booking.additional_mins || 0),
         additional_price: Number(booking.additional_price || 0),
@@ -325,9 +327,10 @@ export default function OverviewDashboard() {
 
       if (error) throw error;
       alert("Extension saved successfully!");
-    } catch (err) {
-      console.error(err);
-      alert("Failed to save extension. Check your database connection.");
+    } catch (err: any) {
+      console.error("Supabase Save Error:", err);
+      // This will explicitly show you if a column is missing in your DB!
+      alert(`Failed to save extension. Error: ${err.message || 'Unknown database error'}`);
     }
   };
 
@@ -386,8 +389,8 @@ export default function OverviewDashboard() {
   const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 4vw, 40px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 4vw, 40px)', fontFamily: BODY, width: '100%', maxWidth: '100vw', boxSizing: 'border-box', overflowX: 'hidden' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%', minWidth: 0 }}>
 
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview POS</h1>
@@ -397,7 +400,7 @@ export default function OverviewDashboard() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 20, marginBottom: 40 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 20, marginBottom: 40 }}>
           {[
             { label: 'COMPLETED', value: metrics.completed, color: '#3D7A4A' },
             { label: 'PENDING', value: metrics.pending, color: '#1A1A1A' },
@@ -417,7 +420,7 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1500px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
@@ -622,7 +625,7 @@ export default function OverviewDashboard() {
 
         {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW WITH EXTENSIONS) ─── */}
         {view === 'GRID' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
               <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
             </div>
