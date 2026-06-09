@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/bookings/page.tsx
-// Phase 35: Bookings Ledger (Total Amount Math Sync & Tablet Responsive Scaling)
+// Phase 35: Bookings Ledger (Most-Recent CreatedAt Sort + Total Amount Math + Modals)
 // FULL UN-SHORTENED SOURCE CODE PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -86,6 +86,7 @@ interface UnifiedRecord {
   customer_type?: string;
   additional_mins: number;
   additional_price: number;
+  createdAt: string;
 }
 
 export default function DashboardBookings() {
@@ -154,15 +155,6 @@ export default function DashboardBookings() {
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
 
-        // Exact Net Math calculation to fall back to if "received_payment" wasn't explicitly saved
-        const discPct = Number(r.discount_pct || 0);
-        const calcNet = (amt + addPrice) * (1 - (discPct / 100));
-
-        let recPay = calcNet;
-        if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
-          recPay = parseCurrency(r.received_payment);
-        }
-
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
         uniqueMap.set(key, {
           id: `live-${r.booking_id}`,
@@ -174,14 +166,15 @@ export default function DashboardBookings() {
           therapist: String(r.therapist_name || '—').toUpperCase(),
           category: cat,
           amount: amt,
-          discount_pct: discPct,
+          discount_pct: Number(r.discount_pct || 0),
           payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
           payment_status: String(r.payment_status || 'UNPAID').toUpperCase(),
           ref_no: String(r.ref_no || ''),
           receipt_url: String(r.receipt_url || ''),
-          received_payment: recPay,
+          received_payment: parseCurrency(r.received_payment || amt),
           additional_mins: addMins,
-          additional_price: addPrice
+          additional_price: addPrice,
+          createdAt: r.created_at || new Date().toISOString()
         });
       });
 
@@ -201,14 +194,6 @@ export default function DashboardBookings() {
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
 
-        const discPct = Number(r.discount_pct || 0);
-        const calcNet = (amt + addPrice) * (1 - (discPct / 100));
-
-        let recPay = calcNet;
-        if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
-          recPay = parseCurrency(r.received_payment);
-        }
-
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
         if (!uniqueMap.has(key)) {
           uniqueMap.set(key, {
@@ -221,14 +206,15 @@ export default function DashboardBookings() {
             therapist: String(r.therapist || '—').toUpperCase(),
             category: cat,
             amount: amt,
-            discount_pct: discPct,
+            discount_pct: Number(r.discount_pct || 0),
             payment_method: String(r.payment_method || 'CASH').toUpperCase(),
             payment_status: String(r.payment_status || 'PAID').toUpperCase(),
             ref_no: String(r.ref_no || ''),
             receipt_url: String(r.receipt_url || ''),
-            received_payment: recPay,
+            received_payment: parseCurrency(r.received_payment || amt),
             additional_mins: addMins,
-            additional_price: addPrice
+            additional_price: addPrice,
+            createdAt: r.created_at || new Date().toISOString()
           });
         }
       });
@@ -253,8 +239,8 @@ export default function DashboardBookings() {
         }
       });
 
-      // 4. Sort Latest First
-      merged.sort((a, b) => (b.rawDate?.getTime() || 0) - (a.rawDate?.getTime() || 0));
+      // 4. SORT BY MOST RECENT BOOKING (System creation date descending)
+      merged.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
       setRecords(merged);
     } catch (error) {
@@ -510,7 +496,7 @@ export default function DashboardBookings() {
         {/* ─── CLIENT HISTORY POPUP MODAL ─── */}
         {showModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
@@ -541,15 +527,23 @@ export default function DashboardBookings() {
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Date</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Service</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Therapist</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Extensions</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600, textAlign: 'right' }}>Total Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedClientHistory.map((h, i) => (
                       <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
+                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600, whiteSpace: 'nowrap' }}>{h.displayDate}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.therapist}</td>
+                        <td style={{ padding: '16px 0', color: BLACK, whiteSpace: 'nowrap' }}>
+                          {h.additional_mins > 0 || h.additional_price > 0 ? (
+                            <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4 }}>
+                              +{h.additional_mins}m / +₱{h.additional_price}
+                            </span>
+                          ) : <span style={{ color: '#aaa' }}>—</span>}
+                        </td>
                         <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>{formatCurrency((h.amount || 0) + (h.additional_price || 0))}</td>
                       </tr>
                     ))}
@@ -564,7 +558,7 @@ export default function DashboardBookings() {
         {/* ─── PAYMENT DETAILS & HISTORY POPUP MODAL ─── */}
         {showPaymentModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '1000px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
               <div style={{ padding: '24px 30px', borderBottom: '1px solid rgba(26,26,26,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', backgroundColor: '#FDFCF8' }}>
                 <div>
@@ -580,7 +574,8 @@ export default function DashboardBookings() {
                     <tr style={{ borderBottom: '2px solid rgba(26,26,26,0.1)' }}>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Date</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Service</th>
-                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Net Amt</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Extensions</th>
+                      <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Total Net Amt</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Paid</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Method</th>
                       <th style={{ padding: '12px 0', color: '#666', fontWeight: 600 }}>Ref / Receipt</th>
@@ -592,8 +587,15 @@ export default function DashboardBookings() {
                       const net = (h.amount + (h.additional_price || 0)) * (1 - (h.discount_pct / 100));
                       return (
                         <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
+                          <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600, whiteSpace: 'nowrap' }}>{h.displayDate}</td>
                           <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
+                          <td style={{ padding: '16px 0', color: BLACK, whiteSpace: 'nowrap' }}>
+                            {h.additional_mins > 0 || h.additional_price > 0 ? (
+                              <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4 }}>
+                                +{h.additional_mins}m / +₱{h.additional_price}
+                              </span>
+                            ) : <span style={{ color: '#aaa' }}>—</span>}
+                          </td>
                           <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700 }}>{formatCurrency(net)}</td>
                           <td style={{ padding: '16px 0', color: '#3D7A4A', fontWeight: 700 }}>{formatCurrency(h.received_payment)}</td>
                           <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.payment_method}</td>
