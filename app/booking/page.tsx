@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 46 Booking Engine (15-Min Strict Dropdown + Bulletproof Operating Hours Validation)
+// app/booking/page.tsx  —  Phase 47 Booking Engine (Flawless Time Logic + 12AM Strict Limit + Exact Sync)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 // FULLY EXPANDED FORMATTING PRESERVED
 
@@ -517,8 +517,9 @@ export default function BookingPage() {
     if (ampm === 'PM' && h !== 12 && h < 12) h += 12;
     if (ampm === 'AM' && h === 12) h = 0;
 
-    // Shift logic: day starts at 11am, ends 1am next day
-    if (h < 11) h += 24;
+    // Exact mapping for strictly parsing overlap and past time
+    // 12:00 AM represents the end of the night shift
+    if (h === 0 && m === 0) return 24 * 60;
 
     return h * 60 + m;
   };
@@ -536,11 +537,11 @@ export default function BookingPage() {
     return (startA - 15) < endB && (startB - 15) < endA;
   }, []);
 
-  // ─── 15-MINUTE DYNAMIC INTERVAL GENERATOR ───
+  // ─── 15-MINUTE DYNAMIC INTERVAL GENERATOR (11AM to 12AM or 1PM to 12AM) ───
   const generate15MinSlots = (isSunday: boolean) => {
     const slots = [];
     const startMins = isSunday ? 13 * 60 : 11 * 60; // 1pm on Sun, 11am Mon-Sat
-    const endMins = 25 * 60; // 1:00 AM (next day = 25 * 60)
+    const endMins = 24 * 60; // 12:00 AM (midnight)
 
     for (let m = startMins; m <= endMins; m += 15) {
       let h = Math.floor(m / 60);
@@ -550,11 +551,9 @@ export default function BookingPage() {
       if (h >= 12 && h < 24) {
         ampm = 'PM';
         if (h > 12) h -= 12;
-      } else if (h >= 24) {
-        ampm = 'AM';
-        h -= 24;
+      } else if (h === 24) {
+        h = 12; ampm = 'AM';
       }
-      if (h === 0) h = 12;
 
       slots.push(`${h}:${min.toString().padStart(2, '0')} ${ampm}`);
     }
@@ -571,12 +570,12 @@ export default function BookingPage() {
     const now = new Date();
 
     let currMins = now.getHours() * 60 + now.getMinutes();
-    if (now.getHours() < 11) currMins += 24 * 60;
 
     availableSlots = baseSlots.map(t => {
       let isPast = false;
       if (isToday) {
         const slotMins = getMinutesFromMidnight(t);
+        // Standard time comparison so 1AM doesn't accidentally cancel 11AM
         if (slotMins !== -1 && slotMins <= currMins) {
           isPast = true;
         }
@@ -638,7 +637,7 @@ export default function BookingPage() {
     e.preventDefault()
     setAttempted(true)
     if (!isValid || loading) {
-      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable or blocked due to overlapping bookings.");
+      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. It is either past operating hours or overlaps with an existing booking.");
       return;
     }
     setShowConfirmModal(true)
@@ -1012,7 +1011,7 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ── RESTORED: SMART 15-MINUTE DROPDOWN ── */}
+                {/* ── RESTORED & UPGRADED: 15-MINUTE STRICT DROPDOWN ── */}
                 <Field label="Preferred Time *">
                   <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
                     <option value="">--:-- --</option>
@@ -1050,11 +1049,11 @@ export default function BookingPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, color: BLACK, fontWeight: 600 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed rgba(26,26,26,0.1)', paddingBottom: 8 }}>
                     <span>Monday – Saturday</span>
-                    <span style={{ color: GOLD }}>11:00 AM – 1:00 AM</span>
+                    <span style={{ color: GOLD }}>11:00 AM – 12:00 AM</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                     <span>Sunday</span>
-                    <span style={{ color: GOLD }}>1:00 PM – 1:00 AM</span>
+                    <span style={{ color: GOLD }}>1:00 PM – 12:00 AM</span>
                   </div>
                 </div>
               </div>
