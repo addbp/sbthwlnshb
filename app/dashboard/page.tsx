@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 38: Omni-Synced Overview POS (Locked Screen Fit Layout, No Horizontal Scroll, Fully Responsive)
+// Phase 39: Omni-Synced Overview POS (Auto-Formatting Time Parser for Bookings Grid Sync)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -262,6 +262,32 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
+  // ─── AUTO-FORMAT TIME ON BLUR ───
+  const formatTimeOnBlur = (id: string, currentVal: string) => {
+    let val = currentVal.trim();
+    if (!val) return;
+
+    // If the user typed something like "7:30" without AM or PM, intelligently format it
+    if (!/am|pm/i.test(val)) {
+      const match = val.match(/^(\d{1,2}):(\d{2})$/);
+      if (match) {
+        let h = parseInt(match[1]);
+        const m = match[2];
+        let ampm = 'PM';
+
+        // Sabbath Spa logic: 11 is AM, 12 is PM, 1-10 is PM. Military time > 12 is converted to PM.
+        if (h === 11) ampm = 'AM';
+        else if (h === 12) ampm = 'PM';
+        else if (h > 12) { h -= 12; ampm = 'PM'; }
+        else if (h >= 1 && h <= 10) ampm = 'PM';
+
+        const cleanTime = `${h}:${m} ${ampm}`;
+        handleUpdate(id, 'time', cleanTime, 'appointment_time');
+      }
+    }
+  };
+
+
   // ─── SMART DATABASE UPDATES ───
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string, saveToDb: boolean = true) => {
@@ -270,14 +296,17 @@ export default function OverviewDashboard() {
 
     let updatedBooking = { ...booking, [field]: value };
 
+    // Dynamic Net Sales Recalculation
     if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
       const base = field === 'amount' ? Number(value) : booking.amount;
       const extra = field === 'additional_price' ? Number(value) : Number(booking.additional_price || 0);
       const disc = field === 'discount_pct' ? Number(value) : booking.discount_pct;
+
       const newNetSales = (base + extra) * (1 - (disc / 100));
       updatedBooking.received_payment = newNetSales;
     }
 
+    // Instantly update Local UI State
     setAllBookings(prev => prev.map(b => b.id === id ? updatedBooking : b));
 
     if (!saveToDb) return;
@@ -367,14 +396,25 @@ export default function OverviewDashboard() {
   const TOTAL_MINUTES = 14 * 60; // 14 hours (11am to 1am)
   const getMinutesFrom11AM = (timeStr: string) => {
     if (!timeStr || timeStr === '—') return 0;
-    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+
+    // Upgraded parser handles incomplete times (e.g. "7:30" without PM) directly in the grid renderer
+    const match = timeStr.match(/(\d+):(\d+)(?:\s*(AM|PM))?/i);
     if (!match) return 0;
+
     let h = parseInt(match[1]);
     const m = parseInt(match[2]);
-    const ampm = match[3].toUpperCase();
-    if (ampm === 'PM' && h !== 12) h += 12;
+    let ampm = match[3] ? match[3].toUpperCase() : '';
+
+    if (!ampm) {
+      if (h === 11) ampm = 'AM';
+      else if (h === 12 || (h >= 1 && h <= 10)) ampm = 'PM';
+      else if (h > 12) ampm = 'PM';
+    }
+
+    if (ampm === 'PM' && h !== 12 && h < 12) h += 12;
     if (ampm === 'AM' && h === 12) h = 0;
     if (h < 11) h += 24;
+
     const totalMins = (h * 60) + m;
     const offset = totalMins - (11 * 60);
     return Math.max(0, Math.min(offset, TOTAL_MINUTES));
@@ -383,7 +423,7 @@ export default function OverviewDashboard() {
 
   return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%', minWidth: 0 }}>
 
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h1 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Overview POS</h1>
@@ -413,7 +453,7 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11, tableLayout: 'auto' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
@@ -449,6 +489,7 @@ export default function OverviewDashboard() {
                             type="text"
                             value={b.time}
                             onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
+                            onBlur={() => formatTimeOnBlur(b.id, b.time)} // AUTO-FORMATS ON CLICK AWAY
                             placeholder="e.g. 7:15 PM"
                             style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 12, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
                           />
@@ -617,7 +658,7 @@ export default function OverviewDashboard() {
 
         {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW WITH EXTENSIONS) ─── */}
         {view === 'GRID' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
               <span style={{ fontSize: 12, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
             </div>
