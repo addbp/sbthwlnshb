@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 43 Booking Engine (15-Min Interval Dropdown & Unified Availability Grid)
+// app/booking/page.tsx  —  Phase 44 Booking Engine (Native Time Wheel & Extended Overlap Engine)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 // FULLY EXPANDED FORMATTING PRESERVED
 
@@ -131,6 +131,31 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
     </button>
   )
 }
+
+// ─────────────────────────────────────────────────────────────
+// TIME CONVERSION HELPERS FOR NATIVE PICKER
+// ─────────────────────────────────────────────────────────────
+const to24Hour = (time12h: string) => {
+  if (!time12h) return '';
+  const match = time12h.match(/(\d+):(\d+)\s*(AM|PM)/i);
+  if (!match) return '';
+  let h = parseInt(match[1], 10);
+  const m = match[2];
+  const ampm = match[3].toUpperCase();
+  if (ampm === 'PM' && h < 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${h.toString().padStart(2, '0')}:${m}`;
+};
+
+const to12Hour = (time24h: string) => {
+  if (!time24h) return '';
+  const [hStr, mStr] = time24h.split(':');
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h > 12) h -= 12;
+  if (h === 0) h = 12;
+  return `${h}:${mStr} ${ampm}`;
+};
 
 // ─────────────────────────────────────────────────────────────
 // CORE EXECUTABLE MAIN CONTAINER
@@ -615,9 +640,68 @@ export default function BookingPage() {
     return false;
   }
 
-  // Validate the chosen time exists and is available
-  const selectedSlot = availableSlots.find(s => s.time === time);
-  const isTimeInvalid = time !== '' && (!selectedSlot || !selectedSlot.available);
+  // ─── VALIDATE THE CHOSEN TIME (NATIVE PICKER) ───
+  let isTimeInvalid = false;
+  let timeErrMsg = '';
+
+  if (!time.trim()) {
+    isTimeInvalid = true;
+  } else {
+    const slotMins = getMinutesFromMidnight(time);
+    if (slotMins === -1) {
+      isTimeInvalid = true;
+      timeErrMsg = 'Invalid time format. Please select a valid time.';
+    } else {
+      // 1. Operating Bounds Check
+      if (date) {
+        const minAllowed = currentDayIndex === 0 ? getMinutesFromMidnight('1:00 PM') : getMinutesFromMidnight('11:00 AM');
+        const maxAllowed = getMinutesFromMidnight('1:00 AM');
+
+        if (slotMins < minAllowed || slotMins > maxAllowed) {
+          isTimeInvalid = true;
+          timeErrMsg = currentDayIndex === 0
+            ? 'Outside operating hours (Sun: 1:00 PM - 1:00 AM).'
+            : 'Outside operating hours (Mon-Sat: 11:00 AM - 1:00 AM).';
+        }
+      }
+
+      // 2. Past Time Check (If Booking Today)
+      if (date === getTodayStr() && !isTimeInvalid) {
+        const now = new Date();
+        let currMins = now.getHours() * 60 + now.getMinutes();
+        if (now.getHours() < 11) currMins += 24 * 60;
+        if (slotMins <= currMins) {
+          isTimeInvalid = true;
+          timeErrMsg = 'This time has already passed today.';
+        }
+      }
+
+      // 3. Exact Conflict / Overlap Check (Sync with Overlap Engine & Extensions)
+      if (!isTimeInvalid && date) {
+        if (therapistId) {
+          const tName = therapists.find(th => th.id === therapistId)?.name;
+          const conflict = dateBookings.some(b => b.therapist_name === tName && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
+          if (conflict) {
+            isTimeInvalid = true;
+            timeErrMsg = 'This time is not available (already booked or extended).';
+          }
+        } else {
+          if (allowedTherapists.length === 0) {
+            isTimeInvalid = true;
+            timeErrMsg = 'No staff available on this day.';
+          } else {
+            const freeTherapist = allowedTherapists.find(th => {
+              return !dateBookings.some(b => b.therapist_name === th.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
+            });
+            if (!freeTherapist) {
+              isTimeInvalid = true;
+              timeErrMsg = 'This time is not available (all staff are booked or extended).';
+            }
+          }
+        }
+      }
+    }
+  }
 
   const validation = {
     firstName: firstName.trim().length < 2,
@@ -636,7 +720,7 @@ export default function BookingPage() {
     e.preventDefault()
     setAttempted(true)
     if (!isValid || loading) {
-      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable or blocked due to overlapping bookings.");
+      if (isTimeInvalid && time !== '') setSubmitError(timeErrMsg || "The selected time is unavailable or blocked due to overlapping bookings.");
       return;
     }
     setShowConfirmModal(true)
@@ -1010,16 +1094,18 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ── NEW: 15-MINUTE INTERVAL DROPDOWN ── */}
+                {/* ── NEW: NATIVE SCROLLABLE TIME WHEEL ── */}
                 <Field label="Preferred Time *">
-                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
-                    <option value="">--:-- --</option>
-                    {availableSlots.map(s => (
-                      <option key={s.time} value={s.time} disabled={!s.available}>
-                        {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    className="bk-in"
+                    type="time"
+                    style={{ ...INPUT, ...eb(validation.time), cursor: 'pointer' }}
+                    value={to24Hour(time)}
+                    onChange={e => setTime(to12Hour(e.target.value))}
+                  />
+                  {attempted && timeErrMsg && (
+                    <span style={{ marginTop: 6, fontSize: 11, color: '#8B3A3A', fontWeight: 600 }}>{timeErrMsg}</span>
+                  )}
                 </Field>
               </Row2>
 
@@ -1040,7 +1126,7 @@ export default function BookingPage() {
                 )}
               </Field>
 
-              {/* ── NEW: PURE AVAILABILITY GRID (NO THERAPIST NAMES) ── */}
+              {/* ── PURE AVAILABILITY GRID (NO THERAPIST NAMES) ── */}
               {date && availableSlots.length > 0 && (
                 <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
                   <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 16, letterSpacing: '0.05em' }}>
