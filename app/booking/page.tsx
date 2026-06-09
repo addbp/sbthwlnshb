@@ -1,6 +1,6 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 29 Booking Engine (Restored Dropdown + Dynamic Overlap)
+// app/booking/page.tsx  —  Phase 30 Booking Engine (Exact Sync with POS Calendar & 15m Buffer)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef, FormEvent } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
-// DESIGN TOKENS & TIME SLOTS
+// DESIGN TOKENS & TIME MATRIX
 // ─────────────────────────────────────────────────────────────
 const BG = '#F9F4EB'
 const BLACK = '#1A1A1A'
@@ -18,13 +18,14 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-// STRICT CUTOFF: 12:00 AM IS THE ABSOLUTE LATEST FOR ALL DAYS
+// Strict Reference Slots for the Live Matrix Grid Layout (Mon-Sat 11am-12am)
 const MON_SAT_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
   '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
 ];
 
+// Strict Reference Slots for Sunday (1pm-12am)
 const SUN_SLOTS = [
   '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM',
   '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
@@ -49,6 +50,8 @@ const SELECT: React.CSSProperties = {
   backgroundRepeat: 'no-repeat',
   backgroundPosition: 'right 14px center',
   cursor: 'pointer',
+  appearance: 'none',
+  WebkitAppearance: 'none',
 }
 
 const LABEL: React.CSSProperties = {
@@ -68,7 +71,7 @@ interface Membership { id: string; client_name: string; client_mobile: string; c
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
 // ─────────────────────────────────────────────────────────────
-// COMPONENTS
+// CONTAINERS
 // ─────────────────────────────────────────────────────────────
 function Section({ title, children, note }: { title: string; children: React.ReactNode; note?: React.ReactNode }) {
   return (
@@ -143,7 +146,7 @@ function ServiceChip({ item, selected, onToggle, discountPct = 0 }: { item: Serv
 }
 
 // ─────────────────────────────────────────────────────────────
-// MAIN PAGE
+// CORE EXECUTABLE MAIN CONTAINER
 // ─────────────────────────────────────────────────────────────
 export default function BookingPage() {
   const supabaseRef = useRef<SupabaseClient | null>(null)
@@ -159,11 +162,7 @@ export default function BookingPage() {
   const [loading, setLoading] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
-
-  // ─── CONFIRMATION MODAL STATE ───
   const [showConfirmModal, setShowConfirmModal] = useState(false)
-
-  // ─── BRANCH SELECTOR STATE ───
   const [branch, setBranch] = useState('Sabbath Malolos')
 
   const [firstName, setFirstName] = useState('')
@@ -182,16 +181,13 @@ export default function BookingPage() {
 
   const [dbDiscounts, setDbDiscounts] = useState<Discount[]>([])
   const [activeMemberships, setActiveMemberships] = useState<Membership[]>([])
-
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
 
   const [discountMode, setDiscountMode] = useState<string>('none')
   const [customDiscountVal, setCustomDiscountVal] = useState<string>('')
 
-  // ─── DATE & TIME STATES ───
   const [date, setDate] = useState('')
   const [minApptDate, setMinApptDate] = useState('')
-
   const [time, setTime] = useState('')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [dateBookings, setDateBookings] = useState<any[]>([])
@@ -200,39 +196,28 @@ export default function BookingPage() {
   const [therapistId, setTherapistId] = useState('')
   const [therapists, setTherapists] = useState<Therapist[]>([])
   const [therapistLoad, setTherapistLoad] = useState(true)
-
   const [notes, setNotes] = useState('')
 
-  const autoCapitalize = (val: string) => {
-    if (!val) return '';
-    return val.charAt(0).toUpperCase() + val.slice(1);
-  }
+  const autoCapitalize = (val: string) => (!val ? '' : val.charAt(0).toUpperCase() + val.slice(1))
 
   const getTodayStr = useCallback(() => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   }, [])
 
   useEffect(() => {
     setMinApptDate(getTodayStr())
-
     const fetchUnlimited = async (tableName: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allRecords: any[] = [];
-      let start = 0;
-      const step = 1000;
+      let allRecords: any[] = [], start = 0, step = 1000
       for (; ;) {
-        const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1);
-        if (error || !data || data.length === 0) break;
-        allRecords.push(...data);
-        if (data.length < step) break;
-        start += step;
+        const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1)
+        if (error || !data || data.length === 0) break
+        allRecords.push(...data)
+        if (data.length < step) break
+        start += step
       }
-      return allRecords;
-    };
+      return allRecords
+    }
 
     async function loadData() {
       try {
@@ -244,16 +229,14 @@ export default function BookingPage() {
         ])
 
         if (thRes) {
-          setTherapists(thRes
-            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-            .map(t => ({
-              id: String(t.id),
-              name: t.name || t.therapist_name || 'Staff',
-              status: t.status,
-              role: t.role || t.specialty || 'Massage Therapist',
-              off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : [],
-              branch: t.branch || 'Sabbath Malolos'
-            })))
+          setTherapists(thRes.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(t => ({
+            id: String(t.id),
+            name: t.name || t.therapist_name || 'Staff',
+            status: t.status,
+            role: t.role || t.specialty || 'Massage Therapist',
+            off_days: t.off_days ? String(t.off_days).split(',') : [],
+            branch: t.branch || 'Sabbath Malolos'
+          })))
         }
 
         if (discRes) setDbDiscounts(discRes.filter(d => d.active) as Discount[])
@@ -501,6 +484,7 @@ export default function BookingPage() {
 
   const finalTotalAmount = Math.max(0, subtotalAfterMembership - promoDeduction);
 
+  // ─── FETCH LIVE CONFLICTS (WITH ADDITIONAL MINS EXTENSIONS) ───
   useEffect(() => {
     if (!date) return;
     const fetchDateBookings = async () => {
@@ -516,16 +500,21 @@ export default function BookingPage() {
     fetchDateBookings();
   }, [date, branch, supabase]);
 
-  // ─── CRITICAL: TIME OVERLAP ENGINE (FOR CUSTOM RUNTIMES & 15 MIN BUFFERS) ───
+  // ─── ALGORITHMIC TIMELINE OVERLAP ENGINE ───
   const getMinutesFromMidnight = (tStr: string) => {
+    if (!tStr) return -1;
     const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
     if (!match) return -1;
-    let h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
+    let h = parseInt(match[1], 10), m = parseInt(match[2], 10);
     const ampm = match[3].toUpperCase();
-    if (ampm === 'PM' && h !== 12) h += 12;
-    if (ampm === 'AM' && h === 12) h = 0;
-    if (h < 11) h += 24;
+
+    if (tStr.toUpperCase() === '12:00 AM') {
+      h = 24; m = 0;
+    } else {
+      if (ampm === 'PM' && h !== 12) h += 12;
+      if (ampm === 'AM' && h === 12) h = 0;
+      if (h < 11) h += 24; // Align shifts for early AM hours
+    }
     return h * 60 + m;
   };
 
@@ -534,9 +523,11 @@ export default function BookingPage() {
     const startB = getMinutesFromMidnight(timeB);
     if (startA === -1 || startB === -1) return false;
 
+    // Core 60-minute assumed service block + explicit extensions
     const endA = startA + 60 + extraMinsA;
     const endB = startB + 60;
 
+    // Strict 15-minute padding intervals
     return (startA - 15) < endB && (startB - 15) < endA;
   }, []);
 
@@ -552,16 +543,14 @@ export default function BookingPage() {
     const isToday = date === getTodayStr();
     const now = new Date();
 
-    // Convert current real-world time to the same midnight offset logic
-    let currH = now.getHours();
-    if (currH < 11) currH += 24;
-    const currentMins = currH * 60 + now.getMinutes();
+    let currMins = now.getHours() * 60 + now.getMinutes();
+    if (now.getHours() < 11) currMins += 24 * 60; // Align current time calculation for night shifts
 
     availableSlots = baseSlots.map(t => {
       let isPast = false;
       if (isToday) {
         const slotMins = getMinutesFromMidnight(t);
-        if (slotMins !== -1 && slotMins <= currentMins) {
+        if (slotMins !== -1 && slotMins <= currMins) {
           isPast = true;
         }
       }
@@ -588,7 +577,7 @@ export default function BookingPage() {
   const getTherapistStatus = (t: Therapist) => {
     if (time) {
       const isConflict = dateBookings.some(b => b.therapist_name === t.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
-      if (isConflict) return ` (Booked around ${time})`;
+      if (isConflict) return ` (Unavailable)`;
     }
     return t.status ? ` (${t.status})` : '';
   }
@@ -600,6 +589,9 @@ export default function BookingPage() {
     return false;
   }
 
+  const selectedSlot = availableSlots.find(s => s.time === time);
+  const isTimeInvalid = !selectedSlot || !selectedSlot.available;
+
   const validation = {
     firstName: firstName.trim().length < 2,
     lastName: lastName.trim().length < 2,
@@ -607,8 +599,7 @@ export default function BookingPage() {
     email: email.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
     services: selectedIds.size === 0,
     date: date === '',
-    // Enforces the selection to be a valid available slot from the Dropdown Array
-    time: time === '' || !availableSlots.find(s => s.time === time)?.available,
+    time: time === '' || isTimeInvalid,
   }
 
   const isValid = !Object.values(validation).some(Boolean)
@@ -617,7 +608,10 @@ export default function BookingPage() {
   function handleFormPreSubmit(e: FormEvent) {
     e.preventDefault()
     setAttempted(true)
-    if (!isValid || loading) return;
+    if (!isValid || loading) {
+      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. Please choose another time.");
+      return;
+    }
     setShowConfirmModal(true)
   }
 
@@ -788,6 +782,7 @@ export default function BookingPage() {
         .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
       `}</style>
 
+      {/* ─── CONFIRMATION POPUP MODAL ─── */}
       {showConfirmModal && (
         <div className="modal-overlay" onClick={() => setShowConfirmModal(false)}>
           <div style={{ backgroundColor: '#F9F4EB', width: '100%', maxWidth: 500, borderRadius: 16, padding: 32, boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: BODY }} onClick={e => e.stopPropagation()}>
