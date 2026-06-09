@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 38: Omni-Synced Overview POS (Bypassed missing received_payment DB column crash)
+// Phase 38: Omni-Synced Overview POS (Locked Screen Fit Layout, No Horizontal Scroll, Fully Responsive)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -22,6 +22,7 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
+// Master Time Slots (Connected to Booking Engine)
 const ALL_TIME_SLOTS = [
   '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
   '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
@@ -297,7 +298,6 @@ export default function OverviewDashboard() {
       const { error } = await supabase.from(table).update(payloadToUpdate).eq(idField, booking.rawId);
 
       if (error) {
-        // Silently fail if received_payment column is missing to prevent UI crashes, but alert on other errors
         if (!error.message.includes('received_payment')) {
           console.error(`Could not save ${field}. Supabase Error:`, error);
           alert(`Auto-save failed for ${field}: ${error.message}`);
@@ -308,14 +308,12 @@ export default function OverviewDashboard() {
     }
   };
 
-  // ─── EXPLICIT EXTRAS SAVE FUNCTION (FIXED PAYLOAD) ───
+  // ─── EXPLICIT EXTRAS SAVE FUNCTION ───
   const saveExtras = async (booking: LiveBooking) => {
     try {
       const table = booking.source === 'live' ? 'bookings' : 'bookings_import';
       const idField = booking.source === 'live' ? 'booking_id' : 'id';
 
-      // We explicitly DO NOT push received_payment here to prevent the schema cache crash. 
-      // It just pushes the minutes and the surcharge.
       const { error } = await supabase.from(table).update({
         additional_mins: Number(booking.additional_mins || 0),
         additional_price: Number(booking.additional_price || 0)
@@ -384,56 +382,56 @@ export default function OverviewDashboard() {
   const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 4vw, 40px)', fontFamily: BODY, width: '100%', maxWidth: '100vw', boxSizing: 'border-box', overflowX: 'hidden' }}>
-      <div style={{ maxWidth: '1600px', margin: '0 auto', width: '100%', minWidth: 0 }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%' }}>
 
-        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontFamily: DSP, fontSize: '32px', color: BLACK, margin: 0 }}>Overview POS</h1>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 16px', height: 38, borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 13, outline: 'none', cursor: 'pointer' }} />
-            <button onClick={fetchEverything} style={{ padding: '0 16px', height: 38, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, color: GOLD, borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>Live Synced</button>
+        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h1 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Overview POS</h1>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 12px', height: 34, borderRadius: 6, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 12, outline: 'none', cursor: 'pointer' }} />
+            <button onClick={fetchEverything} style={{ padding: '0 12px', height: 34, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, color: GOLD, borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Live Synced</button>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 20, marginBottom: 40 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 30 }}>
           {[
             { label: 'COMPLETED', value: metrics.completed, color: '#3D7A4A' },
             { label: 'PENDING', value: metrics.pending, color: '#1A1A1A' },
             { label: 'ONGOING', value: metrics.ongoing, color: '#C58F3B' },
             { label: 'HOLD', value: metrics.hold, color: '#C83232' }
           ].map((metric) => (
-            <div key={metric.label} style={{ backgroundColor: WHITE, padding: '24px', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}>
-              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#666', margin: '0 0 16px 0' }}>{metric.label}</p>
-              <h3 style={{ fontSize: 32, fontWeight: 700, color: metric.color, margin: 0 }}>{metric.value}</h3>
+            <div key={metric.label} style={{ backgroundColor: WHITE, padding: '20px', borderRadius: 10, border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#666', margin: '0 0 12px 0' }}>{metric.label}</p>
+              <h3 style={{ fontSize: 28, fontWeight: 700, color: metric.color, margin: 0 }}>{metric.value}</h3>
             </div>
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: 20 }}>
-          <button onClick={() => setView('LIST')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'LIST' ? WHITE : '#666', backgroundColor: view === 'LIST' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>LIST TRACK VIEW (POS)</button>
-          <button onClick={() => setView('GRID')} style={{ padding: '12px 24px', border: 'none', fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: view === 'GRID' ? WHITE : '#666', backgroundColor: view === 'GRID' ? BLACK : 'transparent', borderRadius: '8px 8px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>DAILY SCHEDULE GRID</button>
+        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: 20 }}>
+          <button onClick={() => setView('LIST')} style={{ padding: '10px 20px', border: 'none', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: view === 'LIST' ? WHITE : '#666', backgroundColor: view === 'LIST' ? BLACK : 'transparent', borderRadius: '6px 6px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>LIST TRACK VIEW (POS)</button>
+          <button onClick={() => setView('GRID')} style={{ padding: '10px 20px', border: 'none', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: view === 'GRID' ? WHITE : '#666', backgroundColor: view === 'GRID' ? BLACK : 'transparent', borderRadius: '6px 6px 0 0', cursor: 'pointer', transition: 'all 0.2s ease' }}>DAILY SCHEDULE GRID</button>
         </div>
 
         {view === 'LIST' && (
-          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1500px' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11, tableLayout: 'auto' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '240px' }}>TIME & CLIENT</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '240px' }}>SERVICE & NOTES</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '160px' }}>THERAPIST</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '140px' }}>AMOUNT</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '120px' }}>COMMISSION</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '180px' }}>PAYMENT DETAILS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>PAYMENT STATUS</th>
-                  <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', minWidth: '130px' }}>STATUS</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '14%' }}>TIME & CLIENT</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '20%' }}>SERVICE & NOTES</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '12%' }}>THERAPIST</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '12%' }}>AMOUNT</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '10%' }}>COMMISSION</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '16%' }}>PAYMENT DETAILS</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '8%' }}>PAYMENT STATUS</th>
+                  <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '8%' }}>STATUS</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>Fetching operations data...</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: 13 }}>Fetching operations data...</td></tr>
                 ) : dailyBookings.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No appointments scheduled for {selectedDate}.</td></tr>
+                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: 13 }}>No appointments scheduled for {selectedDate}.</td></tr>
                 ) : (
                   dailyBookings.map((b) => {
                     const extraCost = Number(b.additional_price || 0);
@@ -445,114 +443,113 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* CUSTOM EDITABLE TIME & SURCHARGE BLOCK (WITH PERFECT ALIGNMENT) */}
-                        <td style={{ padding: '16px 12px', minWidth: '240px', verticalAlign: 'top' }}>
+                        {/* TIME & CLIENT */}
+                        <td style={{ padding: '12px 8px' }}>
                           <input
                             type="text"
                             value={b.time}
                             onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
                             placeholder="e.g. 7:15 PM"
-                            style={{ width: '100%', padding: '8px 12px', borderRadius: 6, fontSize: 13, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
+                            style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 12, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
                           />
-                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'block', marginBottom: 10, fontSize: 13 }}>{b.client}</span>
+                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'block', marginBottom: 10, fontSize: 11, wordBreak: 'break-word' }}>{b.client}</span>
 
-                          <div style={{ padding: '12px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 8, border: '1px dashed rgba(197,143,59,0.4)', marginTop: 12, display: 'flex', flexDirection: 'column' }}>
-                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, marginBottom: 6, letterSpacing: '0.05em' }}>EXTRA RUNTIME (MINS)</label>
+                          <div style={{ padding: '10px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 6, border: '1px dashed rgba(197,143,59,0.4)', marginTop: 8 }}>
+                            <label style={{ fontSize: 9, fontWeight: 800, color: GOLD, display: 'block', marginBottom: 4, letterSpacing: '0.05em' }}>EXTRA MINS</label>
                             <input
                               type="number"
                               value={b.additional_mins === 0 ? '' : b.additional_mins}
                               onChange={(e) => handleUpdate(b.id, 'additional_mins', Number(e.target.value), undefined, false)}
-                              placeholder="e.g. 30"
-                              style={{ width: '100%', padding: '8px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 6, fontSize: 12, marginBottom: 12, boxSizing: 'border-box', outline: 'none' }}
+                              placeholder="30"
+                              style={{ width: '100%', padding: '6px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, fontSize: 11, marginBottom: 8, boxSizing: 'border-box', outline: 'none' }}
                             />
 
-                            <label style={{ fontSize: 10, fontWeight: 800, color: GOLD, marginBottom: 6, letterSpacing: '0.05em' }}>SURCHARGE PRICE (₱)</label>
+                            <label style={{ fontSize: 9, fontWeight: 800, color: GOLD, display: 'block', marginBottom: 4, letterSpacing: '0.05em' }}>SURCHARGE (₱)</label>
                             <input
                               type="number"
                               value={b.additional_price === 0 ? '' : b.additional_price}
                               onChange={(e) => handleUpdate(b.id, 'additional_price', Number(e.target.value), undefined, false)}
-                              placeholder="e.g. 300"
-                              style={{ width: '100%', padding: '8px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 6, fontSize: 12, marginBottom: 12, boxSizing: 'border-box', outline: 'none' }}
+                              placeholder="300"
+                              style={{ width: '100%', padding: '6px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, fontSize: 11, marginBottom: 8, boxSizing: 'border-box', outline: 'none' }}
                             />
 
                             <button
                               onClick={() => saveExtras(b)}
-                              style={{ width: '100%', padding: '10px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 800, cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase', transition: 'all 0.2s', marginTop: '4px' }}
+                              style={{ width: '100%', padding: '8px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 4, fontSize: 9, fontWeight: 800, cursor: 'pointer', letterSpacing: '0.05em', textTransform: 'uppercase', transition: 'all 0.2s' }}
                             >
-                              Save Extras
+                              Save
                             </button>
                           </div>
                         </td>
 
-                        {/* Service & Notes */}
-                        <td style={{ padding: '16px 12px', minWidth: '240px' }}>
+                        {/* SERVICE & NOTES */}
+                        <td style={{ padding: '12px 8px' }}>
                           <textarea
                             value={b.service}
                             onChange={e => handleUpdate(b.id, 'service', e.target.value, b.source === 'live' ? 'service_name' : 'service')}
                             placeholder="Add continuous services..."
-                            style={{ width: '100%', minHeight: 60, padding: 10, borderRadius: 6, border: '1px solid rgba(197,143,59,0.4)', backgroundColor: 'rgba(197,143,59,0.02)', fontSize: 12, fontWeight: 600, color: '#2A2A2A', fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', marginBottom: 10, outline: 'none' }}
+                            style={{ width: '100%', minHeight: 50, padding: 8, borderRadius: 4, border: '1px solid rgba(197,143,59,0.4)', backgroundColor: 'rgba(197,143,59,0.02)', fontSize: 11, fontWeight: 600, color: '#2A2A2A', fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', marginBottom: 8, outline: 'none' }}
                           />
                           <textarea
                             value={b.notes}
                             onChange={e => handleUpdate(b.id, 'notes', e.target.value)}
                             placeholder="Add client notes..."
-                            style={{ width: '100%', minHeight: 60, padding: 10, borderRadius: 6, border: '1px solid rgba(26,26,26,0.1)', fontSize: 12, fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
+                            style={{ width: '100%', minHeight: 50, padding: 8, borderRadius: 4, border: '1px solid rgba(26,26,26,0.1)', fontSize: 11, fontFamily: BODY, resize: 'vertical', boxSizing: 'border-box', outline: 'none' }}
                           />
                         </td>
 
-                        {/* Therapist */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value, b.source === 'live' ? 'therapist_name' : 'therapist')} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
+                        {/* THERAPIST */}
+                        <td style={{ padding: '12px 8px' }}>
+                          <select value={b.therapist || 'Unassigned'} onChange={(e) => handleUpdate(b.id, 'therapist', e.target.value, b.source === 'live' ? 'therapist_name' : 'therapist')} style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 11, fontWeight: 600, border: '1px solid rgba(26,26,26,0.15)', color: b.therapist ? BLACK : '#888', outline: 'none', backgroundColor: '#FDFDFD', boxSizing: 'border-box' }}>
                             <option value="Unassigned">Unassigned</option>
                             {staffList.map(staff => <option key={staff.id} value={staff.name}>{staff.name}</option>)}
                           </select>
                         </td>
 
-                        {/* Amount */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                        {/* AMOUNT */}
+                        <td style={{ padding: '12px 8px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Base:</span>
-                              <input type="number" value={b.amount === 0 ? '' : b.amount} onChange={e => handleUpdate(b.id, 'amount', Number(e.target.value), b.source === 'live' ? 'price' : 'service_amount')} style={{ width: 65, padding: 6, textAlign: 'right', border: '1px solid rgba(197,143,59,0.5)', borderRadius: 4, fontWeight: 700, color: BLACK, outline: 'none' }} />
+                              <input type="number" value={b.amount === 0 ? '' : b.amount} onChange={e => handleUpdate(b.id, 'amount', Number(e.target.value), b.source === 'live' ? 'price' : 'service_amount')} style={{ width: 55, padding: 4, textAlign: 'right', border: '1px solid rgba(197,143,59,0.5)', borderRadius: 4, fontWeight: 700, color: BLACK, outline: 'none' }} />
                             </div>
 
-                            {/* SURCHARGE ADDITION UI */}
                             {extraCost > 0 && (
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                                 <span style={{ color: GOLD, fontWeight: 700 }}>Extra:</span>
                                 <span style={{ color: GOLD, fontWeight: 700 }}>+{formatCurrency(extraCost)}</span>
                               </div>
                             )}
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Disc %:</span>
-                              <input type="number" value={b.discount_pct === 0 ? '' : b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 45, padding: 6, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
+                              <input type="number" value={b.discount_pct === 0 ? '' : b.discount_pct} onChange={e => handleUpdate(b.id, 'discount_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 6, marginTop: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 6, marginTop: 2 }}>
                               <span style={{ color: GOLD, fontWeight: 700 }}>Net:</span>
                               <strong style={{ color: '#3D7A4A' }}>{formatCurrency(netSales)}</strong>
                             </div>
                           </div>
                         </td>
 
-                        {/* Commission */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                        {/* COMMISSION */}
+                        <td style={{ padding: '12px 8px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                               <span style={{ color: '#666' }}>Comm %:</span>
-                              <input type="number" value={b.therapist_comm_pct === 0 ? '' : b.therapist_comm_pct} onChange={e => handleUpdate(b.id, 'therapist_comm_pct', Number(e.target.value))} style={{ width: 45, padding: 6, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
+                              <input type="number" value={b.therapist_comm_pct === 0 ? '' : b.therapist_comm_pct} onChange={e => handleUpdate(b.id, 'therapist_comm_pct', Number(e.target.value))} style={{ width: 40, padding: 4, textAlign: 'right', border: '1px solid rgba(26,26,26,0.1)', borderRadius: 4, outline: 'none' }} />
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 6, marginTop: 4 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, borderTop: '1px solid rgba(26,26,26,0.1)', paddingTop: 6, marginTop: 2 }}>
                               <span style={{ color: '#666', fontWeight: 600 }}>Earned:</span>
                               <strong>{formatCurrency(commAmount)}</strong>
                             </div>
                           </div>
                         </td>
 
-                        {/* Payment Details */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
+                        {/* PAYMENT DETAILS */}
+                        <td style={{ padding: '12px 8px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <select value={b.payment_method} onChange={(e) => handleUpdate(b.id, 'payment_method', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 10, fontWeight: 700, border: '1px solid rgba(26,26,26,0.15)', outline: 'none', boxSizing: 'border-box' }}>
                               <option value="PAY AT COUNTER">PAY AT COUNTER</option>
                               <option value="CASH">CASH</option>
                               <option value="GCASH">GCASH</option>
@@ -562,36 +559,36 @@ export default function OverviewDashboard() {
                             </select>
 
                             {isOnlinePay && (
-                              <input type="text" placeholder="Ref #..." value={b.ref_no} onChange={e => handleUpdate(b.id, 'ref_no', e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, border: '1px dashed rgba(197,143,59,0.5)', outline: 'none', boxSizing: 'border-box' }} />
+                              <input type="text" placeholder="Ref #..." value={b.ref_no} onChange={e => handleUpdate(b.id, 'ref_no', e.target.value)} style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 10, border: '1px dashed rgba(197,143,59,0.5)', outline: 'none', boxSizing: 'border-box' }} />
                             )}
 
                             {isOnlinePay && !b.receipt_url && (
-                              <input type="file" accept="image/*" onChange={e => e.target.files && handleFileUpload(b.id, e.target.files[0])} style={{ fontSize: 10, maxWidth: '100%' }} />
+                              <input type="file" accept="image/*" onChange={e => e.target.files && handleFileUpload(b.id, e.target.files[0])} style={{ fontSize: 9, maxWidth: '100%' }} />
                             )}
 
                             {b.receipt_url && (
-                              <a href={b.receipt_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: GOLD, fontWeight: 700, textDecoration: 'underline' }}>View Receipt</a>
+                              <a href={b.receipt_url} target="_blank" rel="noreferrer" style={{ fontSize: 10, color: GOLD, fontWeight: 700, textDecoration: 'underline' }}>View Receipt</a>
                             )}
 
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-                              <span style={{ fontSize: 11, color: '#666' }}>Paid:</span>
-                              <input type="number" value={b.received_payment === 0 ? '' : b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 6, fontSize: 12, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box', outline: 'none' }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                              <span style={{ fontSize: 10, color: '#666' }}>Paid:</span>
+                              <input type="number" value={b.received_payment === 0 ? '' : b.received_payment} onChange={e => handleUpdate(b.id, 'received_payment', Number(e.target.value))} style={{ width: '100%', padding: 4, fontSize: 11, fontWeight: 700, color: '#3D7A4A', border: '1px solid rgba(61,122,74,0.3)', borderRadius: 4, boxSizing: 'border-box', outline: 'none' }} />
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', backgroundColor: 'rgba(26,26,26,0.03)', borderRadius: 4, marginTop: 4 }}>
-                              <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Change:</span>
-                              <strong style={{ fontSize: 12, color: BLACK }}>{formatCurrency(calculatedChange)}</strong>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px', backgroundColor: 'rgba(26,26,26,0.03)', borderRadius: 4, marginTop: 2 }}>
+                              <span style={{ fontSize: 10, color: '#666', fontWeight: 600 }}>Change:</span>
+                              <strong style={{ fontSize: 11, color: BLACK }}>{formatCurrency(calculatedChange)}</strong>
                             </div>
                           </div>
                         </td>
 
-                        {/* Payment Status */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
+                        {/* PAYMENT STATUS */}
+                        <td style={{ padding: '12px 8px' }}>
                           <select
                             value={b.payment_status}
                             onChange={(e) => handleUpdate(b.id, 'payment_status', e.target.value)}
                             style={{
-                              width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
+                              width: '100%', padding: '6px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box',
                               backgroundColor: b.payment_status === 'PAID' ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.1)',
                               color: b.payment_status === 'PAID' ? '#3D7A4A' : '#C83232',
                               border: b.payment_status === 'PAID' ? '1px solid rgba(61,122,74,0.3)' : '1px solid rgba(200,50,50,0.3)'
@@ -602,9 +599,9 @@ export default function OverviewDashboard() {
                           </select>
                         </td>
 
-                        {/* General Status */}
-                        <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '8px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }}>
+                        {/* STATUS */}
+                        <td style={{ padding: '12px 8px' }}>
+                          <select value={b.status} onChange={(e) => handleUpdate(b.id, 'status', e.target.value)} style={{ ...getStatusColor(b.status), width: '100%', padding: '6px', borderRadius: 4, fontSize: 10, fontWeight: 700, cursor: 'pointer', outline: 'none', boxSizing: 'border-box' }}>
                             <option value="Pending">Pending</option><option value="Ongoing">Ongoing</option><option value="Completed">Completed</option><option value="Hold">Hold</option><option value="Cancelled">Cancelled</option>
                           </select>
                         </td>
@@ -620,21 +617,21 @@ export default function OverviewDashboard() {
 
         {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW WITH EXTENSIONS) ─── */}
         {view === 'GRID' && (
-          <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
-              <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
+              <span style={{ fontSize: 12, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
             </div>
 
             <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <div style={{ minWidth: '1200px' }}>
+              <div style={{ minWidth: '1000px' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
-                  <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
+                  <div style={{ width: '180px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
                     <span style={{ color: GOLD, fontWeight: 700, letterSpacing: '0.1em', fontSize: 10 }}>THERAPIST</span>
                   </div>
                   <div style={{ display: 'flex', flexGrow: 1, position: 'relative' }}>
                     {HOURS_MARKERS.slice(0, -1).map((hour, i) => (
                       <div key={i} style={{ flex: 1, borderRight: i < 13 ? '1px dashed rgba(26,26,26,0.1)' : 'none', padding: '16px 0', textAlign: 'center' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#666' }}>{hour}</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: '#666' }}>{hour}</span>
                       </div>
                     ))}
                   </div>
@@ -662,9 +659,9 @@ export default function OverviewDashboard() {
                     }
 
                     return (
-                      <div key={staff.name} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', minHeight: '90px' }}>
-                        <div style={{ width: '220px', flexShrink: 0, padding: '20px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: staff.name === 'Unassigned' || isOffDuty ? '#FAFAFA' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: isOffDuty ? '#aaa' : BLACK }}>{staff.name.toUpperCase()}</span>
+                      <div key={staff.name} style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', minHeight: '80px' }}>
+                        <div style={{ width: '180px', flexShrink: 0, padding: '16px', borderRight: '1px solid rgba(26,26,26,0.08)', backgroundColor: staff.name === 'Unassigned' || isOffDuty ? '#FAFAFA' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: isOffDuty ? '#aaa' : BLACK }}>{staff.name.toUpperCase()}</span>
                           {staff.role && <span style={{ fontSize: 9, color: staff.name === 'Unassigned' ? '#C83232' : '#888', marginTop: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{isOffDuty ? 'OFF DUTY TODAY' : staff.role}</span>}
                         </div>
 
@@ -672,7 +669,7 @@ export default function OverviewDashboard() {
 
                           {isOffDuty && (
                             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.3 }}>
-                              <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: '0.2em', color: '#1A1A1A' }}>UNAVAILABLE</span>
+                              <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '0.2em', color: '#1A1A1A' }}>UNAVAILABLE</span>
                             </div>
                           )}
 
@@ -691,19 +688,19 @@ export default function OverviewDashboard() {
                                 key={b.id}
                                 onClick={() => setGridModalBooking(b)}
                                 style={{
-                                  position: 'absolute', left: `${leftPercent}%`, top: '10px', bottom: '10px',
-                                  width: `calc(${widthPercent}% - 4px)`, minWidth: '140px', backgroundColor: WHITE,
+                                  position: 'absolute', left: `${leftPercent}%`, top: '8px', bottom: '8px',
+                                  width: `calc(${widthPercent}% - 4px)`, minWidth: '120px', backgroundColor: WHITE,
                                   border: '1px solid rgba(26,26,26,0.15)', borderLeft: `4px solid ${colors.color}`,
-                                  borderRadius: '6px', padding: '8px 12px', display: 'flex', flexDirection: 'column',
-                                  gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', zIndex: 10, overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.1s'
+                                  borderRadius: '6px', padding: '6px 10px', display: 'flex', flexDirection: 'column',
+                                  gap: '2px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', zIndex: 10, overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.1s'
                                 }}
                                 onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
                                 onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                               >
-                                <span style={{ fontSize: 11, fontWeight: 800, color: BLACK }}>{b.time} <span style={{ color: GOLD }}>({totalDuration}m)</span></span>
-                                <span style={{ fontSize: 12, fontWeight: 600, color: BLACK, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.client}</span>
-                                <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.service}</span>
-                                <span style={{ display: 'inline-block', backgroundColor: colors.bg, color: colors.color, padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 700, width: 'fit-content', marginTop: 'auto' }}>
+                                <span style={{ fontSize: 10, fontWeight: 800, color: BLACK }}>{b.time} <span style={{ color: GOLD }}>({totalDuration}m)</span></span>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: BLACK, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.client}</span>
+                                <span style={{ fontSize: 9, color: '#666', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{b.service}</span>
+                                <span style={{ display: 'inline-block', backgroundColor: colors.bg, color: colors.color, padding: '2px 4px', borderRadius: 4, fontSize: 8, fontWeight: 700, width: 'fit-content', marginTop: 'auto' }}>
                                   {b.status.toUpperCase()}
                                 </span>
                               </div>
@@ -722,22 +719,22 @@ export default function OverviewDashboard() {
         {/* ─── GRID BOOKING INFO POPUP ─── */}
         {gridModalBooking && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '500px', padding: '30px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+            <div style={{ backgroundColor: WHITE, borderRadius: '16px', width: '100%', maxWidth: '400px', padding: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                 <div>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: GOLD, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{gridModalBooking.time}</span>
-                  <h2 style={{ fontFamily: DSP, fontSize: 28, color: BLACK, margin: '4px 0 0' }}>{gridModalBooking.client}</h2>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: GOLD, letterSpacing: '0.1em', textTransform: 'uppercase' }}>{gridModalBooking.time}</span>
+                  <h2 style={{ fontFamily: DSP, fontSize: 24, color: BLACK, margin: '4px 0 0' }}>{gridModalBooking.client}</h2>
                 </div>
-                <button onClick={() => setGridModalBooking(null)} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#666' }}>&times;</button>
+                <button onClick={() => setGridModalBooking(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#666' }}>&times;</button>
               </div>
-              <div style={{ backgroundColor: '#FDFCF8', padding: 16, borderRadius: 8, border: '1px solid rgba(26,26,26,0.05)', marginBottom: 20 }}>
-                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Service:</strong> {gridModalBooking.service}</p>
-                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Assigned:</strong> {gridModalBooking.therapist || 'Unassigned'}</p>
-                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Added Runtime:</strong> {gridModalBooking.additional_mins || 0} minutes</p>
-                <p style={{ margin: '0 0 8px', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Status:</strong> <span style={{ color: getStatusColor(gridModalBooking.status).color, fontWeight: 700 }}>{gridModalBooking.status}</span></p>
-                <p style={{ margin: '0', fontSize: 13, color: '#666' }}><strong style={{ color: BLACK }}>Notes:</strong> {gridModalBooking.notes || 'None'}</p>
+              <div style={{ backgroundColor: '#FDFCF8', padding: 12, borderRadius: 8, border: '1px solid rgba(26,26,26,0.05)', marginBottom: 16 }}>
+                <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><strong style={{ color: BLACK }}>Service:</strong> {gridModalBooking.service}</p>
+                <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><strong style={{ color: BLACK }}>Assigned:</strong> {gridModalBooking.therapist || 'Unassigned'}</p>
+                <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><strong style={{ color: BLACK }}>Added Runtime:</strong> {gridModalBooking.additional_mins || 0} minutes</p>
+                <p style={{ margin: '0 0 6px', fontSize: 12, color: '#666' }}><strong style={{ color: BLACK }}>Status:</strong> <span style={{ color: getStatusColor(gridModalBooking.status).color, fontWeight: 700 }}>{gridModalBooking.status}</span></p>
+                <p style={{ margin: '0', fontSize: 12, color: '#666' }}><strong style={{ color: BLACK }}>Notes:</strong> {gridModalBooking.notes || 'None'}</p>
               </div>
-              <button onClick={() => { setGridModalBooking(null); setView('LIST'); }} style={{ width: '100%', padding: '12px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>GO TO POS VIEW TO EDIT</button>
+              <button onClick={() => { setGridModalBooking(null); setView('LIST'); }} style={{ width: '100%', padding: '10px', backgroundColor: BLACK, color: GOLD, border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>GO TO POS VIEW TO EDIT</button>
             </div>
           </div>
         )}
