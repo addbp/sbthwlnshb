@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 33: Omni-Synced Overview POS (Added Explicit User Tracking + Surcharge Extensions)
+// Phase 34: Omni-Synced Overview POS (Dynamic Paid Pre-fill + Surcharge Extensions)
 // FULL UN-SHORTENED SOURCE CODE PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -108,7 +108,7 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
-  // NEW: Store the active user's email to pass to the Audit Log
+  // Store the active user's email to pass to the Audit Log
   const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
 
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
@@ -267,17 +267,36 @@ export default function OverviewDashboard() {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
-    setAllBookings(prev => prev.map(b => b.id === id ? { ...b, [field]: value } : b));
+    // PRE-FILL PAID FIELD LOGIC: 
+    // If the receptionist updates the base amount or the additional surcharge price, 
+    // we calculate the new Net Total and dynamically update the 'received_payment' field to match.
+    let updatedBooking = { ...booking, [field]: value };
+    if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
+      const base = field === 'amount' ? Number(value) : booking.amount;
+      const extra = field === 'additional_price' ? Number(value) : Number(booking.additional_price || 0);
+      const disc = field === 'discount_pct' ? Number(value) : booking.discount_pct;
+
+      const newNetSales = (base + extra) * (1 - (disc / 100));
+      updatedBooking.received_payment = newNetSales; // Auto-prefill
+    }
+
+    setAllBookings(prev => prev.map(b => b.id === id ? updatedBooking : b));
 
     try {
       const table = booking.source === 'live' ? 'bookings' : 'bookings_import';
       const idField = booking.source === 'live' ? 'booking_id' : 'id';
       const actualDbField = dbFieldOverride || field;
 
-      const { error } = await supabase.from(table).update({
+      const payloadToUpdate: any = {
         [actualDbField]: value,
-        receptionist_track: currentUserEmail // <--- explicitly passes who is making the change
-      }).eq(idField, booking.rawId);
+        receptionist_track: currentUserEmail
+      };
+
+      if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
+        payloadToUpdate.received_payment = updatedBooking.received_payment;
+      }
+
+      const { error } = await supabase.from(table).update(payloadToUpdate).eq(idField, booking.rawId);
 
       if (error) {
         console.warn(`Could not save ${field}.`, error);
@@ -381,8 +400,8 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1450px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
                   <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '140px' }}>TIME & CLIENT</th>
@@ -411,7 +430,7 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* ── CUSTOM EDITABLE TIME & SURCHARGE BLOCK ── */}
+                        {/* Time & Client (Swapped from fixed dropdown to custom user input field) */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <input
                             type="text"
@@ -578,12 +597,12 @@ export default function OverviewDashboard() {
 
         {/* ─── EXACT MINUTE SCHEDULE GRID (GANTT VIEW WITH EXTENSIONS) ─── */}
         {view === 'GRID' && (
-          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: '#FDFCF8' }}>
               <span style={{ fontSize: 13, color: '#666' }}>Timeline Grid Scheduler — Width dynamically adjusts based on custom runtime extensions.</span>
             </div>
 
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
               <div style={{ minWidth: '1200px' }}>
                 <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', backgroundColor: 'rgba(249,244,235,0.5)' }}>
                   <div style={{ width: '220px', flexShrink: 0, padding: '16px 20px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
