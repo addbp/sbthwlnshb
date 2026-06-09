@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 34: Omni-Synced Overview POS (Dynamic Paid Pre-fill + Surcharge Extensions)
+// Phase 35: Omni-Synced Overview POS (Flawless Auto-Prefill Paid Math + Surcharge Extensions)
 // FULL UN-SHORTENED SOURCE CODE PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -32,7 +32,7 @@ const ALL_TIME_SLOTS = [
 // ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
-  if (!val) return 0;
+  if (val === null || val === undefined || val === '') return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
 }
 
@@ -83,8 +83,8 @@ interface LiveBooking {
   status: string;
   therapist: string | null;
   createdAt: string;
-  additional_mins?: number;
-  additional_price?: number;
+  additional_mins: number;
+  additional_price: number;
 }
 
 interface StaffMember {
@@ -108,7 +108,6 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
-  // Store the active user's email to pass to the Audit Log
   const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
 
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
@@ -124,13 +123,11 @@ export default function OverviewDashboard() {
   const fetchEverything = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch current logged-in user for Audit Trail
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) {
         setCurrentUserEmail(user.email);
       }
 
-      // 2. Fetch all table data
       const fetchUnlimited = async (tableName: string) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const allRecords: any[] = [];
@@ -161,6 +158,19 @@ export default function OverviewDashboard() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const processRow = (r: any, source: 'live' | 'import', idField: string) => {
         const amt = parseCurrency(r.price || r.amount || r.service_amount || 0);
+        const addMins = Number(r.additional_mins || 0);
+        const addPrice = Number(r.additional_price || 0);
+        const discPct = Number(r.discount_pct || 0);
+
+        // Accurate combined net total calculation
+        const combinedNetSales = (amt + addPrice) * (1 - (discPct / 100));
+
+        // Smart fallback: if received_payment is completely empty/null, pre-fill it with combinedNetSales
+        let recPay = combinedNetSales;
+        if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
+          recPay = parseCurrency(r.received_payment);
+        }
+
         const client = String(r.client_name || 'Guest').trim();
         const timeStr = String(r.appointment_time || r.time || '—').trim();
         const rawDateStr = String(r.appointment_date || r.date || '').trim();
@@ -192,18 +202,18 @@ export default function OverviewDashboard() {
           service: String(r.service_name || r.service || '—'),
           notes: String(r.notes || ''),
           amount: amt,
-          discount_pct: Number(r.discount_pct || 0),
+          discount_pct: discPct,
           therapist_comm_pct: Number(r.therapist_comm_pct || 0),
           payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
           payment_status: String(r.payment_status || 'UNPAID').toUpperCase(),
           ref_no: String(r.ref_no || ''),
           receipt_url: String(r.receipt_url || ''),
-          received_payment: parseCurrency(r.received_payment || amt),
+          received_payment: recPay,
           status: currentStatus,
           therapist: r.therapist_name || r.therapist || null,
           createdAt: r.created_at || new Date().toISOString(),
-          additional_mins: Number(r.additional_mins || 0),
-          additional_price: Number(r.additional_price || 0)
+          additional_mins: addMins,
+          additional_price: addPrice
         };
         const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
         const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate || rawDateStr}`;
@@ -261,23 +271,21 @@ export default function OverviewDashboard() {
   }, [selectedDate, allBookings]);
 
 
-  // ─── SMART DATABASE UPDATES (WITH AUDIT TRAIL) ───
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // ─── SMART DATABASE UPDATES (WITH DYNAMIC PAID PREFILL) ───
   const handleUpdate = async (id: string, field: keyof LiveBooking, value: any, dbFieldOverride?: string) => {
     const booking = allBookings.find(b => b.id === id);
     if (!booking) return;
 
-    // PRE-FILL PAID FIELD LOGIC: 
-    // If the receptionist updates the base amount or the additional surcharge price, 
-    // we calculate the new Net Total and dynamically update the 'received_payment' field to match.
     let updatedBooking = { ...booking, [field]: value };
+
+    // PERFECT PRE-FILL LOGIC: Dynamically re-calculate Net Sales when Base or Surcharge changes
     if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
       const base = field === 'amount' ? Number(value) : booking.amount;
       const extra = field === 'additional_price' ? Number(value) : Number(booking.additional_price || 0);
       const disc = field === 'discount_pct' ? Number(value) : booking.discount_pct;
 
       const newNetSales = (base + extra) * (1 - (disc / 100));
-      updatedBooking.received_payment = newNetSales; // Auto-prefill
+      updatedBooking.received_payment = newNetSales; // Instantly overrides the Paid input box visually!
     }
 
     setAllBookings(prev => prev.map(b => b.id === id ? updatedBooking : b));
@@ -292,6 +300,7 @@ export default function OverviewDashboard() {
         receptionist_track: currentUserEmail
       };
 
+      // Ensure the database registers the new auto-calculated 'Paid' value as well
       if (field === 'amount' || field === 'additional_price' || field === 'discount_pct') {
         payloadToUpdate.received_payment = updatedBooking.received_payment;
       }
@@ -400,8 +409,8 @@ export default function OverviewDashboard() {
         </div>
 
         {view === 'LIST' && (
-          <div style={{ width: '100%', backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1450px' }}>
+          <div style={{ backgroundColor: WHITE, borderRadius: '0 12px 12px 12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 12, minWidth: '1300px' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
                   <th style={{ padding: '16px 12px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '140px' }}>TIME & CLIENT</th>
@@ -430,7 +439,7 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* Time & Client (Swapped from fixed dropdown to custom user input field) */}
+                        {/* CUSTOM EDITABLE TIME & SURCHARGE BLOCK */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
                           <input
                             type="text"

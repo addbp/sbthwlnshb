@@ -1,9 +1,8 @@
 'use client'
 
 // app/dashboard/bookings/page.tsx
-// ULTIMATE OMNI-FETCH VERSION
-// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
-// NEW: Total Amount Calculation (Base + Surcharges) & Perfect Responsive Horizontal Table Scrolling
+// Phase 35: Bookings Ledger (Total Amount Math Sync & Tablet Responsive Scaling)
+// FULL UN-SHORTENED SOURCE CODE PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +27,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function parseCurrency(val: any): number {
-  if (!val) return 0;
+  if (val === null || val === undefined || val === '') return 0;
   return Number(String(val).replace(/[^0-9.-]+/g, '')) || 0;
 }
 
@@ -142,6 +141,9 @@ export default function DashboardBookings() {
       // 1. Process Live Bookings
       liveData.forEach(r => {
         const amt = parseCurrency(r.price || r.amount || r.service_amount || 0);
+        const addMins = Number(r.additional_mins || 0);
+        const addPrice = Number(r.additional_price || 0);
+
         const client = String(r.client_name || 'Guest').trim();
         const timeStr = String(r.appointment_time || '').trim();
         const parsedDate = parseImportDate(r.appointment_date || r.created_at);
@@ -151,6 +153,15 @@ export default function DashboardBookings() {
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
+
+        // Exact Net Math calculation to fall back to if "received_payment" wasn't explicitly saved
+        const discPct = Number(r.discount_pct || 0);
+        const calcNet = (amt + addPrice) * (1 - (discPct / 100));
+
+        let recPay = calcNet;
+        if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
+          recPay = parseCurrency(r.received_payment);
+        }
 
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
         uniqueMap.set(key, {
@@ -163,20 +174,23 @@ export default function DashboardBookings() {
           therapist: String(r.therapist_name || '—').toUpperCase(),
           category: cat,
           amount: amt,
-          discount_pct: Number(r.discount_pct || 0),
+          discount_pct: discPct,
           payment_method: String(r.payment_method || 'PAY AT COUNTER').toUpperCase(),
           payment_status: String(r.payment_status || 'UNPAID').toUpperCase(),
           ref_no: String(r.ref_no || ''),
           receipt_url: String(r.receipt_url || ''),
-          received_payment: parseCurrency(r.received_payment || amt),
-          additional_mins: Number(r.additional_mins || 0),
-          additional_price: Number(r.additional_price || 0)
+          received_payment: recPay,
+          additional_mins: addMins,
+          additional_price: addPrice
         });
       });
 
       // 2. Process Import Bookings
       importData.forEach(r => {
         const amt = parseCurrency(r.amount || r.received_payment || r.service_amount);
+        const addMins = Number(r.additional_mins || 0);
+        const addPrice = Number(r.additional_price || 0);
+
         const client = String(r.client_name || 'Guest').trim();
         const timeStr = String(r.time || r.appointment_time || '').trim();
         const parsedDate = parseImportDate(r.date || r.created_at);
@@ -186,6 +200,14 @@ export default function DashboardBookings() {
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
+
+        const discPct = Number(r.discount_pct || 0);
+        const calcNet = (amt + addPrice) * (1 - (discPct / 100));
+
+        let recPay = calcNet;
+        if (r.received_payment !== null && r.received_payment !== undefined && String(r.received_payment).trim() !== '') {
+          recPay = parseCurrency(r.received_payment);
+        }
 
         const key = `${client.toLowerCase()}-${amt}-${standardDate}-${timeStr}`;
         if (!uniqueMap.has(key)) {
@@ -199,14 +221,14 @@ export default function DashboardBookings() {
             therapist: String(r.therapist || '—').toUpperCase(),
             category: cat,
             amount: amt,
-            discount_pct: Number(r.discount_pct || 0),
+            discount_pct: discPct,
             payment_method: String(r.payment_method || 'CASH').toUpperCase(),
             payment_status: String(r.payment_status || 'PAID').toUpperCase(),
             ref_no: String(r.ref_no || ''),
             receipt_url: String(r.receipt_url || ''),
-            received_payment: parseCurrency(r.received_payment || amt),
-            additional_mins: Number(r.additional_mins || 0),
-            additional_price: Number(r.additional_price || 0)
+            received_payment: recPay,
+            additional_mins: addMins,
+            additional_price: addPrice
           });
         }
       });
