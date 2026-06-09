@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 31: Omni-Synced Overview POS (Added Explicit User Tracking for Audit Logs)
+// Phase 32: Omni-Synced Overview POS (Fully Customisable Start Times)
 // NEW: Perfect Responsive Tablet & iPad Horizontal Scrolling
 
 export const dynamic = 'force-dynamic'
@@ -21,13 +21,6 @@ const GOLD = '#C58F3B'
 const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
-
-// Master Time Slots (Connected to Booking Engine)
-const ALL_TIME_SLOTS = [
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
-  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
-  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
-];
 
 // ─── UTILITIES ───
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +99,7 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
-  // NEW: Store the active user's email to pass to the Audit Log
+  // Store the active user's email to pass to the Audit Log
   const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
 
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
@@ -406,16 +399,27 @@ export default function OverviewDashboard() {
                     return (
                       <tr key={b.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)', verticalAlign: 'top' }}>
 
-                        {/* Time & Client */}
+                        {/* Time & Client (Swapped from fixed dropdown to custom user input field) */}
                         <td style={{ padding: '16px 12px', whiteSpace: 'nowrap' }}>
-                          <select
+                          <input
+                            type="text"
                             value={b.time}
                             onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
-                            style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 13, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, cursor: 'pointer' }}
-                          >
-                            <option value="—">--:-- --</option>
-                            {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
+                            placeholder="e.g. 7:15 PM"
+                            style={{
+                              width: '100%',
+                              padding: '6px 8px',
+                              borderRadius: 4,
+                              fontSize: 13,
+                              fontWeight: 800,
+                              border: '1px solid rgba(197,143,59,0.3)',
+                              backgroundColor: '#fff',
+                              color: BLACK,
+                              outline: 'none',
+                              marginBottom: 6,
+                              boxSizing: 'border-box'
+                            }}
+                          />
                           <br />
                           <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4 }}>{b.client}</span>
                         </td>
