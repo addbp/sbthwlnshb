@@ -3,7 +3,7 @@
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
 // Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
-// NEW: Extension Surcharges & Runtime Column Synchronization
+// NEW: Extension Surcharges & Perfect Responsive Horizontal Table Scrolling
 
 export const dynamic = 'force-dynamic'
 
@@ -331,8 +331,8 @@ export default function DashboardBookings() {
   }
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: '40px', fontFamily: BODY }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(16px, 3vw, 40px)', fontFamily: BODY, boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
 
         {/* HEADER SECTION */}
         <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '20px', marginBottom: '30px' }}>
@@ -347,10 +347,10 @@ export default function DashboardBookings() {
           </div>
 
           <div style={{ display: 'flex', gap: 12 }}>
-            <button onClick={() => setShowExportModal(true)} disabled={loading || filteredRecords.length === 0} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease' }}>
+            <button onClick={() => setShowExportModal(true)} disabled={loading || filteredRecords.length === 0} style={{ padding: '12px 24px', backgroundColor: BLACK, border: 'none', borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading || filteredRecords.length === 0 ? 'not-allowed' : 'pointer', opacity: loading || filteredRecords.length === 0 ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
               ⬇ Export CSV
             </button>
-            <button onClick={fetchRecords} disabled={loading} style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease' }}>
+            <button onClick={fetchRecords} disabled={loading} style={{ padding: '12px 24px', backgroundColor: 'transparent', border: `1px solid ${GOLD}`, borderRadius: '8px', color: GOLD, fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
               {loading ? 'Merging...' : 'Refresh Records'}
             </button>
           </div>
@@ -360,12 +360,12 @@ export default function DashboardBookings() {
         <div style={{ display: 'flex', gap: 8, padding: '6px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, width: 'fit-content', marginBottom: '20px' }}>
           <button
             onClick={() => setViewBranch('Sabbath Malolos')}
-            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Malolos' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
             Malolos Branch
           </button>
           <button
             onClick={() => setViewBranch('Sabbath Pulilan')}
-            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: viewBranch === 'Sabbath Pulilan' ? WHITE : 'transparent', color: viewBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: viewBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none', whiteSpace: 'nowrap' }}>
             Pulilan Branch
           </button>
         </div>
@@ -376,27 +376,27 @@ export default function DashboardBookings() {
         </div>
 
         {/* TABS */}
-        <div style={{ display: 'flex', gap: '30px', borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', gap: '30px', borderBottom: '1px solid rgba(26,26,26,0.1)', marginBottom: '20px', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
           {['ALL', 'SABBATH', 'LE NAILS'].map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ background: 'none', border: 'none', padding: '0 0 12px 0', fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease' }}>
+            <button key={tab} onClick={() => setActiveTab(tab as any)} style={{ background: 'none', border: 'none', padding: '0 0 12px 0', fontSize: '12px', fontWeight: 700, letterSpacing: '0.1em', color: activeTab === tab ? BLACK : 'rgba(26,26,26,0.4)', borderBottom: activeTab === tab ? `2px solid ${GOLD}` : '2px solid transparent', cursor: 'pointer', transition: 'all 0.2s ease', whiteSpace: 'nowrap' }}>
               {tab}
             </button>
           ))}
         </div>
 
-        {/* TABLE SECTION */}
-        <div style={{ backgroundColor: WHITE, borderRadius: '12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+        {/* TABLE SECTION WITH PERFECT SCROLLING */}
+        <div style={{ backgroundColor: WHITE, borderRadius: '12px', border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto', WebkitOverflowScrolling: 'touch', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}>
+          <table style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
             <thead>
               <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>DATE</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>CLIENT</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>SERVICE</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>THERAPIST</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>CATEGORY</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>AMOUNT</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>SERVICE</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>THERAPIST</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CATEGORY</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>AMOUNT</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>EXTENSIONS</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>PAYMENT METHOD</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>PAYMENT METHOD</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT TYPE</th>
               </tr>
             </thead>
@@ -413,22 +413,22 @@ export default function DashboardBookings() {
                     {/* CLICKABLE CLIENT NAME */}
                     <td
                       onClick={() => openClientModal(record.client_name)}
-                      style={{ padding: '16px 20px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{ padding: '16px 20px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
                     >
                       {record.client_name}
                     </td>
 
                     <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.8)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.service}</td>
-                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)' }}>{record.therapist}</td>
-                    <td style={{ padding: '16px 20px' }}>
+                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.therapist}</td>
+                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                       <span style={{ backgroundColor: record.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.04)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: record.category === 'LE NAILS' ? GOLD : BLACK }}>
                         {record.category}
                       </span>
                     </td>
-                    <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(record.amount)}</td>
+                    <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK, whiteSpace: 'nowrap' }}>{formatCurrency(record.amount)}</td>
 
-                    {/* NEW EXTENSIONS COLUMN */}
-                    <td style={{ padding: '16px 20px', color: BLACK }}>
+                    {/* EXTENSIONS COLUMN */}
+                    <td style={{ padding: '16px 20px', color: BLACK, whiteSpace: 'nowrap' }}>
                       {record.additional_mins > 0 || record.additional_price > 0 ? (
                         <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
                           +{record.additional_mins}m / +₱{record.additional_price}
@@ -441,12 +441,12 @@ export default function DashboardBookings() {
                     {/* CLICKABLE PAYMENT METHOD */}
                     <td
                       onClick={() => openPaymentModal(record.client_name)}
-                      style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
                     >
                       {record.payment_method}
                     </td>
 
-                    <td style={{ padding: '16px 20px' }}>
+                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
                         {record.customer_type}
                       </span>
