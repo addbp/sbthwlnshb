@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 39: Omni-Synced Overview POS (Auto-Formatting Time Parser for Bookings Grid Sync)
+// Phase 40: Omni-Synced Overview POS (Fixed Spa Shift Auto-Status Logic for Pending -> Ongoing)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -108,6 +108,9 @@ export default function OverviewDashboard() {
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
 
+  // Store the active user's email to pass to the Audit Log
+  const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
+
   const [allBookings, setAllBookings] = useState<LiveBooking[]>([])
   const [dailyBookings, setDailyBookings] = useState<LiveBooking[]>([])
   const [staffList, setStaffList] = useState<StaffMember[]>([])
@@ -166,6 +169,7 @@ export default function OverviewDashboard() {
         const timeStr = String(r.appointment_time || r.time || '—').trim();
         const rawDateStr = String(r.appointment_date || r.date || '').trim();
 
+        // ─── UPGRADED SMART AUTO-ONGOING LOGIC (Spa Shift Time Aware) ───
         let currentStatus = r.status || 'Pending';
         if (currentStatus === 'Pending' && timeStr !== '—') {
           const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -174,9 +178,19 @@ export default function OverviewDashboard() {
             const m = parseInt(match[2]);
             if (match[3].toUpperCase() === 'PM' && h !== 12) h += 12;
             if (match[3].toUpperCase() === 'AM' && h === 12) h = 0;
+
+            // Adjust for Sabbath Spa shifts (Day starts at 11 AM, ends at 1 AM next day)
+            if (h < 11) h += 24;
+            const apptTotalMins = (h * 60) + m;
+
             const now = new Date();
             if (formatDateToYYYYMMDD(parseImportDate(rawDateStr)) === getTodayStr()) {
-              if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+              let currentH = now.getHours();
+              if (currentH < 11) currentH += 24;
+              const currentTotalMins = (currentH * 60) + now.getMinutes();
+
+              // Only auto-flip to 'Ongoing' if the actual real-world time has reached the scheduled appt time
+              if (currentTotalMins >= apptTotalMins) {
                 currentStatus = 'Ongoing';
               }
             }
@@ -397,7 +411,7 @@ export default function OverviewDashboard() {
   const getMinutesFrom11AM = (timeStr: string) => {
     if (!timeStr || timeStr === '—') return 0;
 
-    // Upgraded parser handles incomplete times (e.g. "7:30" without PM) directly in the grid renderer
+    // Upgraded parser handles incomplete times directly for the Gantt Grid
     const match = timeStr.match(/(\d+):(\d+)(?:\s*(AM|PM))?/i);
     if (!match) return 0;
 
@@ -488,7 +502,7 @@ export default function OverviewDashboard() {
                           <input
                             type="text"
                             value={b.time}
-                            onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time')}
+                            onChange={(e) => handleUpdate(b.id, 'time', e.target.value, 'appointment_time', false)}
                             onBlur={() => formatTimeOnBlur(b.id, b.time)} // AUTO-FORMATS ON CLICK AWAY
                             placeholder="e.g. 7:15 PM"
                             style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 12, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
