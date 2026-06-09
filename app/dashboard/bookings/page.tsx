@@ -2,8 +2,8 @@
 
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
-// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export w/ All Time & Min Date
-// NEW: Multi-Branch Ledger & Interactive Payment Details Modal
+// Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
+// NEW: Extension Surcharges & Runtime Column Synchronization
 
 export const dynamic = 'force-dynamic'
 
@@ -72,7 +72,7 @@ interface UnifiedRecord {
   id: string;
   rawDate: Date | null;
   displayDate: string;
-  branch: string; // NEW: Branch tracking
+  branch: string;
   client_name: string;
   service: string;
   therapist: string;
@@ -85,6 +85,8 @@ interface UnifiedRecord {
   receipt_url: string;
   received_payment: number;
   customer_type?: string;
+  additional_mins: number;
+  additional_price: number;
 }
 
 export default function DashboardBookings() {
@@ -92,7 +94,7 @@ export default function DashboardBookings() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<'ALL' | 'SABBATH' | 'LE NAILS'>('ALL')
-  const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos') // NEW: Branch Toggle State
+  const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos')
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
@@ -145,7 +147,7 @@ export default function DashboardBookings() {
         const parsedDate = parseImportDate(r.appointment_date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
         const service = String(r.service_name || r.service || '—');
-        const branchAssigned = String(r.branch || 'Sabbath Malolos'); // Fallback to Malolos if old record
+        const branchAssigned = String(r.branch || 'Sabbath Malolos');
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
@@ -167,6 +169,8 @@ export default function DashboardBookings() {
           ref_no: String(r.ref_no || ''),
           receipt_url: String(r.receipt_url || ''),
           received_payment: parseCurrency(r.received_payment || amt),
+          additional_mins: Number(r.additional_mins || 0),
+          additional_price: Number(r.additional_price || 0)
         });
       });
 
@@ -178,7 +182,7 @@ export default function DashboardBookings() {
         const parsedDate = parseImportDate(r.date || r.created_at);
         const standardDate = formatDateToYYYYMMDD(parsedDate);
         const service = String(r.service || '—');
-        const branchAssigned = String(r.branch || 'Sabbath Malolos'); // Importers default to Malolos
+        const branchAssigned = String(r.branch || 'Sabbath Malolos');
 
         const isNail = NAIL_KEYWORDS.some(k => service.toUpperCase().includes(k));
         const cat = isNail ? 'LE NAILS' : 'SABBATH';
@@ -201,6 +205,8 @@ export default function DashboardBookings() {
             ref_no: String(r.ref_no || ''),
             receipt_url: String(r.receipt_url || ''),
             received_payment: parseCurrency(r.received_payment || amt),
+            additional_mins: Number(r.additional_mins || 0),
+            additional_price: Number(r.additional_price || 0)
           });
         }
       });
@@ -244,7 +250,7 @@ export default function DashboardBookings() {
     setCurrentPage(1)
   }, [activeTab, searchQuery, viewBranch])
 
-  // ─── FILTERING LOGIC (NOW INCLUDES BRANCH) ───
+  // ─── FILTERING LOGIC ───
   const filteredRecords = records.filter(record => {
     const matchesSearch =
       (record.client_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
@@ -252,7 +258,7 @@ export default function DashboardBookings() {
       (record.displayDate?.toLowerCase() || '').includes(searchQuery.toLowerCase())
 
     const matchesTab = activeTab === 'ALL' ? true : (record.category?.toUpperCase() === activeTab)
-    const matchesBranch = record.branch === viewBranch; // MUST Match selected dashboard branch
+    const matchesBranch = record.branch === viewBranch;
 
     return matchesSearch && matchesTab && matchesBranch
   })
@@ -280,9 +286,9 @@ export default function DashboardBookings() {
     setShowPaymentModal(true);
   }
 
-  // ─── CSV EXPORT LOGIC WITH EXPLICIT OPTIONS ───
+  // ─── CSV EXPORT LOGIC WITH EXTENSIONS ───
   const confirmCSVExport = () => {
-    let dataToExport = filteredRecords; // ALREADY BRANCH-FILTERED!
+    let dataToExport = filteredRecords;
 
     if (exportMode === 'RANGE') {
       if (!exportDateRange.start || !exportDateRange.end) {
@@ -306,10 +312,10 @@ export default function DashboardBookings() {
       return;
     }
 
-    const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Amount', 'Payment Method', 'Payment Status', 'Client Type'];
+    const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Base Amount', 'Extra Mins', 'Surcharge Price', 'Payment Method', 'Payment Status', 'Client Type'];
     const csvRows = dataToExport.map(r => [
       `"${r.displayDate}"`, `"${r.branch}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
-      `"${r.category}"`, `"${r.amount}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
+      `"${r.category}"`, `"${r.amount}"`, `"${r.additional_mins}"`, `"${r.additional_price}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
     ].join(','));
 
     const csvContent = [headers.join(','), ...csvRows].join('\n');
@@ -389,15 +395,16 @@ export default function DashboardBookings() {
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>THERAPIST</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>CATEGORY</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>AMOUNT</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>EXTENSIONS</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em' }}>PAYMENT METHOD</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT TYPE</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>Merging live data with historical records...</td></tr>
+                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>Merging live data with historical records...</td></tr>
               ) : viewablePaginatedRows.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for {viewBranch}.</td></tr>
+                <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for {viewBranch}.</td></tr>
               ) : (
                 viewablePaginatedRows.map((record) => (
                   <tr key={record.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
@@ -419,6 +426,17 @@ export default function DashboardBookings() {
                       </span>
                     </td>
                     <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK }}>{formatCurrency(record.amount)}</td>
+
+                    {/* NEW EXTENSIONS COLUMN */}
+                    <td style={{ padding: '16px 20px', color: BLACK }}>
+                      {record.additional_mins > 0 || record.additional_price > 0 ? (
+                        <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                          +{record.additional_mins}m / +₱{record.additional_price}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#aaa' }}>—</span>
+                      )}
+                    </td>
 
                     {/* CLICKABLE PAYMENT METHOD */}
                     <td
@@ -477,7 +495,7 @@ export default function DashboardBookings() {
                 <div style={{ flex: 1, padding: '16px', backgroundColor: 'rgba(61,122,74,0.05)', borderRadius: '12px', border: '1px solid rgba(61,122,74,0.1)' }}>
                   <p style={{ fontSize: '10px', fontWeight: 700, color: '#3D7A4A', letterSpacing: '0.1em', margin: '0 0 8px 0' }}>LIFETIME SPENT</p>
                   <p style={{ fontSize: '24px', fontWeight: 700, color: BLACK, margin: 0 }}>
-                    {formatCurrency(selectedClientHistory.reduce((acc, r) => acc + (r.amount || 0), 0))}
+                    {formatCurrency(selectedClientHistory.reduce((acc, r) => acc + ((r.amount || 0) + (r.additional_price || 0)), 0))}
                   </p>
                 </div>
               </div>
@@ -499,7 +517,7 @@ export default function DashboardBookings() {
                         <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.service}</td>
                         <td style={{ padding: '16px 0', color: '#666' }}>{h.therapist}</td>
-                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>{formatCurrency(h.amount)}</td>
+                        <td style={{ padding: '16px 0', color: BLACK, fontWeight: 700, textAlign: 'right' }}>{formatCurrency((h.amount || 0) + (h.additional_price || 0))}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -538,7 +556,7 @@ export default function DashboardBookings() {
                   </thead>
                   <tbody>
                     {selectedClientHistory.map((h, i) => {
-                      const net = h.amount * (1 - (h.discount_pct / 100));
+                      const net = (h.amount + (h.additional_price || 0)) * (1 - (h.discount_pct / 100));
                       return (
                         <tr key={h.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
                           <td style={{ padding: '16px 0', color: BLACK, fontWeight: 600 }}>{h.displayDate}</td>
