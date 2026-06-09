@@ -3,7 +3,7 @@
 // app/dashboard/bookings/page.tsx
 // ULTIMATE OMNI-FETCH VERSION
 // Features: Dual-Table Merge, Smart Retention, History Popup, Clean Pill Alignment, Filtered CSV Export
-// NEW: Extension Surcharges & Perfect Responsive Horizontal Table Scrolling
+// NEW: Total Amount Calculation (Base + Surcharges) & Perfect Responsive Horizontal Table Scrolling
 
 export const dynamic = 'force-dynamic'
 
@@ -286,7 +286,7 @@ export default function DashboardBookings() {
     setShowPaymentModal(true);
   }
 
-  // ─── CSV EXPORT LOGIC WITH EXTENSIONS ───
+  // ─── CSV EXPORT LOGIC WITH TOTALS ───
   const confirmCSVExport = () => {
     let dataToExport = filteredRecords;
 
@@ -312,11 +312,14 @@ export default function DashboardBookings() {
       return;
     }
 
-    const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Base Amount', 'Extra Mins', 'Surcharge Price', 'Payment Method', 'Payment Status', 'Client Type'];
-    const csvRows = dataToExport.map(r => [
-      `"${r.displayDate}"`, `"${r.branch}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
-      `"${r.category}"`, `"${r.amount}"`, `"${r.additional_mins}"`, `"${r.additional_price}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
-    ].join(','));
+    const headers = ['Date', 'Branch', 'Client', 'Service', 'Therapist', 'Category', 'Base Amount', 'Extra Mins', 'Surcharge Price', 'Total Amount', 'Payment Method', 'Payment Status', 'Client Type'];
+    const csvRows = dataToExport.map(r => {
+      const totalAmount = r.amount + (r.additional_price || 0);
+      return [
+        `"${r.displayDate}"`, `"${r.branch}"`, `"${r.client_name}"`, `"${r.service}"`, `"${r.therapist}"`,
+        `"${r.category}"`, `"${r.amount}"`, `"${r.additional_mins}"`, `"${r.additional_price}"`, `"${totalAmount}"`, `"${r.payment_method}"`, `"${r.payment_status}"`, `"${r.customer_type}"`
+      ].join(',')
+    });
 
     const csvContent = [headers.join(','), ...csvRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -394,7 +397,7 @@ export default function DashboardBookings() {
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>SERVICE</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>THERAPIST</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CATEGORY</th>
-                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>AMOUNT</th>
+                <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>TOTAL AMT</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>EXTENSIONS</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>PAYMENT METHOD</th>
                 <th style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>CLIENT TYPE</th>
@@ -406,53 +409,61 @@ export default function DashboardBookings() {
               ) : viewablePaginatedRows.length === 0 ? (
                 <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'rgba(26,26,26,0.5)' }}>No bookings found for {viewBranch}.</td></tr>
               ) : (
-                viewablePaginatedRows.map((record) => (
-                  <tr key={record.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
-                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.displayDate}</td>
+                viewablePaginatedRows.map((record) => {
+                  const totalCombinedAmount = record.amount + (record.additional_price || 0);
 
-                    {/* CLICKABLE CLIENT NAME */}
-                    <td
-                      onClick={() => openClientModal(record.client_name)}
-                      style={{ padding: '16px 20px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
-                    >
-                      {record.client_name}
-                    </td>
+                  return (
+                    <tr key={record.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
+                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.displayDate}</td>
 
-                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.8)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.service}</td>
-                    <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.therapist}</td>
-                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                      <span style={{ backgroundColor: record.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.04)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: record.category === 'LE NAILS' ? GOLD : BLACK }}>
-                        {record.category}
-                      </span>
-                    </td>
-                    <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK, whiteSpace: 'nowrap' }}>{formatCurrency(record.amount)}</td>
+                      {/* CLICKABLE CLIENT NAME */}
+                      <td
+                        onClick={() => openClientModal(record.client_name)}
+                        style={{ padding: '16px 20px', fontWeight: 700, color: GOLD, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                      >
+                        {record.client_name}
+                      </td>
 
-                    {/* EXTENSIONS COLUMN */}
-                    <td style={{ padding: '16px 20px', color: BLACK, whiteSpace: 'nowrap' }}>
-                      {record.additional_mins > 0 || record.additional_price > 0 ? (
-                        <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
-                          +{record.additional_mins}m / +₱{record.additional_price}
+                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.8)', maxWidth: '250px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{record.service}</td>
+                      <td style={{ padding: '16px 20px', color: 'rgba(26,26,26,0.7)', whiteSpace: 'nowrap' }}>{record.therapist}</td>
+                      <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
+                        <span style={{ backgroundColor: record.category === 'LE NAILS' ? 'rgba(197,143,59,0.1)' : 'rgba(26,26,26,0.04)', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em', color: record.category === 'LE NAILS' ? GOLD : BLACK }}>
+                          {record.category}
                         </span>
-                      ) : (
-                        <span style={{ color: '#aaa' }}>—</span>
-                      )}
-                    </td>
+                      </td>
 
-                    {/* CLICKABLE PAYMENT METHOD */}
-                    <td
-                      onClick={() => openPaymentModal(record.client_name)}
-                      style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
-                    >
-                      {record.payment_method}
-                    </td>
+                      {/* TOTAL AMOUNT (BASE + SURCHARGE) */}
+                      <td style={{ padding: '16px 20px', fontWeight: 700, color: BLACK, whiteSpace: 'nowrap' }}>
+                        {formatCurrency(totalCombinedAmount)}
+                      </td>
 
-                    <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
-                      <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
-                        {record.customer_type}
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                      {/* EXTENSIONS COLUMN */}
+                      <td style={{ padding: '16px 20px', color: BLACK, whiteSpace: 'nowrap' }}>
+                        {record.additional_mins > 0 || record.additional_price > 0 ? (
+                          <span style={{ backgroundColor: 'rgba(197,143,59,0.1)', color: GOLD, fontWeight: 700, fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                            +{record.additional_mins}m / +₱{record.additional_price}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#aaa' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* CLICKABLE PAYMENT METHOD */}
+                      <td
+                        onClick={() => openPaymentModal(record.client_name)}
+                        style={{ padding: '16px 20px', color: GOLD, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                      >
+                        {record.payment_method}
+                      </td>
+
+                      <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'inline-block', whiteSpace: 'nowrap', backgroundColor: record.customer_type === 'NEW CLIENT' ? 'rgba(61,122,74,0.1)' : 'rgba(197,143,59,0.1)', color: record.customer_type === 'NEW CLIENT' ? '#3D7A4A' : '#C58F3B', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.05em' }}>
+                          {record.customer_type}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
