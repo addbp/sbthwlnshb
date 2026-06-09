@@ -1,7 +1,8 @@
 'use client'
 
-// app/booking/page.tsx  —  Phase 30 Booking Engine (Exact Sync with POS Calendar & 15m Buffer)
+// app/booking/page.tsx  —  Phase 42 Booking Engine (Custom Auto-Time Input & Live Visual Timeline Scheduler)
 // STRICT LIVE DATABASE CONNECTION (Dynamic Staff Availability Engine + Midnight Parser Fix + Branch Router)
+// FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -18,19 +19,8 @@ const WHITE = '#FFFFFF'
 const BODY = "'Inter', system-ui, sans-serif"
 const DSP = "'Cormorant Garamond', Georgia, serif"
 
-// Strict Reference Slots for the Live Matrix Grid Layout (Mon-Sat 11am-12am)
-const MON_SAT_SLOTS = [
-  '11:00 AM', '11:30 AM', '12:00 PM', '12:30 PM', '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM',
-  '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM',
-  '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM', '11:00 PM', '11:30 PM', '12:00 AM'
-];
-
-// Strict Reference Slots for Sunday (1pm-12am)
-const SUN_SLOTS = [
-  '1:00 PM', '1:30 PM', '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM', '4:30 PM', '5:00 PM', '5:30 PM',
-  '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM', '8:00 PM', '8:30 PM', '9:00 PM', '9:30 PM', '10:00 PM', '10:30 PM',
-  '11:00 PM', '11:30 PM', '12:00 AM'
-];
+const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
+const TOTAL_MINUTES = 14 * 60; // 14 hours total duration of operations
 
 const INPUT: React.CSSProperties = {
   display: 'block', width: '100%', height: 54,
@@ -208,6 +198,7 @@ export default function BookingPage() {
   useEffect(() => {
     setMinApptDate(getTodayStr())
     const fetchUnlimited = async (tableName: string) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let allRecords: any[] = [], start = 0, step = 1000
       for (; ;) {
         const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1)
@@ -431,10 +422,14 @@ export default function BookingPage() {
     });
   }
 
+  // Determine current day for off-duty filtering
+  let currentDayIndex = -1;
+  let dayName = '';
   if (date) {
     const [y, m, d] = date.split('-').map(Number);
     const selectedDateObj = new Date(y, m - 1, d);
-    const dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    dayName = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    currentDayIndex = selectedDateObj.getDay();
 
     allowedTherapists = allowedTherapists.filter(t => {
       if (t.off_days && t.off_days.includes(dayName)) return false;
@@ -503,18 +498,30 @@ export default function BookingPage() {
   // ─── ALGORITHMIC TIMELINE OVERLAP ENGINE ───
   const getMinutesFromMidnight = (tStr: string) => {
     if (!tStr) return -1;
-    const match = tStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    const match = tStr.match(/(\d+):(\d+)(?:\s*(AM|PM))?/i);
     if (!match) return -1;
-    let h = parseInt(match[1], 10), m = parseInt(match[2], 10);
-    const ampm = match[3].toUpperCase();
 
-    if (tStr.toUpperCase() === '12:00 AM') {
-      h = 24; m = 0;
-    } else {
-      if (ampm === 'PM' && h !== 12) h += 12;
-      if (ampm === 'AM' && h === 12) h = 0;
-      if (h < 11) h += 24; // Align shifts for early AM hours
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    let ampm = match[3] ? match[3].toUpperCase() : '';
+
+    if (!ampm) {
+      if (h === 11) ampm = 'AM';
+      else if (h === 12 || (h >= 1 && h <= 10)) ampm = 'PM';
+      else if (h > 12) {
+        h -= 12;
+        ampm = 'PM';
+      } else {
+        ampm = 'AM';
+      }
     }
+
+    if (ampm === 'PM' && h !== 12 && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+
+    // Shift logic: day starts at 11am, ends 1am next day
+    if (h < 11) h += 24;
+
     return h * 60 + m;
   };
 
@@ -531,66 +538,86 @@ export default function BookingPage() {
     return (startA - 15) < endB && (startB - 15) < endA;
   }, []);
 
-  // ─── DYNAMIC AVAILABILITY GRID MATRIX GENERATOR ───
-  let availableSlots: { time: string, available: boolean }[] = [];
+  const formatTimeOnBlur = (currentVal: string) => {
+    let val = currentVal.trim();
+    if (!val) return;
 
-  if (date) {
-    const [y, m, d] = date.split('-').map(Number);
-    const dObj = new Date(y, m - 1, d);
-    const day = dObj.getDay();
+    const match = val.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    if (match) {
+      let h = parseInt(match[1], 10);
+      const m = match[2];
+      let ampm = match[3] ? match[3].toUpperCase() : '';
 
-    const baseSlots = day === 0 ? SUN_SLOTS : MON_SAT_SLOTS;
-    const isToday = date === getTodayStr();
-    const now = new Date();
+      if (!ampm) {
+        if (h === 11) ampm = 'AM';
+        else if (h === 12 || (h >= 1 && h <= 10)) ampm = 'PM';
+        else if (h > 12) { h -= 12; ampm = 'PM'; }
+        else ampm = 'AM';
+      }
 
-    let currMins = now.getHours() * 60 + now.getMinutes();
-    if (now.getHours() < 11) currMins += 24 * 60; // Align current time calculation for night shifts
+      setTime(`${h}:${m} ${ampm}`);
+    }
+  };
 
-    availableSlots = baseSlots.map(t => {
-      let isPast = false;
-      if (isToday) {
-        const slotMins = getMinutesFromMidnight(t);
-        if (slotMins !== -1 && slotMins <= currMins) {
-          isPast = true;
+  // Compute exact Time validation
+  let isTimeInvalid = false;
+  let timeErrMsg = '';
+
+  if (!time.trim()) {
+    isTimeInvalid = true;
+  } else {
+    const slotMins = getMinutesFromMidnight(time);
+    if (slotMins === -1) {
+      isTimeInvalid = true;
+      timeErrMsg = 'Invalid time format. Please use HH:MM AM/PM.';
+    } else {
+      // Past time check
+      if (date === getTodayStr()) {
+        const now = new Date();
+        let currMins = now.getHours() * 60 + now.getMinutes();
+        if (now.getHours() < 11) currMins += 24 * 60;
+        if (slotMins <= currMins) {
+          isTimeInvalid = true;
+          timeErrMsg = 'This time has already passed today.';
         }
       }
 
-      let isConflict = false;
-      if (therapistId) {
-        const tName = therapists.find(th => th.id === therapistId)?.name;
-        isConflict = dateBookings.some(b => b.therapist_name === tName && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
-      } else {
-        if (allowedTherapists.length === 0) {
-          isConflict = true;
+      // Bounds check
+      if (date && !isTimeInvalid) {
+        const minAllowed = currentDayIndex === 0 ? getMinutesFromMidnight('1:00 PM') : getMinutesFromMidnight('11:00 AM');
+        const maxAllowed = getMinutesFromMidnight('12:00 AM');
+        if (slotMins < minAllowed || slotMins > maxAllowed) {
+          isTimeInvalid = true;
+          timeErrMsg = 'Time is outside operating hours.';
+        }
+      }
+
+      // Conflict check
+      if (!isTimeInvalid) {
+        if (therapistId) {
+          const tName = therapists.find(th => th.id === therapistId)?.name;
+          const conflict = dateBookings.some(b => b.therapist_name === tName && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
+          if (conflict) {
+            isTimeInvalid = true;
+            timeErrMsg = 'Selected staff is booked at this exact time.';
+          }
         } else {
-          const freeTherapist = allowedTherapists.find(th => {
-            return !dateBookings.some(b => b.therapist_name === th.name && checkOverlapConstraint(b.appointment_time, t, Number(b.additional_mins || 0)));
-          });
-          isConflict = !freeTherapist;
+          if (allowedTherapists.length === 0) {
+            isTimeInvalid = true;
+            timeErrMsg = 'No staff available on this day.';
+          } else {
+            const freeTherapist = allowedTherapists.find(th => {
+              return !dateBookings.some(b => b.therapist_name === th.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
+            });
+            if (!freeTherapist) {
+              isTimeInvalid = true;
+              timeErrMsg = 'All staff are fully booked at this exact time.';
+            }
+          }
         }
       }
-
-      return { time: t, available: !isPast && !isConflict }
-    });
-  }
-
-  const getTherapistStatus = (t: Therapist) => {
-    if (time) {
-      const isConflict = dateBookings.some(b => b.therapist_name === t.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
-      if (isConflict) return ` (Unavailable)`;
     }
-    return t.status ? ` (${t.status})` : '';
   }
-
-  const isTherapistDisabled = (t: Therapist) => {
-    if (time) {
-      return dateBookings.some(b => b.therapist_name === t.name && checkOverlapConstraint(b.appointment_time, time, Number(b.additional_mins || 0)));
-    }
-    return false;
-  }
-
-  const selectedSlot = availableSlots.find(s => s.time === time);
-  const isTimeInvalid = !selectedSlot || !selectedSlot.available;
 
   const validation = {
     firstName: firstName.trim().length < 2,
@@ -609,7 +636,7 @@ export default function BookingPage() {
     e.preventDefault()
     setAttempted(true)
     if (!isValid || loading) {
-      if (isTimeInvalid && time !== '') setSubmitError("The selected time is unavailable. Please choose another time.");
+      if (isTimeInvalid && time !== '') setSubmitError(timeErrMsg || "The selected time is unavailable. Please check the timeline.");
       return;
     }
     setShowConfirmModal(true)
@@ -780,6 +807,9 @@ export default function BookingPage() {
         .svc-scroll::-webkit-scrollbar-thumb { background: rgba(197,143,59,0.3); border-radius: 4px; }
         .svc-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
         .modal-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .tl-scroll::-webkit-scrollbar { height: 6px; }
+        .tl-scroll::-webkit-scrollbar-track { background: transparent; }
+        .tl-scroll::-webkit-scrollbar-thumb { background: rgba(26,26,26,0.15); border-radius: 6px; }
       `}</style>
 
       {/* ─── CONFIRMATION POPUP MODAL ─── */}
@@ -982,16 +1012,20 @@ export default function BookingPage() {
                   <input suppressHydrationWarning className="bk-in" type="date" min={minApptDate} style={{ ...INPUT, ...eb(validation.date) }} value={date} onChange={e => setDate(e.target.value)} />
                 </Field>
 
-                {/* ── RESTORED: SELECT DROPDOWN FOR PREFERRED TIME ── */}
+                {/* ── NEW: CUSTOM AUTO-FORMAT TIME INPUT ── */}
                 <Field label="Preferred Time *">
-                  <select className="bk-in" style={{ ...SELECT, ...eb(validation.time) }} value={time} onChange={e => setTime(e.target.value)}>
-                    <option value="">--:-- --</option>
-                    {availableSlots.map(s => (
-                      <option key={s.time} value={s.time} disabled={!s.available}>
-                        {s.time} {!s.available ? ' (Booked/Unavailable)' : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    className="bk-in"
+                    type="text"
+                    style={{ ...INPUT, ...eb(validation.time) }}
+                    value={time}
+                    onChange={e => setTime(e.target.value)}
+                    onBlur={() => formatTimeOnBlur(time)}
+                    placeholder="e.g. 2:30 PM"
+                  />
+                  {attempted && timeErrMsg && (
+                    <span style={{ marginTop: 6, fontSize: 11, color: '#8B3A3A', fontWeight: 600 }}>{timeErrMsg}</span>
+                  )}
                 </Field>
               </Row2>
 
@@ -1000,8 +1034,8 @@ export default function BookingPage() {
                 <select className="bk-in" style={SELECT} value={therapistId} onChange={e => setTherapistId(e.target.value)}>
                   <option value="">Any Available Staff / No Preference</option>
                   {filteredTherapists.map(t => (
-                    <option key={t.id} value={t.id} disabled={isTherapistDisabled(t)}>
-                      {t.name}{getTherapistStatus(t)}
+                    <option key={t.id} value={t.id}>
+                      {t.name}
                     </option>
                   ))}
                 </select>
@@ -1012,24 +1046,66 @@ export default function BookingPage() {
                 )}
               </Field>
 
-              {/* ── RESTORED VISUAL MATRIX ENGINE ── */}
-              {availableSlots.length > 0 && (
-                <div style={{ marginTop: 12, padding: '16px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)' }}>
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 10, letterSpacing: '0.05em' }}>
-                    Visual Availability Grid for {date}
+              {/* ── NEW: LIVE TIMELINE AVAILABILITY GRID ── */}
+              {date && allowedTherapists.length > 0 && (
+                <div style={{ marginTop: 12, padding: '16px 20px', backgroundColor: '#fafafa', borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)', overflowX: 'auto' }} className="tl-scroll">
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 16, letterSpacing: '0.05em' }}>
+                    Visual Availability Timeline for {date}
                   </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: 8 }}>
-                    {availableSlots.map(s => (
-                      <div key={s.time} style={{
-                        padding: '8px', textAlign: 'center', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                        backgroundColor: s.available ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.05)',
-                        color: s.available ? '#3D7A4A' : '#aaa',
-                        border: s.available ? '1px solid rgba(61,122,74,0.2)' : '1px solid transparent',
-                        textDecoration: s.available ? 'none' : 'line-through'
-                      }}>
-                        {s.time}
+
+                  <div style={{ minWidth: '700px' }}>
+                    <div style={{ display: 'flex', borderBottom: '1px solid rgba(26,26,26,0.08)', paddingBottom: 8 }}>
+                      <div style={{ width: '160px', flexShrink: 0 }}></div>
+                      <div style={{ display: 'flex', flexGrow: 1, position: 'relative' }}>
+                        {HOURS_MARKERS.slice(0, -1).map(hour => (
+                          <div key={hour} style={{ flex: 1, textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#aaa' }}>{hour}</div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+
+                    {allowedTherapists.map(staff => {
+                      if (therapistId && staff.id !== therapistId) return null;
+
+                      const staffBookings = dateBookings.filter(b => b.therapist_name === staff.name);
+                      const isOffDuty = staff.off_days?.includes(dayName);
+
+                      return (
+                        <div key={staff.id} style={{ display: 'flex', marginTop: 8, height: 44, alignItems: 'center' }}>
+                          <div style={{ width: '160px', flexShrink: 0, fontSize: 12, fontWeight: 700, color: BLACK }}>
+                            {staff.name}
+                          </div>
+                          <div style={{ flexGrow: 1, height: '100%', position: 'relative', backgroundColor: isOffDuty ? 'rgba(200,50,50,0.05)' : 'rgba(61,122,74,0.12)', borderRadius: 6, overflow: 'hidden' }}>
+                            {isOffDuty ? (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#C83232', letterSpacing: '0.1em' }}>OFF DUTY</div>
+                            ) : (
+                              <>
+                                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#3D7A4A', pointerEvents: 'none', opacity: 0.8, letterSpacing: '0.1em' }}>AVAILABLE</div>
+
+                                {currentDayIndex === 0 && (
+                                  <div style={{ position: 'absolute', left: 0, width: `${(120 / TOTAL_MINUTES) * 100}%`, height: '100%', backgroundColor: 'rgba(26,26,26,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#666', fontWeight: 700, zIndex: 5 }}>
+                                    CLOSED
+                                  </div>
+                                )}
+
+                                {staffBookings.map((b, i) => {
+                                  const startMins = getMinutesFromMidnight(b.appointment_time);
+                                  if (startMins === -1) return null;
+                                  const leftPercent = (startMins / TOTAL_MINUTES) * 100;
+                                  const totalDuration = 60 + Number(b.additional_mins || 0);
+                                  const widthPercent = (totalDuration / TOTAL_MINUTES) * 100;
+
+                                  return (
+                                    <div key={i} style={{ position: 'absolute', left: `${leftPercent}%`, width: `${widthPercent}%`, height: '100%', backgroundColor: '#1A1A1A', borderLeft: `3px solid ${GOLD}`, color: WHITE, display: 'flex', alignItems: 'center', padding: '0 8px', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', zIndex: 10 }}>
+                                      Booked
+                                    </div>
+                                  )
+                                })}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
