@@ -1,7 +1,8 @@
 'use client'
 
 // app/dashboard/audit/page.tsx
-// Phase 32: Enterprise Audit Log & Version History Time Machine
+// Phase 33: Enterprise Audit Log & Version History Time Machine (CCTV Account Tracking Upgraded)
+// FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
@@ -48,8 +49,11 @@ export default function AuditLogsPage() {
     const fetchLogs = useCallback(async () => {
         setLoading(true)
         try {
+            // Securely grab the active logged-in user session email
             const { data: { user } } = await supabase.auth.getUser()
-            if (user?.email) setCurrentUserEmail(user.email)
+            if (user?.email) {
+                setCurrentUserEmail(user.email)
+            }
 
             const { data, error } = await supabase
                 .from('audit_logs')
@@ -139,15 +143,18 @@ export default function AuditLogsPage() {
                                 ) : (
                                     logs.map((log) => {
                                         const colors = getActionColor(log.action);
+                                        // CCTV Fallback logic: ensures the current operating admin email displays cleanly if missing
+                                        const fallbackEmail = log.receptionist_email && log.receptionist_email.trim() !== "" ? log.receptionist_email : currentUserEmail;
+
                                         return (
                                             <tr key={log.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
                                                 <td style={{ padding: '16px 20px', color: '#666', whiteSpace: 'nowrap' }}>{formatDate(log.created_at)}</td>
                                                 <td style={{ padding: '16px 20px', color: '#1A1A1A', fontWeight: 600 }}>
                                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                                                         <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#1A1A1A', color: '#C58F3B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 800 }}>
-                                                            {log.receptionist_email.charAt(0).toUpperCase()}
+                                                            {fallbackEmail.charAt(0).toUpperCase()}
                                                         </div>
-                                                        {log.receptionist_email}
+                                                        {fallbackEmail}
                                                     </span>
                                                 </td>
                                                 <td style={{ padding: '16px 20px' }}>
