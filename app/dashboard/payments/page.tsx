@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/payments/page.tsx
-// Phase 29: Flawless Payments Ledger (Fixed duplication, restored Payment Modal, ESLint Safe)
+// Phase 30: High-Security Payments Ledger (Strict PIN 061026, Auto-Locking Revenue, Pagination Lock)
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -82,20 +82,18 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(true)
 
   // ─── DYNAMIC PIN SECURITY STATE ───
-  const [dbPin, setDbPin] = useState('123456') // Default fallback
   const [isUnlocked, setIsUnlocked] = useState(false)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
 
   // ─── POS / CASHIER STATES ───
-  const [showRevenue, setShowRevenue] = useState(true)
   const [editingReceivedId, setEditingReceivedId] = useState<string | null>(null)
   const [receivedInput, setReceivedInput] = useState('')
 
   // Modals
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false)
   const [showClientModal, setShowClientModal] = useState(false)
-  const [showPaymentModal, setShowPaymentModal] = useState(false) // Included now
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
 
   const [selectedPayment, setSelectedPayment] = useState<FinancialRecord | null>(null)
   const [selectedClientHistory, setSelectedClientHistory] = useState<FinancialRecord[]>([])
@@ -109,15 +107,13 @@ export default function PaymentsPage() {
   // ─── LIMITLESS PAGINATION UNROLLING ENGINE ───
   const loadPayments = useCallback(async () => {
     setLoading(true)
+    // Lock the revenue on manual refresh
+    setIsUnlocked(false)
     const PAGE_SIZE = 1000
     const allMemberships: Membership[] = []
 
     try {
-      // 1. Fetch PIN
-      const { data: pinData } = await supabase.from('admin_settings').select('pin').single()
-      if (pinData && pinData.pin) setDbPin(pinData.pin)
-
-      // 2. Fetch Memberships
+      // 1. Fetch Memberships
       let fromMem = 0
       for (; ;) {
         const { data, error } = await supabase.from('memberships').select('id, client_name, membership_tier, discount_percentage').eq('status', 'Active').range(fromMem, fromMem + PAGE_SIZE - 1)
@@ -128,7 +124,7 @@ export default function PaymentsPage() {
       }
       setActiveMemberships(allMemberships)
 
-      // 3. Fetch Live Bookings
+      // 2. Fetch Live Bookings
       const uniqueMap = new Map<string, FinancialRecord>();
       let fromLive = 0
       for (; ;) {
@@ -169,7 +165,7 @@ export default function PaymentsPage() {
         fromLive += PAGE_SIZE
       }
 
-      // 4. Fetch Import Bookings
+      // 3. Fetch Import Bookings
       let fromHist = 0
       for (; ;) {
         const { data, error } = await supabase.from('bookings_import').select('*').range(fromHist, fromHist + PAGE_SIZE - 1)
@@ -213,7 +209,7 @@ export default function PaymentsPage() {
 
       const all = Array.from(uniqueMap.values());
 
-      // 5. Retention Logic
+      // 4. Retention Logic
       all.sort((a, b) => (a.rawDate?.getTime() || 0) - (b.rawDate?.getTime() || 0))
       const visitCounter = new Map<string, number>()
       all.forEach(p => {
@@ -227,7 +223,7 @@ export default function PaymentsPage() {
         visitCounter.set(nameKey, visits + 1)
       })
 
-      // 6. Reverse Chronological
+      // 5. Reverse Chronological
       all.sort((a, b) => (b.rawDate?.getTime() || 0) - (a.rawDate?.getTime() || 0))
       setPayments(all)
     } catch (error) {
@@ -300,11 +296,20 @@ export default function PaymentsPage() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const paginatedPayments = payments.slice(startIndex, startIndex + itemsPerPage)
 
+  // ─── SMART AUTO-LOCKING PAGINATION ───
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+    setIsUnlocked(false); // Instantly relock the revenue card upon navigation
+    setPinInput('');
+  }
+
+  // ─── STRICT PIN VALIDATION ───
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (pinInput === dbPin || pinInput === '1234' || pinInput === '8888') {
+    if (pinInput === '061026') {
       setIsUnlocked(true)
       setPinError(false)
+      setPinInput('')
     } else {
       setPinError(true)
       setPinInput('')
@@ -497,19 +502,15 @@ export default function PaymentsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', margin: 0, letterSpacing: '0.05em' }}>Total Net Received</p>
               {isUnlocked && (
-                <button onClick={() => setShowRevenue(!showRevenue)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
-                  {showRevenue ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
-                  )}
+                <button onClick={() => setIsUnlocked(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                 </button>
               )}
             </div>
 
             {isUnlocked ? (
               <p style={{ fontSize: 32, fontWeight: 700, color: '#fff', margin: 0 }}>
-                {loading ? '...' : showRevenue ? `₱${totalReceived.toLocaleString()}` : '••••••••'}
+                {loading ? '...' : `₱${totalReceived.toLocaleString()}`}
               </p>
             ) : (
               <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(26,26,26,0.95)', backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -627,11 +628,11 @@ export default function PaymentsPage() {
               </span>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>First</button>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>Prev</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => handlePageChange(1)} disabled={currentPage === 1}>First</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === 1 ? '#f5f5f5' : '#1A1A1A', color: currentPage === 1 ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }} onClick={() => handlePageChange(Math.max(1, currentPage - 1))} disabled={currentPage === 1}>Prev</button>
                 <span style={{ padding: '0 10px', fontSize: 13, fontWeight: 600, color: '#1A1A1A' }}>Page {currentPage} of {totalPages}</span>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPages ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages}>Next</button>
-                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPages ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }} onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages}>Last</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPages ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }} onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>Next</button>
+                <button style={{ padding: '6px 12px', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', backgroundColor: currentPage === totalPages ? '#f5f5f5' : '#1A1A1A', color: currentPage === totalPages ? '#aaa' : '#C58F3B', border: 'none', borderRadius: 6, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }} onClick={() => handlePageChange(totalPages)} disabled={currentPage === totalPages}>Last</button>
               </div>
             </div>
 

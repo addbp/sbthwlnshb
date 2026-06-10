@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 40: Omni-Synced Overview POS (Fixed Spa Shift Auto-Status Logic for Pending -> Ongoing)
+// Phase 41: Omni-Synced Overview POS (Strict Pending Default & Precise Auto-Ongoing Trigger)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
@@ -169,8 +169,10 @@ export default function OverviewDashboard() {
         const timeStr = String(r.appointment_time || r.time || '—').trim();
         const rawDateStr = String(r.appointment_date || r.date || '').trim();
 
-        // ─── UPGRADED SMART AUTO-ONGOING LOGIC (Spa Shift Time Aware) ───
+        // ─── STRICT AUTO-ONGOING LOGIC (Defaults to Pending) ───
         let currentStatus = r.status || 'Pending';
+
+        // Only evaluate if the booking is currently 'Pending' and has a valid time
         if (currentStatus === 'Pending' && timeStr !== '—') {
           const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
           if (match) {
@@ -184,12 +186,13 @@ export default function OverviewDashboard() {
             const apptTotalMins = (h * 60) + m;
 
             const now = new Date();
+            // Verify if the booking date perfectly matches today's date
             if (formatDateToYYYYMMDD(parseImportDate(rawDateStr)) === getTodayStr()) {
               let currentH = now.getHours();
               if (currentH < 11) currentH += 24;
               const currentTotalMins = (currentH * 60) + now.getMinutes();
 
-              // Only auto-flip to 'Ongoing' if the actual real-world time has reached the scheduled appt time
+              // Auto-flip to 'Ongoing' exclusively if the exact scheduled time has been reached/passed
               if (currentTotalMins >= apptTotalMins) {
                 currentStatus = 'Ongoing';
               }

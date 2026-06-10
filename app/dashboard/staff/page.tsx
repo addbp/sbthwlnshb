@@ -1,4 +1,9 @@
 'use client'
+
+// app/dashboard/staff/page.tsx
+// Phase 48: Staff Management (Strict PIN 061026 + Weekly Monitor Table + Live Sync)
+// FULLY EXPANDED FORMATTING PRESERVED
+
 export const dynamic = 'force-dynamic'
 
 import React, { useState, useEffect, useCallback, useRef } from 'react'
@@ -13,7 +18,7 @@ interface StaffMember {
     role: string;
     status: string;
     off_days: string[];
-    branch: string; // NEW: Branch assignment
+    branch: string;
     dynamicStatus?: string;
 }
 
@@ -34,7 +39,10 @@ const TIME_SLOTS = [
     '11:00 PM', '11:30 PM', '12:00 AM'
 ];
 
-const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// HARDCODED MASTER PIN AS REQUESTED
+const MASTER_PIN = '061026';
 
 // Checks if an appointment is happening RIGHT NOW (65 min window)
 function isTimeInSession(dateStr: string, timeStr: string): boolean {
@@ -72,12 +80,10 @@ export default function StaffPage() {
 
     // ─── FILTERS ───
     const [filter, setFilter] = useState<string>('All')
-    const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos') // NEW: Branch Toggle View
-    const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table')
+    const [viewBranch, setViewBranch] = useState<string>('Sabbath Malolos')
+    const [viewMode, setViewMode] = useState<'table' | 'calendar' | 'monitor'>('table') // Added Monitor View
 
     // ─── SECURITY STATE ───
-    const [dbPin, setDbPin] = useState('123456')
-    const [isUnlocked, setIsUnlocked] = useState(false)
     const [showPinModal, setShowPinModal] = useState(false)
     const [pinInput, setPinInput] = useState('')
     const [pinError, setPinError] = useState(false)
@@ -94,14 +100,10 @@ export default function StaffPage() {
     const loadData = useCallback(async () => {
         setLoading(true)
         try {
-            // 1. Fetch PIN
-            const { data: pinData } = await supabase.from('admin_settings').select('pin').single()
-            if (pinData && pinData.pin) setDbPin(pinData.pin)
-
-            // 2. Fetch Staff
+            // 1. Fetch Staff
             const { data: staffData } = await supabase.from('staff').select('*').order('name', { ascending: true })
 
-            // 3. Fetch Live Bookings
+            // 2. Fetch Live Bookings
             const today = new Date();
             const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -128,7 +130,7 @@ export default function StaffPage() {
                     name: t.name || t.full_name || 'Unknown',
                     role: t.role || t.specialty || 'Massage Therapist',
                     status: t.status || 'Available',
-                    branch: t.branch || 'Sabbath Malolos', // Ensure backward compatibility
+                    branch: t.branch || 'Sabbath Malolos',
                     off_days: t.off_days ? t.off_days.split(',').filter(Boolean) : []
                 }))
                 setStaffList(formatted)
@@ -144,14 +146,10 @@ export default function StaffPage() {
 
     // ─── DYNAMIC STATUS CALCULATOR ───
     const getDynamicStatus = (s: StaffMember) => {
-        // 1. Hard Check: Is today their scheduled day off?
         const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
         if (s.off_days.includes(todayName)) return 'Off Duty';
-
-        // 2. Manual Check
         if (s.status === 'Off Duty') return 'Off Duty';
 
-        // 3. Busy Check
         const isBusy = liveBookings.some(b =>
             b.therapist_name?.toLowerCase() === s.name.toLowerCase() &&
             (b.status === 'Ongoing' || isTimeInSession(b.appointment_date, b.appointment_time))
@@ -163,20 +161,18 @@ export default function StaffPage() {
     const dynamicStaff = staffList.map(s => ({ ...s, dynamicStatus: getDynamicStatus(s) }))
 
     // ─── SECURITY HANDLER ───
+    // This will force the PIN modal to pop up EVERY SINGLE TIME an action is clicked
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     const executeProtectedAction = (action: Function) => {
-        if (isUnlocked) {
-            action()
-        } else {
-            setPendingAction(() => action)
-            setShowPinModal(true)
-        }
+        setPendingAction(() => action)
+        setPinError(false)
+        setPinInput('')
+        setShowPinModal(true)
     }
 
     const handlePinSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        if (pinInput === dbPin) {
-            setIsUnlocked(true)
+        if (pinInput === MASTER_PIN) {
             setShowPinModal(false)
             setPinInput('')
             if (pendingAction) {
@@ -231,7 +227,7 @@ export default function StaffPage() {
                 name: formData.name.trim(),
                 role: formData.role,
                 status: formData.status,
-                branch: formData.branch, // SAVES THE ASSIGNED BRANCH
+                branch: formData.branch,
                 off_days: formData.off_days.join(',')
             }
 
@@ -243,13 +239,38 @@ export default function StaffPage() {
             setShowStaffModal(false)
             loadData()
         } catch (err) {
-            alert("Database Error: Make sure your 'staff' table is configured properly with the branch column.")
+            alert("Database Error: Could not save staff member.")
         } finally {
             setIsSubmitting(false)
         }
     }
 
-    // ─── KPIs & FILTERS (NOW BRANCH-SPECIFIC) ───
+    // ─── WEEKLY MONITOR QUICK TOGGLES ───
+    const handleQuickToggleDayOff = async (staff: StaffMember, day: string) => {
+        const newOffDays = staff.off_days.includes(day)
+            ? staff.off_days.filter(d => d !== day)
+            : [...staff.off_days, day];
+
+        try {
+            await supabase.from('staff').update({ off_days: newOffDays.join(',') }).eq('id', staff.id);
+            loadData();
+        } catch (err) {
+            alert("Failed to update weekly schedule.");
+        }
+    }
+
+    const handleQuickToggleStatus = async (staff: StaffMember) => {
+        const newStatus = staff.status === 'Available' ? 'Off Duty' : 'Available';
+        try {
+            await supabase.from('staff').update({ status: newStatus }).eq('id', staff.id);
+            loadData();
+        } catch (err) {
+            alert("Failed to update base status.");
+        }
+    }
+
+
+    // ─── KPIs & FILTERS ───
     const branchFilteredStaff = dynamicStaff.filter(s => s.branch === viewBranch)
 
     const counts = {
@@ -271,15 +292,15 @@ export default function StaffPage() {
                 .cal-scroll::-webkit-scrollbar-thumb:hover { background: rgba(197,143,59,0.6); }
             `}</style>
 
-            {/* ── PIN SECURITY MODAL ── */}
+            {/* ── STRICT EVERY-TIME PIN SECURITY MODAL ── */}
             {showPinModal && (
                 <div className="modal-overlay">
                     <div style={{ backgroundColor: '#F9F4EB', padding: 32, borderRadius: 16, width: '100%', maxWidth: 400, textAlign: 'center', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: "'Inter',system-ui,sans-serif" }}>
                         <div style={{ width: 50, height: 50, borderRadius: '50%', backgroundColor: 'rgba(197,143,59,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                         </div>
-                        <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 28, margin: '0 0 8px', color: '#1A1A1A' }}>Security Lock</h3>
-                        <p style={{ fontSize: 13, color: '#666', margin: '0 0 24px' }}>Please enter your PIN to modify records.</p>
+                        <h3 style={{ fontFamily: "'Cormorant Garamond',Georgia,serif", fontSize: 28, margin: '0 0 8px', color: '#1A1A1A' }}>Action Locked</h3>
+                        <p style={{ fontSize: 13, color: '#666', margin: '0 0 24px' }}>Please enter PIN to verify permissions.</p>
 
                         <form onSubmit={handlePinSubmit}>
                             <input
@@ -289,13 +310,13 @@ export default function StaffPage() {
                                 onChange={e => setPinInput(e.target.value)}
                                 placeholder="ENTER PIN"
                                 autoFocus
-                                style={{ width: '100%', height: 50, textAlign: 'center', fontSize: 20, letterSpacing: '0.3em', border: `1px solid ${pinError ? '#C83232' : 'rgba(26,26,26,0.2)'}`, borderRadius: 8, outline: 'none', marginBottom: 12, backgroundColor: '#fff' }}
+                                style={{ width: '100%', height: 50, textAlign: 'center', fontSize: 20, letterSpacing: '0.3em', border: `1px solid ${pinError ? '#C83232' : 'rgba(26,26,26,0.2)'}`, borderRadius: 8, outline: 'none', marginBottom: 12, backgroundColor: '#fff', color: '#1A1A1A', fontWeight: 800 }}
                             />
                             {pinError && <p style={{ color: '#C83232', fontSize: 11, margin: '0 0 12px', fontWeight: 600 }}>INCORRECT PIN</p>}
 
                             <div style={{ display: 'flex', gap: 12 }}>
-                                <button type="button" onClick={() => setShowPinModal(false)} style={{ flex: 1, height: 44, backgroundColor: 'transparent', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 8, color: '#1A1A1A', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                                <button type="submit" disabled={!pinInput} style={{ flex: 1, height: 44, backgroundColor: '#1A1A1A', color: '#C58F3B', border: 'none', borderRadius: 8, fontWeight: 600, cursor: pinInput ? 'pointer' : 'not-allowed' }}>Unlock</button>
+                                <button type="button" onClick={() => { setShowPinModal(false); setPendingAction(null); }} style={{ flex: 1, height: 44, backgroundColor: 'transparent', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 8, color: '#1A1A1A', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                                <button type="submit" disabled={!pinInput} style={{ flex: 1, height: 44, backgroundColor: '#1A1A1A', color: '#C58F3B', border: 'none', borderRadius: 8, fontWeight: 600, cursor: pinInput ? 'pointer' : 'not-allowed' }}>Authorize</button>
                             </div>
                         </form>
                     </div>
@@ -315,14 +336,14 @@ export default function StaffPage() {
                             <div style={{ marginBottom: 16 }}>
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Full Name</label>
                                 <input type="text" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Maria Santos" autoFocus
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', boxSizing: 'border-box' }} />
+                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', boxSizing: 'border-box', color: '#1A1A1A' }} />
                             </div>
 
                             {/* BRANCH SELECTOR */}
                             <div style={{ marginBottom: 16 }}>
                                 <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Branch Location</label>
                                 <select value={formData.branch} onChange={e => setFormData({ ...formData, branch: e.target.value })}
-                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
+                                    style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box', color: '#1A1A1A' }}>
                                     <option value="Sabbath Malolos">Sabbath Malolos</option>
                                     <option value="Sabbath Pulilan">Sabbath Pulilan</option>
                                 </select>
@@ -332,7 +353,7 @@ export default function StaffPage() {
                                 <div>
                                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Role</label>
                                     <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
-                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
+                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box', color: '#1A1A1A' }}>
                                         <option value="Massage Therapist">Massage Therapist</option>
                                         <option value="Nail Technician">Nail Technician</option>
                                         <option value="Maintenance">Maintenance</option>
@@ -343,7 +364,7 @@ export default function StaffPage() {
                                 <div>
                                     <label style={{ display: 'block', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A6E65', marginBottom: 8 }}>Base Status</label>
                                     <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })}
-                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box' }}>
+                                        style={{ width: '100%', height: 44, padding: '0 14px', borderRadius: 8, border: '1px solid rgba(26,26,26,0.2)', fontSize: 15, outline: 'none', backgroundColor: '#fff', cursor: 'pointer', boxSizing: 'border-box', color: '#1A1A1A' }}>
                                         <option value="Available">Available</option>
                                         <option value="Off Duty">Off Duty</option>
                                     </select>
@@ -447,7 +468,7 @@ export default function StaffPage() {
                     </div>
                 </div>
 
-                {/* ─── VIEW TOGGLE (TABLE vs CALENDAR) ─── */}
+                {/* ─── VIEW TOGGLES ─── */}
                 <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid rgba(26,26,26,0.1)', paddingBottom: 12 }}>
                     <button
                         onClick={() => setViewMode('table')}
@@ -461,9 +482,15 @@ export default function StaffPage() {
                     >
                         Daily Schedule
                     </button>
+                    <button
+                        onClick={() => setViewMode('monitor')}
+                        style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, textTransform: 'uppercase', border: 'none', cursor: 'pointer', backgroundColor: viewMode === 'monitor' ? '#1A1A1A' : 'transparent', color: viewMode === 'monitor' ? '#C58F3B' : '#666', transition: 'all 200ms ease' }}
+                    >
+                        Weekly Monitor (Quick Update)
+                    </button>
                 </div>
 
-                {/* Staff List / Empty State / Calendar */}
+                {/* Staff List / Empty State / Calendar / Monitor */}
                 {loading ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic', backgroundColor: '#fff', borderRadius: 16, border: '1px solid rgba(26,26,26,0.09)' }}>Aggregating staff data and live bookings...</div>
                 ) : branchFilteredStaff.length === 0 ? (
@@ -479,7 +506,7 @@ export default function StaffPage() {
                     </div>
                 ) : viewMode === 'calendar' ? (
 
-                    /* ─── NEW CALENDAR MATRIX VIEW ─── */
+                    /* ─── EXISTING CALENDAR MATRIX VIEW ─── */
                     <div className="cal-scroll" style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
                         <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
                             <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>{viewBranch} Today's Schedule</h3>
@@ -540,6 +567,69 @@ export default function StaffPage() {
                         </table>
                     </div>
 
+                ) : viewMode === 'monitor' ? (
+
+                    /* ─── NEW WEEKLY MONITOR TABLE (QUICK TOGGLES) ─── */
+                    <div style={{ backgroundColor: '#fff', border: '1px solid rgba(26,26,26,0.09)', borderRadius: 16, overflowX: 'auto', boxShadow: '0 3px 12px rgba(0,0,0,0.05)' }}>
+                        <div style={{ padding: '16px 20px', borderBottom: '1px solid rgba(197,143,59,0.2)' }}>
+                            <h3 style={{ margin: 0, fontSize: 16, color: '#1A1A1A', fontFamily: "'Cormorant Garamond',Georgia,serif" }}>Weekly Availability Monitor</h3>
+                            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#666' }}>Click any cell to securely toggle a staff member's availability or days off.</p>
+                        </div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 800 }}>
+                            <thead>
+                                <tr style={{ backgroundColor: '#F8F4EE', borderBottom: '1px solid rgba(26,26,26,0.09)' }}>
+                                    <th style={{ padding: '14px 20px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B' }}>Therapist</th>
+                                    <th style={{ padding: '14px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', textAlign: 'center', borderRight: '1px dashed rgba(26,26,26,0.1)' }}>Base Status</th>
+                                    {DAYS_OF_WEEK.map(day => (
+                                        <th key={day} style={{ padding: '14px 10px', fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C58F3B', textAlign: 'center' }}>
+                                            {day.slice(0, 3)}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {displayedStaff.map((s, i) => (
+                                    <tr key={s.id || i} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+                                        <td style={{ padding: '14px 20px', fontWeight: 600, color: '#1A1A1A', fontSize: 13 }}>{s.name}</td>
+
+                                        {/* BASE STATUS QUICK TOGGLE */}
+                                        <td style={{ padding: '14px 10px', textAlign: 'center', borderRight: '1px dashed rgba(26,26,26,0.1)' }}>
+                                            <button
+                                                onClick={() => executeProtectedAction(() => handleQuickToggleStatus(s))}
+                                                style={{
+                                                    padding: '6px 12px', borderRadius: 99, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', border: '1px solid transparent', transition: 'all 0.2s',
+                                                    backgroundColor: s.status === 'Available' ? 'rgba(61,122,74,0.1)' : 'rgba(200,50,50,0.1)',
+                                                    color: s.status === 'Available' ? '#3D7A4A' : '#C83232',
+                                                    borderColor: s.status === 'Available' ? 'rgba(61,122,74,0.2)' : 'rgba(200,50,50,0.2)'
+                                                }}>
+                                                {s.status}
+                                            </button>
+                                        </td>
+
+                                        {/* DAYS OFF QUICK TOGGLES */}
+                                        {DAYS_OF_WEEK.map(day => {
+                                            const isOff = s.off_days.includes(day);
+                                            return (
+                                                <td key={day} style={{ padding: '14px 10px', textAlign: 'center' }}>
+                                                    <button
+                                                        onClick={() => executeProtectedAction(() => handleQuickToggleDayOff(s, day))}
+                                                        style={{
+                                                            width: '100%', padding: '8px 0', borderRadius: 6, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', cursor: 'pointer', border: '1px solid', transition: 'all 0.2s',
+                                                            backgroundColor: isOff ? '#1A1A1A' : '#f9f9f9',
+                                                            color: isOff ? '#C58F3B' : '#888',
+                                                            borderColor: isOff ? '#1A1A1A' : 'rgba(26,26,26,0.1)'
+                                                        }}>
+                                                        {isOff ? 'OFF' : 'WORK'}
+                                                    </button>
+                                                </td>
+                                            )
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
                 ) : (
 
                     /* ─── EXISTING DATA TABLE VIEW ─── */
@@ -577,7 +667,7 @@ export default function StaffPage() {
                                             <td style={{ padding: '16px 20px', whiteSpace: 'nowrap' }}>
                                                 <button onClick={() => executeProtectedAction(() => handleOpenEdit(s))} style={{ background: 'none', border: 'none', color: '#1A1A1A', fontSize: 12, fontWeight: 700, cursor: 'pointer', marginRight: 16, textTransform: 'uppercase', textDecoration: 'underline', textDecorationColor: 'rgba(197,143,59,0.5)', textUnderlineOffset: 4 }}>Edit</button>
                                                 <button onClick={() => executeProtectedAction(() => handleDelete(s.id, s.name))} style={{ background: 'none', border: 'none', color: '#C83232', fontSize: 12, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>Delete</button>
-                                                "</td>
+                                            </td>
                                         </tr>
                                     ))}
                                     {displayedStaff.length === 0 && (
