@@ -104,13 +104,6 @@ export default function WaiverPage() {
   const [selectedConditions, setSelectedConditions] = useState<Set<string>>(new Set())
   const [agreed, setAgreed] = useState(false)
 
-  // --- BACKED OFF DIGITAL SIGNATURE STATES (PRESERVED INTACT) ---
-  /* const [signature, setSignature] = useState('') 
-  const [showSignatureModal, setShowSignatureModal] = useState(false)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [isDrawing, setIsDrawing] = useState(false)
-  */
-
   // --- NEW PHYSICAL GOOGLE DRIVE PHOTO STATES ---
   const [photoAttachment, setPhotoAttachment] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string>('')
@@ -136,32 +129,6 @@ export default function WaiverPage() {
   }, [firstName, middleInitial, lastName])
 
   const normalizedInput = currentFullName.toLowerCase()
-
-  // --- BACKED OFF CANVAS SIGNING HOOK (PRESERVED INTACT) ---
-  /*
-  useEffect(() => {
-    if (showSignatureModal && canvasRef.current) {
-      const canvas = canvasRef.current
-      const container = canvas.parentElement
-      if (container) {
-        const rect = container.getBoundingClientRect()
-        canvas.width = rect.width
-        canvas.height = rect.height
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.strokeStyle = BLACK
-          ctx.lineWidth = 3
-          ctx.lineCap = 'round'
-          ctx.lineJoin = 'round'
-        }
-      }
-      document.body.style.overflow = 'hidden'
-    } else {
-      document.body.style.overflow = 'auto'
-    }
-    return () => { document.body.style.overflow = 'auto' }
-  }, [showSignatureModal])
-  */
 
   useEffect(() => {
     async function fetchAllRecords() {
@@ -235,7 +202,9 @@ export default function WaiverPage() {
     return normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : []
   }, [allRecords, normalizedInput])
 
-  const isReturningClient = matchingHistory.length > 0
+  // A returning client strictly has more than 1 booking record. 
+  // If they have exactly 1 record, it is their current booking, meaning they are a New Client.
+  const isReturningClient = matchingHistory.length > 1
 
   const dropdownOptions = useMemo(() => {
     const searchString = (firstName.trim() || lastName.trim()).toLowerCase();
@@ -286,49 +255,6 @@ export default function WaiverPage() {
     })
   }
 
-  // --- BACKED OFF CANVAS DRAWING CORE INTERFACES (PRESERVED INTACT) ---
-  /*
-  const getCoords = (e: any, rect: DOMRect) => {
-    const isTouch = e.touches && e.touches.length > 0
-    const clientX = isTouch ? e.touches[0].clientX : e.clientX
-    const clientY = isTouch ? e.touches[0].clientY : e.clientY
-    return { x: clientX - rect.left, y: clientY - rect.top }
-  }
-
-  const startDrawing = (e: any) => {
-    const canvas = canvasRef.current; if (!canvas) return
-    const ctx = canvas.getContext('2d'); if (!ctx) return
-    const { x, y } = getCoords(e, canvas.getBoundingClientRect())
-    ctx.beginPath(); ctx.moveTo(x, y); setIsDrawing(true)
-  }
-
-  const draw = (e: any) => {
-    if (!isDrawing || !canvasRef.current) return
-    const ctx = canvasRef.current.getContext('2d'); if (!ctx) return
-    const { x, y } = getCoords(e, canvasRef.current.getBoundingClientRect())
-    ctx.lineTo(x, y); ctx.stroke()
-  }
-
-  const stopDrawing = () => { setIsDrawing(false) }
-
-  const handleClearCanvas = () => {
-    const canvas = canvasRef.current
-    if (canvas) {
-      const ctx = canvas.getContext('2d')
-      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height)
-    }
-  }
-
-  const handleSaveSignature = () => {
-    if (canvasRef.current) {
-      setSignature(canvasRef.current.toDataURL('image/png'))
-    }
-    setShowSignatureModal(false)
-  }
-
-  const handleClearMainSignature = () => { setSignature('') }
-  */
-
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
@@ -341,9 +267,6 @@ export default function WaiverPage() {
     e.preventDefault()
     if (!firstName.trim() || !lastName.trim()) return alert("Please fill out your first and last name completely.")
     if (!agreed) return alert("Please acknowledge the consent terms.")
-
-    // REMOVED STRICT REQUIREMENT FOR PHOTO:
-    // if (!photoAttachment) return alert("Please attach a photo of the signed physical waiver.")
 
     setLoading(true)
     try {
@@ -422,37 +345,6 @@ export default function WaiverPage() {
           </div>
         </div>
       )}
-
-      {/* ── BACKED OFF FULL SCREEN SIGNATURE MODAL CANVAS (PRESERVED INTACT) ── */}
-      {/* {showSignatureModal && (
-        <div className="signature-modal">
-          <div style={{ padding: '20px', textAlign: 'center', backgroundColor: WHITE, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-            <h3 style={{ fontFamily: DSP, fontSize: 24, margin: 0, color: BLACK }}>Please Draw Your Signature</h3>
-            <p style={{ margin: '5px 0 0', fontSize: 13, color: '#666' }}>Please use your finger to sign inside the space below.</p>
-          </div>
-
-          <div style={{ flex: 1, position: 'relative', margin: '20px', backgroundColor: WHITE, borderRadius: 16, border: `2px dashed \${GOLD}`, overflow: 'hidden' }}>
-            <canvas
-              ref={canvasRef}
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-              style={{ width: '100%', height: '100%', cursor: 'crosshair', touchAction: 'none' }}
-            />
-          </div>
-
-          <div style={{ padding: '20px', display: 'flex', gap: 12, backgroundColor: WHITE, borderTop: '1px solid rgba(0,0,0,0.1)' }}>
-            <button type="button" onClick={() => setShowSignatureModal(false)} style={{ flex: 1, height: 50, backgroundColor: 'transparent', border: '1px solid #ccc', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
-            <button type="button" onClick={handleClearCanvas} style={{ flex: 1, height: 50, backgroundColor: '#f5f5f5', border: 'none', borderRadius: 10, color: BLACK, fontWeight: 700, cursor: 'pointer' }}>Undo</button>
-            <button type="button" onClick={handleSaveSignature} style={{ flex: 1, height: 50, backgroundColor: BLACK, border: 'none', borderRadius: 10, color: GOLD, fontWeight: 700, cursor: 'pointer' }}>Save</button>
-          </div>
-        </div>
-      )}
-      */}
 
       <div style={{ backgroundColor: BG, minHeight: '100dvh', padding: '40px 20px', fontFamily: BODY }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -546,9 +438,15 @@ export default function WaiverPage() {
                 <div style={{ marginTop: 14, padding: '16px', backgroundColor: isReturningClient ? 'rgba(197,143,59,0.06)' : 'rgba(46, 125, 50, 0.04)', borderRadius: 12, border: `1px solid ${isReturningClient ? 'rgba(197,143,59,0.2)' : 'rgba(46, 125, 50, 0.15)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
-                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>{isReturningClient ? `Welcome back! Found ${matchingHistory.length} previous visits.` : 'No previous records found.'}</p>
+                    <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>
+                      {isReturningClient
+                        ? `Welcome back! Found ${matchingHistory.length} previous visits.`
+                        : matchingHistory.length === 1
+                          ? 'First appointment verified. Welcome to Sabbath Spa!'
+                          : 'No previous records found.'}
+                    </p>
                   </div>
-                  {isReturningClient && (
+                  {matchingHistory.length > 0 && (
                     <button type="button" onClick={() => setShowHistoryModal(true)} style={{ backgroundColor: GOLD, color: WHITE, border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>HISTORY</button>
                   )}
                 </div>
