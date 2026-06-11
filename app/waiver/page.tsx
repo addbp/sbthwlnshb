@@ -135,36 +135,35 @@ export default function WaiverPage() {
       try {
         const tables = ['bookings', 'bookings_import', 'client', 'clients'];
 
+        // ─── UNLIMITED 100K+ FETCH ENGINE ───
         const fetchPaginated = async (tableName: string) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let allTableData: any[] = [];
           let start = 0;
           const step = 1000;
-          let hasMore = true;
 
-          while (hasMore) {
+          for (; ;) {
             const { data, error } = await supabase
               .from(tableName)
               .select('*')
               .range(start, start + step - 1);
 
-            if (error || !data) {
-              hasMore = false;
-              break;
+            if (error || !data || data.length === 0) {
+              break; // End of table
             }
 
             allTableData.push(...data);
 
             if (data.length < step) {
-              hasMore = false;
-            } else {
-              start += step;
+              break; // Reached the end
             }
+            start += step; // Move to next 1000 chunk
           }
           return allTableData;
         };
 
         const results = await Promise.allSettled(tables.map(t => fetchPaginated(t)));
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalPool: any[] = [];
 
@@ -177,8 +176,10 @@ export default function WaiverPage() {
               const rawService = item.service_name || item.service || item.treatment || "Spa Service";
 
               if (rawName) {
+                // EXTREME MEMORY OPTIMIZATION FOR 100K+ SCALABILITY:
+                // We DO NOT spread `...item` here to avoid crashing mobile browsers with massive arrays.
+                // We only store the exact 5 variables needed for the tracker and UI.
                 finalPool.push({
-                  ...item,
                   display_name: rawName,
                   display_date: rawDate ? new Date(rawDate).toLocaleDateString() : "Unknown Date",
                   display_service: rawService,
