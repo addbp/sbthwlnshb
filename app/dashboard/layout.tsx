@@ -2,7 +2,7 @@
 
 // app/dashboard/layout.tsx
 // Dashboard Shell — Black sidebar (#1A1A1A) · Beige content area (#F9F4EB)
-// Upgraded: Attached Handle Toggle Button + Replaced Settings with Audit Logs + Added Memberships Nav
+// Upgraded: Attached Handle Toggle Button + Replaced Settings with Audit Logs + Added Memberships Nav + Live Booking Notifications
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -119,13 +119,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isSidebarOpen, setIsSidebarOpen] = useState(true) // Desktop toggle
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
+  // ─── LIVE NOTIFICATION STATE ───
+  const [newBookingCount, setNewBookingCount] = useState(0)
+
+  // 1. Fetch User Data
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUserEmail(data.user?.email ?? null)
     })
-  }, [])
+  }, [supabase])
 
+  // 2. Auto-close mobile menu on navigation
   useEffect(() => { setMobileOpen(false) }, [pathname])
+
+  // 3. ─── MESSENGER-STYLE REALTIME LISTENER ───
+  useEffect(() => {
+    // Open a live WebSocket channel to the 'bookings' table
+    const bookingChannel = supabase
+      .channel('realtime-bookings')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'bookings' },
+        (payload) => {
+          console.log('New live booking received!', payload);
+          // Only increment if they are NOT currently on the bookings page
+          if (pathname !== '/dashboard/bookings') {
+            setNewBookingCount((prev) => prev + 1);
+          }
+        }
+      )
+      .subscribe()
+
+    // Cleanup the connection when unmounting
+    return () => {
+      supabase.removeChannel(bookingChannel)
+    }
+  }, [supabase, pathname])
+
+  // 4. ─── AUTO-CLEAR NOTIFICATION WHEN READING ───
+  useEffect(() => {
+    // If the receptionist clicks into the Bookings tab, clear the badge
+    if (pathname === '/dashboard/bookings') {
+      setNewBookingCount(0);
+    }
+  }, [pathname])
 
   async function signOut() {
     await supabase.auth.signOut()
@@ -171,6 +208,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         /* Smooth Layout Transitions */
         .sidebar { transition: transform 300ms cubic-bezier(0.22,1,0.36,1); }
         .dashboard-main { transition: margin-left 300ms cubic-bezier(0.22,1,0.36,1); }
+
+        /* Notification Bounce Animation */
+        @keyframes pop {
+          0% { transform: scale(0.8); opacity: 0; }
+          50% { transform: scale(1.1); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .notif-badge {
+          animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
 
         /* Desktop Positioning */
         @media (min-width:768px) {
@@ -224,6 +271,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Link key={item.href} href={item.href} className={`sb-item${isActive(item.href) ? ' active' : ''}`}>
                   <span style={{ flexShrink: 0 }}>{item.icon}</span>
                   {item.label}
+
+                  {/* ── LIVE MESSENGER NOTIFICATION BADGE ── */}
+                  {item.label === 'Bookings' && newBookingCount > 0 && (
+                    <span
+                      className="notif-badge"
+                      style={{
+                        marginLeft: 'auto',
+                        backgroundColor: '#E53E3E',
+                        color: '#FFF',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        minWidth: '22px',
+                        height: '22px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '99px',
+                        boxShadow: '0 2px 8px rgba(229,62,62,0.4)',
+                        padding: '0 6px'
+                      }}
+                    >
+                      {newBookingCount}
+                    </span>
+                  )}
                 </Link>
               ))}
             </nav>
