@@ -2,7 +2,7 @@
 
 // app/dashboard/layout.tsx
 // Dashboard Shell — Black sidebar (#1A1A1A) · Beige content area (#F9F4EB)
-// Upgraded: Attached Handle Toggle Button + Replaced Settings with Audit Logs
+// Upgraded: Attached Handle Toggle Button + Replaced Settings with Audit Logs + Added Memberships Nav
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -45,6 +45,15 @@ const NAV_MAIN = [
         <circle cx="8" cy="6" r="3.5" stroke="#C58F3B" strokeWidth="1.5" />
         <path d="M2 18v-1a6 6 0 0 1 12 0v1" stroke="#C58F3B" strokeWidth="1.5" strokeLinecap="round" />
         <path d="M15 8a3 3 0 0 1 0 6M17 18v-1a6 6 0 0 0-2-4.47" stroke="#C58F3B" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    href: '/dashboard/memberships',
+    label: 'Memberships',
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C58F3B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"></path>
       </svg>
     ),
   },
