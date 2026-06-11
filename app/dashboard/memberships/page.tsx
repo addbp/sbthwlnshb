@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/memberships/page.tsx
-// Membership Directory & Tracker (Strict PIN 061026)
+// Membership Directory & Tracker (Strict PIN 061026, Auto-Deduct Balances, Client History Sync)
 
 export const dynamic = 'force-dynamic'
 
@@ -40,6 +40,8 @@ interface Membership {
 export default function MembershipsPage() {
     const supabase = useRef(createClient()).current
     const [memberships, setMemberships] = useState<Membership[]>([])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [allBookings, setAllBookings] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
 
     // ─── SECURITY STATE ───
@@ -49,10 +51,12 @@ export default function MembershipsPage() {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     const [pendingAction, setPendingAction] = useState<Function | null>(null)
 
-    // ─── CRUD MODAL STATE ───
+    // ─── CRUD & INTERACTIVE MODAL STATE ───
     const [showModal, setShowModal] = useState(false)
     const [editingId, setEditingId] = useState<string | null>(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
+
+    const [selectedClient, setSelectedClient] = useState<Membership | null>(null)
 
     const [formData, setFormData] = useState({
         client_name: '',
@@ -66,17 +70,58 @@ export default function MembershipsPage() {
         package_inclusions: ''
     })
 
-    // ─── DATA FETCHING ───
-    const fetchMemberships = useCallback(async () => {
+    // ─── DATA FETCHING (UNLIMITED ENGINE) ───
+    const fetchMembershipsAndBookings = useCallback(async () => {
         setLoading(true)
         try {
-            const { data, error } = await supabase
+            // 1. Fetch Memberships
+            const { data: memData, error: memError } = await supabase
                 .from('memberships')
                 .select('*')
                 .order('created_at', { ascending: false })
 
-            if (error) throw error
-            setMemberships(data || [])
+            if (memError) throw memError;
+            setMemberships(memData || [])
+
+            // 2. Fetch All Booking Records for Accurate Deductions & History
+            const fetchUnlimited = async (tableName: string) => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const allData: any[] = [];
+                let start = 0;
+                const step = 1000;
+                for (; ;) {
+                    const { data, error } = await supabase.from(tableName).select('*').range(start, start + step - 1);
+                    if (error || !data || data.length === 0) break;
+                    allData.push(...data);
+                    if (data.length < step) break;
+                    start += step;
+                }
+                return allData;
+            };
+
+            const liveBookings = await fetchUnlimited('bookings');
+            const impBookings = await fetchUnlimited('bookings_import');
+
+            const combined = [
+                ...liveBookings.map(b => ({
+                    client_name: b.client_name || '',
+                    service_name: b.service_name || b.service || '',
+                    date: b.appointment_date || b.created_at,
+                    created_at: b.created_at,
+                    therapist: b.therapist_name || b.therapist || 'Unassigned'
+                })),
+                ...impBookings.map(b => ({
+                    client_name: b.client_name || '',
+                    service_name: b.service || '',
+                    date: b.date || b.created_at,
+                    created_at: b.created_at,
+                    therapist: b.therapist || 'Unassigned'
+                }))
+            ];
+
+            combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+            setAllBookings(combined);
+
         } catch (err) {
             console.error("Fetch error:", err)
         } finally {
@@ -84,7 +129,7 @@ export default function MembershipsPage() {
         }
     }, [supabase])
 
-    useEffect(() => { fetchMemberships() }, [fetchMemberships])
+    useEffect(() => { fetchMembershipsAndBookings() }, [fetchMembershipsAndBookings])
 
     // ─── SECURITY HANDLER ───
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -141,7 +186,7 @@ export default function MembershipsPage() {
         if (!window.confirm(`Are you sure you want to permanently delete the membership for ${name}?`)) return;
         try {
             await supabase.from('memberships').delete().eq('id', id)
-            fetchMemberships()
+            fetchMembershipsAndBookings()
         } catch (err) {
             alert("Failed to delete membership.")
         }
@@ -162,7 +207,7 @@ export default function MembershipsPage() {
             }
 
             setShowModal(false)
-            fetchMemberships()
+            fetchMembershipsAndBookings()
         } catch (err: any) {
             alert("Database Error: " + err.message)
         } finally {
@@ -170,7 +215,7 @@ export default function MembershipsPage() {
         }
     }
 
-    // ─── HELPERS ───
+    // ─── HELPERS & SMART CALCULATORS ───
     const formatDate = (dateStr: string) => {
         if (!dateStr) return '—'
         return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -182,7 +227,6 @@ export default function MembershipsPage() {
         return { bg: 'rgba(26,26,26,0.05)', color: '#666' }
     }
 
-    // Auto-set discount based on tier selection
     const handleTierChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const tier = e.target.value;
         let disc = 0;
@@ -192,6 +236,18 @@ export default function MembershipsPage() {
         setFormData({ ...formData, membership_tier: tier, discount_percentage: disc })
     }
 
+    const isServiceIncluded = (serviceName: string, packageInclusions: string) => {
+        if (!serviceName || !packageInclusions) return false;
+        const s = serviceName.toLowerCase();
+        const p = packageInclusions.toLowerCase();
+
+        if (p.includes(s) || s.includes(p)) return true;
+        if (p.includes('massage') && (s.includes('massage') || s.includes('swedish') || s.includes('shiatsu') || s.includes('ventosa') || s.includes('combination') || s.includes('hilot'))) return true;
+        if (p.includes('nail') && (s.includes('nail') || s.includes('manicure') || s.includes('pedicure') || s.includes('foot'))) return true;
+
+        return false;
+    }
+
     return (
         <>
             <style>{`
@@ -199,7 +255,53 @@ export default function MembershipsPage() {
         .m-input { width: 100%; height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid rgba(26,26,26,0.2); font-size: 14px; outline: none; box-sizing: border-box; font-family: ${BODY}; color: ${BLACK}; }
         .m-input:focus { border-color: ${GOLD}; box-shadow: 0 0 0 3px rgba(197,143,59,0.15); }
         .m-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #7A6E65; margin-bottom: 8px; }
+        .client-name-link:hover { color: ${GOLD}; cursor: pointer; text-decoration: underline; text-underline-offset: 4px; }
       `}</style>
+
+            {/* ── CLIENT HISTORY MODAL ── */}
+            {selectedClient && (
+                <div className="modal-overlay" onClick={() => setSelectedClient(null)}>
+                    <div style={{ width: '100%', maxWidth: 700, backgroundColor: '#F9F4EB', borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,0.3)', fontFamily: BODY, display: 'flex', flexDirection: 'column', maxHeight: '85vh' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: '24px', borderBottom: '1px solid rgba(26,26,26,0.1)', backgroundColor: WHITE, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                                <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: GOLD, margin: '0 0 4px' }}>Client Profile Database</p>
+                                <h3 style={{ fontFamily: DSP, fontSize: 28, margin: 0, color: BLACK }}>{selectedClient.client_name}</h3>
+                            </div>
+                            <button onClick={() => setSelectedClient(null)} style={{ background: 'none', border: 'none', fontSize: 28, cursor: 'pointer', color: '#666' }}>&times;</button>
+                        </div>
+                        <div style={{ padding: '24px', overflowY: 'auto', backgroundColor: '#F9F4EB' }}>
+                            <h4 style={{ fontSize: 13, fontWeight: 700, color: BLACK, marginBottom: 16, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Verified Service History</h4>
+                            <div style={{ backgroundColor: WHITE, borderRadius: 12, border: '1px solid rgba(26,26,26,0.08)', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
+                                    <thead style={{ backgroundColor: '#F8F4EE', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
+                                        <tr>
+                                            <th style={{ padding: '12px 16px', color: GOLD, fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Date Attended</th>
+                                            <th style={{ padding: '12px 16px', color: GOLD, fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Service Rendered</th>
+                                            <th style={{ padding: '12px 16px', color: GOLD, fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Therapist</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {allBookings
+                                            .filter(b => b.client_name.toLowerCase() === selectedClient.client_name.toLowerCase())
+                                            .map((b, i) => (
+                                                <tr key={i} style={{ borderBottom: '1px solid rgba(26,26,26,0.05)' }}>
+                                                    <td style={{ padding: '14px 16px', color: '#666', whiteSpace: 'nowrap' }}>
+                                                        {formatDate(b.date)}
+                                                    </td>
+                                                    <td style={{ padding: '14px 16px', color: BLACK, fontWeight: 600 }}>{b.service_name}</td>
+                                                    <td style={{ padding: '14px 16px', color: '#666' }}>{b.therapist}</td>
+                                                </tr>
+                                            ))}
+                                        {allBookings.filter(b => b.client_name.toLowerCase() === selectedClient.client_name.toLowerCase()).length === 0 && (
+                                            <tr><td colSpan={3} style={{ padding: '30px', textAlign: 'center', color: '#666', fontStyle: 'italic' }}>No historical bookings discovered.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── PIN SECURITY MODAL ── */}
             {showPinModal && (
@@ -292,7 +394,7 @@ export default function MembershipsPage() {
                                     </div>
                                     <div>
                                         <label className="m-label">Remaining Massages</label>
-                                        <input type="text" className="m-input" value={formData.remaining_massages} onChange={e => setFormData({ ...formData, remaining_massages: e.target.value })} placeholder="e.g. 8 sessions" />
+                                        <input type="text" className="m-input" value={formData.remaining_massages} onChange={e => setFormData({ ...formData, remaining_massages: e.target.value })} placeholder="e.g. 8" />
                                     </div>
                                 </div>
 
@@ -326,7 +428,7 @@ export default function MembershipsPage() {
                             <h1 style={{ fontFamily: DSP, fontSize: 32, fontWeight: 300, color: BLACK, margin: 0 }}>Membership Directory</h1>
                         </div>
                         <div style={{ display: 'flex', gap: 10 }}>
-                            <button onClick={fetchMemberships} style={{ padding: '0 16px', height: 38, border: `1px solid rgba(197,143,59,0.45)`, borderRadius: 9, backgroundColor: 'transparent', color: GOLD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button onClick={fetchMembershipsAndBookings} style={{ padding: '0 16px', height: 38, border: `1px solid rgba(197,143,59,0.45)`, borderRadius: 9, backgroundColor: 'transparent', color: GOLD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                                 Refresh Data
                             </button>
                             <button onClick={() => executeProtectedAction(handleOpenAdd)} style={{ padding: '0 16px', height: 38, border: 'none', borderRadius: 9, backgroundColor: BLACK, color: GOLD, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', cursor: 'pointer' }}>
@@ -345,9 +447,15 @@ export default function MembershipsPage() {
                             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: '#3D7A4A', margin: '0 0 8px' }}>Active Memberships</p>
                             <p style={{ fontSize: 28, fontWeight: 700, color: BLACK, margin: 0 }}>{memberships.filter(m => m.status === 'Active').length}</p>
                         </div>
+
+                        {/* UPGRADED: Tiers Breakdown Card */}
                         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '18px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: GOLD, margin: '0 0 8px' }}>VIP Tier</p>
-                            <p style={{ fontSize: 28, fontWeight: 700, color: BLACK, margin: 0 }}>{memberships.filter(m => m.membership_tier === 'VIP').length}</p>
+                            <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: GOLD, margin: '0 0 8px' }}>Memberships by Tier</p>
+                            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+                                <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'VIP').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>VIP</span></div>
+                                <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'Gold').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Gold</span></div>
+                                <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'Basic').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Basic</span></div>
+                            </div>
                         </div>
                     </div>
 
@@ -367,7 +475,7 @@ export default function MembershipsPage() {
                                 </thead>
                                 <tbody>
                                     {loading ? (
-                                        <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic' }}>Fetching membership records...</td></tr>
+                                        <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666', fontStyle: 'italic' }}>Fetching membership & booking records...</td></tr>
                                     ) : memberships.length === 0 ? (
                                         <tr><td colSpan={6} style={{ padding: '40px', textAlign: 'center', color: '#666' }}>No memberships recorded yet.</td></tr>
                                     ) : (
@@ -376,7 +484,14 @@ export default function MembershipsPage() {
                                             return (
                                                 <tr key={m.id} style={{ borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
                                                     <td style={{ padding: '16px 20px' }}>
-                                                        <div style={{ fontWeight: 700, color: BLACK, fontSize: 14, marginBottom: 2 }}>{m.client_name}</div>
+                                                        <div
+                                                            className="client-name-link"
+                                                            onClick={() => setSelectedClient(m)}
+                                                            style={{ fontWeight: 700, color: '#1A1A1A', fontSize: 14, marginBottom: 2, display: 'inline-block' }}
+                                                            title="View Client History"
+                                                        >
+                                                            {m.client_name}
+                                                        </div>
                                                         <div style={{ fontSize: 11, color: '#666' }}>{m.client_mobile || m.client_email || 'No contact info'}</div>
                                                     </td>
                                                     <td style={{ padding: '16px 20px' }}>
@@ -391,9 +506,35 @@ export default function MembershipsPage() {
                                                     <td style={{ padding: '16px 20px', color: BLACK, fontWeight: 600 }}>
                                                         {formatDate(m.valid_until)}
                                                     </td>
-                                                    <td style={{ padding: '16px 20px', color: '#666', fontSize: 12, maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                                        {m.remaining_massages || '—'}
+
+                                                    {/* UPGRADED: Dynamic Remaining Balance Subtraction Logic */}
+                                                    <td style={{ padding: '16px 20px', color: BLACK, fontSize: 12 }}>
+                                                        {(() => {
+                                                            const parsedBase = parseInt(m.remaining_massages);
+                                                            if (!isNaN(parsedBase) && parsedBase > 0) {
+                                                                const memCreatedDate = new Date(m.created_at);
+                                                                const consumed = allBookings.filter(b =>
+                                                                    b.client_name.toLowerCase() === m.client_name.toLowerCase() &&
+                                                                    new Date(b.created_at) >= memCreatedDate &&
+                                                                    isServiceIncluded(b.service_name, m.package_inclusions)
+                                                                ).length;
+                                                                const dynamicBalance = Math.max(0, parsedBase - consumed);
+                                                                return (
+                                                                    <div>
+                                                                        <div style={{ fontWeight: 800, fontSize: 16, color: dynamicBalance > 0 ? '#3D7A4A' : '#C83232' }}>
+                                                                            {dynamicBalance} <span style={{ fontSize: 11, fontWeight: 600, color: '#666' }}>left</span>
+                                                                        </div>
+                                                                        <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Base: {parsedBase} | Consumed: {consumed}</div>
+                                                                    </div>
+                                                                )
+                                                            }
+                                                            return m.remaining_massages || '—';
+                                                        })()}
+                                                        <div style={{ fontSize: 10, color: GOLD, marginTop: 6, maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.package_inclusions}>
+                                                            {m.package_inclusions}
+                                                        </div>
                                                     </td>
+
                                                     <td style={{ padding: '16px 20px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                                                         <button onClick={() => executeProtectedAction(() => handleOpenEdit(m))} style={{ background: 'none', border: 'none', color: BLACK, fontSize: 11, fontWeight: 700, cursor: 'pointer', marginRight: 16, textTransform: 'uppercase', textDecoration: 'underline', textDecorationColor: 'rgba(197,143,59,0.5)', textUnderlineOffset: 4 }}>Edit</button>
                                                         <button onClick={() => executeProtectedAction(() => handleDelete(m.id, m.client_name))} style={{ background: 'none', border: 'none', color: '#C83232', fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase' }}>Delete</button>
