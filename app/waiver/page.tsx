@@ -149,15 +149,15 @@ export default function WaiverPage() {
               .range(start, start + step - 1);
 
             if (error || !data || data.length === 0) {
-              break; // End of table
+              break;
             }
 
             allTableData.push(...data);
 
             if (data.length < step) {
-              break; // Reached the end
+              break;
             }
-            start += step; // Move to next 1000 chunk
+            start += step;
           }
           return allTableData;
         };
@@ -174,15 +174,15 @@ export default function WaiverPage() {
               const rawName = item.client_name || item.full_name || item.name || "";
               const rawDate = item.created_at || item.booking_date || item.date || item.updated_at;
               const rawService = item.service_name || item.service || item.treatment || "Spa Service";
+              const rawBranch = item.branch || item.branch_name || ""; // Extract branch if available
 
               if (rawName) {
-                // EXTREME MEMORY OPTIMIZATION FOR 100K+ SCALABILITY:
-                // We DO NOT spread `...item` here to avoid crashing mobile browsers with massive arrays.
-                // We only store the exact 5 variables needed for the tracker and UI.
+                // EXTREME MEMORY OPTIMIZATION FOR 100K+ SCALABILITY
                 finalPool.push({
                   display_name: rawName,
                   display_date: rawDate ? new Date(rawDate).toLocaleDateString() : "Unknown Date",
                   display_service: rawService,
+                  display_branch: rawBranch,
                   search_key: rawName.toString().trim().toLowerCase(),
                   sort_date: rawDate ? new Date(rawDate).getTime() : 0
                 });
@@ -207,12 +207,23 @@ export default function WaiverPage() {
   // If they have exactly 1 record, it is their current booking, meaning they are a New Client.
   const isReturningClient = matchingHistory.length > 1
 
+  // ─── UPGRADED DROPDOWN SEARCH ENGINE (No Short-Circuiting) ───
   const dropdownOptions = useMemo(() => {
-    const searchString = (firstName.trim() || lastName.trim()).toLowerCase();
-    if (!searchString || searchString.length < 2) return []
-    const names = Array.from(new Set(allRecords.map(r => r.display_name)))
-    return names.filter(n => n.toLowerCase().includes(searchString) && n.toLowerCase() !== normalizedInput).slice(0, 5)
-  }, [allRecords, firstName, lastName, normalizedInput])
+    // 1. Break the typed name into an array of lowercase words, ignoring periods (e.g., ["ian", "a", "fernandez"])
+    const searchTokens = currentFullName.toLowerCase().replace(/\./g, '').split(/\s+/).filter(Boolean);
+    if (searchTokens.length === 0) return [];
+
+    // 2. Get unique names from the database
+    const names = Array.from(new Set(allRecords.map(r => r.display_name)));
+
+    // 3. Filter: The database name MUST contain EVERY word the user typed
+    return names.filter(n => {
+      const normalizedName = n.toLowerCase();
+      // Hide the option if it matches exactly so the "New Client" button appears clearly
+      if (normalizedName === normalizedInput) return false;
+      return searchTokens.every(token => normalizedName.includes(token));
+    }).slice(0, 5);
+  }, [allRecords, currentFullName, normalizedInput])
 
   const handleSelectAutocompleteName = (fullName: string) => {
     const tokens = fullName.trim().split(/\s+/);
@@ -338,8 +349,15 @@ export default function WaiverPage() {
             <div style={{ maxHeight: 350, overflowY: 'auto', border: '1px solid #eee', borderRadius: 12 }}>
               {matchingHistory.map((h, i) => (
                 <div key={i} style={{ padding: '15px', borderBottom: i === matchingHistory.length - 1 ? 'none' : '1px solid #eee' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>{h.display_service}</div>
-                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)' }}>{h.display_date}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, textTransform: 'uppercase' }}>{h.display_service}</div>
+                    {h.display_branch && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: GOLD, backgroundColor: 'rgba(197,143,59,0.1)', padding: '4px 8px', borderRadius: 4, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                        {h.display_branch}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'rgba(26,26,26,0.5)', marginTop: 4 }}>{h.display_date}</div>
                 </div>
               ))}
             </div>
@@ -369,7 +387,7 @@ export default function WaiverPage() {
                       onFocus={() => setShowDropdown(true)}
                       placeholder="Maria"
                       required
-                      autoComplete="off"
+                      autoComplete="new-password"
                     />
                   </div>
                   <div>
@@ -382,7 +400,7 @@ export default function WaiverPage() {
                       onChange={e => { setMiddleInitial(e.target.value.toUpperCase()); setShowDropdown(true) }}
                       onFocus={() => setShowDropdown(true)}
                       placeholder="A"
-                      autoComplete="off"
+                      autoComplete="new-password"
                     />
                   </div>
                   <div>
@@ -395,7 +413,7 @@ export default function WaiverPage() {
                       onFocus={() => setShowDropdown(true)}
                       placeholder="Santos"
                       required
-                      autoComplete="off"
+                      autoComplete="new-password"
                     />
                   </div>
                 </div>
