@@ -1,12 +1,12 @@
 'use client'
 
 // app/dashboard/overview/page.tsx
-// Phase 41: Omni-Synced Overview POS (Strict Pending Default & Precise Auto-Ongoing Trigger)
+// Phase 42: Omni-Synced Overview POS (Branch Tabs, New Booking Unread Badges, Recent-First Sorting)
 // FULLY EXPANDED FORMATTING PRESERVED
 
 export const dynamic = 'force-dynamic'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 // ─────────────────────────────────────────────────────────────
@@ -85,6 +85,7 @@ interface LiveBooking {
   createdAt: string;
   additional_mins: number;
   additional_price: number;
+  branch: string; // NEW: Branch identifier
 }
 
 interface StaffMember {
@@ -92,6 +93,7 @@ interface StaffMember {
   name: string;
   role: string;
   off_days: string[];
+  branch: string; // NEW: Branch identifier
 }
 
 export default function OverviewDashboard() {
@@ -107,6 +109,7 @@ export default function OverviewDashboard() {
 
   const [view, setView] = useState<'LIST' | 'GRID'>('LIST')
   const [selectedDate, setSelectedDate] = useState(getTodayStr())
+  const [selectedBranch, setSelectedBranch] = useState('Sabbath Malolos') // NEW: Branch Filter State
 
   // Store the active user's email to pass to the Audit Log
   const [currentUserEmail, setCurrentUserEmail] = useState('Admin (Table Editor)')
@@ -145,7 +148,8 @@ export default function OverviewDashboard() {
         id: String(t.id),
         name: String(t.name || t.therapist_name || 'Unnamed Staff').trim(),
         role: String(t.role || t.specialty || 'Staff'),
-        off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : []
+        off_days: t.off_days ? String(t.off_days).split(',').filter(Boolean) : [],
+        branch: String(t.branch || 'Sabbath Malolos').trim()
       })).sort((a, b) => a.name.localeCompare(b.name));
       setStaffList(mappedStaff);
 
@@ -157,6 +161,7 @@ export default function OverviewDashboard() {
         const addMins = Number(r.additional_mins || 0);
         const addPrice = Number(r.additional_price || 0);
         const discPct = Number(r.discount_pct || 0);
+        const branchVal = String(r.branch_name || r.branch || 'Sabbath Malolos').trim();
 
         const combinedNetSales = (amt + addPrice) * (1 - (discPct / 100));
 
@@ -172,7 +177,6 @@ export default function OverviewDashboard() {
         // ─── STRICT AUTO-ONGOING LOGIC (Defaults to Pending) ───
         let currentStatus = r.status || 'Pending';
 
-        // Only evaluate if the booking is currently 'Pending' and has a valid time
         if (currentStatus === 'Pending' && timeStr !== '—') {
           const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
           if (match) {
@@ -181,18 +185,17 @@ export default function OverviewDashboard() {
             if (match[3].toUpperCase() === 'PM' && h !== 12) h += 12;
             if (match[3].toUpperCase() === 'AM' && h === 12) h = 0;
 
-            // Adjust for Sabbath Spa shifts (Day starts at 11 AM, ends at 1 AM next day)
+            // Adjust for Sabbath Spa shifts
             if (h < 11) h += 24;
             const apptTotalMins = (h * 60) + m;
 
             const now = new Date();
-            // Verify if the booking date perfectly matches today's date
             if (formatDateToYYYYMMDD(parseImportDate(rawDateStr)) === getTodayStr()) {
               let currentH = now.getHours();
               if (currentH < 11) currentH += 24;
               const currentTotalMins = (currentH * 60) + now.getMinutes();
 
-              // Auto-flip to 'Ongoing' exclusively if the exact scheduled time has been reached/passed
+              // Auto-flip to 'Ongoing' exclusively if time reached
               if (currentTotalMins >= apptTotalMins) {
                 currentStatus = 'Ongoing';
               }
@@ -221,7 +224,8 @@ export default function OverviewDashboard() {
           therapist: r.therapist_name || r.therapist || null,
           createdAt: r.created_at || new Date().toISOString(),
           additional_mins: addMins,
-          additional_price: addPrice
+          additional_price: addPrice,
+          branch: branchVal
         };
         const standardDate = formatDateToYYYYMMDD(parseImportDate(rawDateStr));
         const dedupKey = `${client.toLowerCase()}-${amt}-${timeStr}-${standardDate || rawDateStr}`;
@@ -269,14 +273,21 @@ export default function OverviewDashboard() {
     });
 
     setDailyBookings(todaysBookings);
-
-    setMetrics({
-      completed: todaysBookings.filter(b => b.status === 'Completed').length,
-      pending: todaysBookings.filter(b => b.status === 'Pending').length,
-      ongoing: todaysBookings.filter(b => b.status === 'Ongoing').length,
-      hold: todaysBookings.filter(b => b.status === 'Hold').length,
-    });
   }, [selectedDate, allBookings]);
+
+  // ─── BRANCH FILTERING & METRICS SYNC ───
+  const branchFilteredBookings = useMemo(() => {
+    return dailyBookings.filter(b => b.branch === selectedBranch);
+  }, [dailyBookings, selectedBranch]);
+
+  useEffect(() => {
+    setMetrics({
+      completed: branchFilteredBookings.filter(b => b.status === 'Completed').length,
+      pending: branchFilteredBookings.filter(b => b.status === 'Pending').length,
+      ongoing: branchFilteredBookings.filter(b => b.status === 'Ongoing').length,
+      hold: branchFilteredBookings.filter(b => b.status === 'Hold').length,
+    });
+  }, [branchFilteredBookings]);
 
 
   // ─── AUTO-FORMAT TIME ON BLUR ───
@@ -414,7 +425,6 @@ export default function OverviewDashboard() {
   const getMinutesFrom11AM = (timeStr: string) => {
     if (!timeStr || timeStr === '—') return 0;
 
-    // Upgraded parser handles incomplete times directly for the Gantt Grid
     const match = timeStr.match(/(\d+):(\d+)(?:\s*(AM|PM))?/i);
     if (!match) return 0;
 
@@ -438,13 +448,45 @@ export default function OverviewDashboard() {
   };
   const HOURS_MARKERS = ['11 AM', '12 PM', '1 PM', '2 PM', '3 PM', '4 PM', '5 PM', '6 PM', '7 PM', '8 PM', '9 PM', '10 PM', '11 PM', '12 AM', '1 AM'];
 
+  // Sorting strictly by CreatedAt descending for the List View to show newest bookings at the very top
+  const sortedListBookings = [...branchFilteredBookings].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Filter staff by the Selected Branch for the Grid View
+  const branchStaff = [{ id: 'unassigned-row', name: 'Unassigned', role: 'Requires Assignment', off_days: [], branch: selectedBranch }, ...staffList.filter(s => s.branch === selectedBranch)];
+
   return (
     <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+
+      <style>{`
+        @keyframes pulseNew {
+          0% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.8; transform: scale(1.05); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+      `}</style>
+
       <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%', minWidth: 0 }}>
 
-        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Overview POS</h1>
-          <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ borderBottom: '1px solid rgba(197,143,59,0.2)', paddingBottom: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <h1 style={{ fontFamily: DSP, fontSize: '28px', color: BLACK, margin: 0 }}>Overview POS</h1>
+
+            {/* ── BRANCH TOGGLE TABS ── */}
+            <div style={{ display: 'flex', gap: 8, padding: '6px', backgroundColor: 'rgba(26,26,26,0.04)', borderRadius: 12, width: 'fit-content', marginTop: 12 }}>
+              <button
+                onClick={() => setSelectedBranch('Sabbath Malolos')}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: selectedBranch === 'Sabbath Malolos' ? '#fff' : 'transparent', color: selectedBranch === 'Sabbath Malolos' ? GOLD : '#666', boxShadow: selectedBranch === 'Sabbath Malolos' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+                Malolos Branch
+              </button>
+              <button
+                onClick={() => setSelectedBranch('Sabbath Pulilan')}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all 200ms ease', backgroundColor: selectedBranch === 'Sabbath Pulilan' ? '#fff' : 'transparent', color: selectedBranch === 'Sabbath Pulilan' ? GOLD : '#666', boxShadow: selectedBranch === 'Sabbath Pulilan' ? '0 2px 8px rgba(0,0,0,0.05)' : 'none' }}>
+                Pulilan Branch
+              </button>
+            </div>
+
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ padding: '0 12px', height: 34, borderRadius: 6, border: '1px solid rgba(26,26,26,0.2)', fontFamily: BODY, fontSize: 12, outline: 'none', cursor: 'pointer' }} />
             <button onClick={fetchEverything} style={{ padding: '0 12px', height: 34, backgroundColor: 'transparent', border: `1px solid ${GOLD}`, color: GOLD, borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Live Synced</button>
           </div>
@@ -487,10 +529,10 @@ export default function OverviewDashboard() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: 13 }}>Fetching operations data...</td></tr>
-                ) : dailyBookings.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: 13 }}>No appointments scheduled for {selectedDate}.</td></tr>
+                ) : sortedListBookings.length === 0 ? (
+                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#666', fontSize: 13 }}>No appointments scheduled for {selectedBranch} on {selectedDate}.</td></tr>
                 ) : (
-                  dailyBookings.map((b) => {
+                  sortedListBookings.map((b) => {
                     const extraCost = Number(b.additional_price || 0);
                     const netSales = (b.amount + extraCost) * (1 - (b.discount_pct / 100));
                     const commAmount = netSales * (b.therapist_comm_pct / 100);
@@ -510,7 +552,16 @@ export default function OverviewDashboard() {
                             placeholder="e.g. 7:15 PM"
                             style={{ width: '100%', padding: '6px', borderRadius: 4, fontSize: 12, fontWeight: 800, border: '1px solid rgba(197,143,59,0.3)', backgroundColor: '#fff', color: BLACK, outline: 'none', marginBottom: 6, boxSizing: 'border-box' }}
                           />
-                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'block', marginBottom: 10, fontSize: 11, wordBreak: 'break-word' }}>{b.client}</span>
+
+                          <span style={{ color: '#666', fontWeight: 600, paddingLeft: 4, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10, fontSize: 11, wordBreak: 'break-word' }}>
+                            {b.client}
+                            {/* ── UNREAD "NEW BOOKING" BADGE ── */}
+                            {b.status === 'Pending' && (
+                              <span style={{ backgroundColor: '#E53E3E', color: WHITE, fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4, letterSpacing: '0.05em', animation: 'pulseNew 2s infinite' }} title="New incoming booking requiring action">
+                                NEW BOOKING
+                              </span>
+                            )}
+                          </span>
 
                           <div style={{ padding: '10px', backgroundColor: 'rgba(197,143,59,0.05)', borderRadius: 6, border: '1px dashed rgba(197,143,59,0.4)', marginTop: 8 }}>
                             <label style={{ fontSize: 9, fontWeight: 800, color: GOLD, display: 'block', marginBottom: 4, letterSpacing: '0.05em' }}>EXTRA MINS</label>
@@ -698,8 +749,8 @@ export default function OverviewDashboard() {
                 {loading ? (
                   <div style={{ padding: '60px', textAlign: 'center', color: '#666' }}>Generating timeline visualization...</div>
                 ) : (
-                  [{ id: 'unassigned-row', name: 'Unassigned', role: 'Requires Assignment', off_days: [] }, ...staffList].map((staff) => {
-                    const staffBookings = dailyBookings.filter(b => {
+                  branchStaff.map((staff) => {
+                    const staffBookings = branchFilteredBookings.filter(b => {
                       const dbTherapist = String(b.therapist || 'unassigned').trim().toLowerCase();
                       const targetTherapist = staff.name.toLowerCase();
                       return dbTherapist === targetTherapist;
