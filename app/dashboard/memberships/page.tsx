@@ -1,7 +1,7 @@
 'use client'
 
 // app/dashboard/memberships/page.tsx
-// Membership Directory & Tracker (Strict PIN 061026, Auto-Deduct Balances, Client History Sync)
+// Membership Directory & Tracker (Strict PIN 061026, Auto-Deduct Balances, Auto-fill Packages, Client History Sync)
 
 export const dynamic = 'force-dynamic'
 
@@ -62,12 +62,12 @@ export default function MembershipsPage() {
         client_name: '',
         client_mobile: '',
         client_email: '',
-        membership_tier: 'VIP',
-        discount_percentage: 10,
+        membership_tier: 'Basic',
+        discount_percentage: 5,
         status: 'Active',
         valid_until: '',
-        remaining_massages: '',
-        package_inclusions: ''
+        remaining_massages: '6',
+        package_inclusions: '6 Regular Massages + 5% Off Nail Services'
     })
 
     // ─── DATA FETCHING (UNLIMITED ENGINE) ───
@@ -155,13 +155,50 @@ export default function MembershipsPage() {
         }
     }
 
+    // ─── SMART AUTO-FILL PACKAGE LOGIC ───
+    const applyPackageDefaults = (tier: string) => {
+        let disc = 0;
+        let massages = '';
+        let inclusions = '';
+        let monthsToAdd = 1;
+
+        if (tier === 'Basic') {
+            disc = 5;
+            massages = '6';
+            inclusions = '6 Regular Massages + 5% Off Nail Services';
+            monthsToAdd = 1;
+        } else if (tier === 'Gold') {
+            disc = 5;
+            massages = '20';
+            inclusions = '20 Regular Massages (Valid for 3 Months) + 5% Off Nail Services';
+            monthsToAdd = 3;
+        } else if (tier === 'Platinum') {
+            disc = 10;
+            massages = 'Unlimited';
+            inclusions = 'Unlimited Daily Massage + 10% Off Nails, 1 Free Private Suite & Coffee/Tea + Meals';
+            monthsToAdd = 6;
+        } else if (tier === 'VIP') {
+            disc = 10;
+            massages = 'Unlimited';
+            inclusions = 'Unlimited Daily Massage + 10% Off Nails & Wet Floor, 4 Wet Floor Sessions, Coffee/Tea + Meals';
+            monthsToAdd = 12;
+        }
+
+        const d = new Date();
+        d.setMonth(d.getMonth() + monthsToAdd);
+        const validUntilDate = d.toISOString().split('T')[0];
+
+        return { disc, massages, inclusions, validUntilDate };
+    }
+
     // ─── CRUD ACTIONS ───
     const handleOpenAdd = () => {
         setEditingId(null)
+        const defaults = applyPackageDefaults('Basic');
         setFormData({
             client_name: '', client_mobile: '', client_email: '',
-            membership_tier: 'VIP', discount_percentage: 10, status: 'Active',
-            valid_until: '', remaining_massages: '', package_inclusions: ''
+            membership_tier: 'Basic', discount_percentage: defaults.disc, status: 'Active',
+            valid_until: defaults.validUntilDate, remaining_massages: defaults.massages, package_inclusions: defaults.inclusions
         })
         setShowModal(true)
     }
@@ -172,7 +209,7 @@ export default function MembershipsPage() {
             client_name: m.client_name || '',
             client_mobile: m.client_mobile || '',
             client_email: m.client_email || '',
-            membership_tier: m.membership_tier || 'VIP',
+            membership_tier: m.membership_tier || 'Basic',
             discount_percentage: m.discount_percentage || 0,
             status: m.status || 'Active',
             valid_until: m.valid_until || '',
@@ -229,11 +266,16 @@ export default function MembershipsPage() {
 
     const handleTierChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const tier = e.target.value;
-        let disc = 0;
-        if (tier === 'VIP') disc = 10;
-        else if (tier === 'Gold' || tier === 'Basic') disc = 5;
+        const defaults = applyPackageDefaults(tier);
 
-        setFormData({ ...formData, membership_tier: tier, discount_percentage: disc })
+        setFormData({
+            ...formData,
+            membership_tier: tier,
+            discount_percentage: defaults.disc,
+            remaining_massages: defaults.massages,
+            package_inclusions: defaults.inclusions,
+            valid_until: defaults.validUntilDate
+        })
     }
 
     const isServiceIncluded = (serviceName: string, packageInclusions: string) => {
@@ -242,7 +284,7 @@ export default function MembershipsPage() {
         const p = packageInclusions.toLowerCase();
 
         if (p.includes(s) || s.includes(p)) return true;
-        if (p.includes('massage') && (s.includes('massage') || s.includes('swedish') || s.includes('shiatsu') || s.includes('ventosa') || s.includes('combination') || s.includes('hilot'))) return true;
+        if (p.includes('massage') && (s.includes('massage') || s.includes('swedish') || s.includes('shiatsu') || s.includes('reflexology') || s.includes('combination') || s.includes('hilot'))) return true;
         if (p.includes('nail') && (s.includes('nail') || s.includes('manicure') || s.includes('pedicure') || s.includes('foot'))) return true;
 
         return false;
@@ -369,6 +411,7 @@ export default function MembershipsPage() {
                                         <label className="m-label">Tier</label>
                                         <select className="m-input" value={formData.membership_tier} onChange={handleTierChange} style={{ backgroundColor: WHITE }}>
                                             <option value="VIP">VIP</option>
+                                            <option value="Platinum">Platinum</option>
                                             <option value="Gold">Gold</option>
                                             <option value="Basic">Basic</option>
                                         </select>
@@ -394,7 +437,7 @@ export default function MembershipsPage() {
                                     </div>
                                     <div>
                                         <label className="m-label">Remaining Massages</label>
-                                        <input type="text" className="m-input" value={formData.remaining_massages} onChange={e => setFormData({ ...formData, remaining_massages: e.target.value })} placeholder="e.g. 8" />
+                                        <input type="text" className="m-input" value={formData.remaining_massages} onChange={e => setFormData({ ...formData, remaining_massages: e.target.value })} placeholder="e.g. 6 or Unlimited" />
                                     </div>
                                 </div>
 
@@ -451,8 +494,9 @@ export default function MembershipsPage() {
                         {/* UPGRADED: Tiers Breakdown Card */}
                         <div style={{ backgroundColor: WHITE, border: '1px solid rgba(26,26,26,0.09)', borderRadius: 14, padding: '18px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                             <p style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', color: GOLD, margin: '0 0 8px' }}>Memberships by Tier</p>
-                            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+                            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                                 <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'VIP').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>VIP</span></div>
+                                <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'Platinum').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Platinum</span></div>
                                 <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'Gold').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Gold</span></div>
                                 <div><span style={{ fontSize: 24, fontWeight: 700, color: BLACK }}>{memberships.filter(m => m.membership_tier === 'Basic').length}</span> <span style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>Basic</span></div>
                             </div>
@@ -507,17 +551,18 @@ export default function MembershipsPage() {
                                                         {formatDate(m.valid_until)}
                                                     </td>
 
-                                                    {/* UPGRADED: Dynamic Remaining Balance Subtraction Logic */}
+                                                    {/* UPGRADED: Dynamic Remaining Balance Subtraction Logic handling Unlimited Tiers */}
                                                     <td style={{ padding: '16px 20px', color: BLACK, fontSize: 12 }}>
                                                         {(() => {
                                                             const parsedBase = parseInt(m.remaining_massages);
+                                                            const memCreatedDate = new Date(m.created_at);
+                                                            const consumed = allBookings.filter(b =>
+                                                                b.client_name.toLowerCase() === m.client_name.toLowerCase() &&
+                                                                new Date(b.created_at) >= memCreatedDate &&
+                                                                isServiceIncluded(b.service_name, m.package_inclusions)
+                                                            ).length;
+
                                                             if (!isNaN(parsedBase) && parsedBase > 0) {
-                                                                const memCreatedDate = new Date(m.created_at);
-                                                                const consumed = allBookings.filter(b =>
-                                                                    b.client_name.toLowerCase() === m.client_name.toLowerCase() &&
-                                                                    new Date(b.created_at) >= memCreatedDate &&
-                                                                    isServiceIncluded(b.service_name, m.package_inclusions)
-                                                                ).length;
                                                                 const dynamicBalance = Math.max(0, parsedBase - consumed);
                                                                 return (
                                                                     <div>
@@ -525,6 +570,15 @@ export default function MembershipsPage() {
                                                                             {dynamicBalance} <span style={{ fontSize: 11, fontWeight: 600, color: '#666' }}>left</span>
                                                                         </div>
                                                                         <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Base: {parsedBase} | Consumed: {consumed}</div>
+                                                                    </div>
+                                                                )
+                                                            } else if (m.remaining_massages?.toLowerCase() === 'unlimited') {
+                                                                return (
+                                                                    <div>
+                                                                        <div style={{ fontWeight: 800, fontSize: 16, color: '#3D7A4A' }}>
+                                                                            Unlimited
+                                                                        </div>
+                                                                        <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Consumed: {consumed}</div>
                                                                     </div>
                                                                 )
                                                             }
