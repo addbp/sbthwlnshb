@@ -178,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <>
       <style>{`
-        html, body, #__next { background-color: #F9F4EB !important; overflow-x: hidden; }
+        html, body, #__next { background-color: #F9F4EB !important; }
 
         .sb-item {
           display: flex; align-items: center; gap: 12px; padding: 0 14px;
@@ -220,7 +220,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         /* Desktop Positioning */
-        @media (min-width:768px) {
+        @media (min-width:1024px) {
           .mob-menu-btn { display:none !important; }
           .app-wrapper.desktop-open .sidebar { transform: translateX(0); }
           .app-wrapper.desktop-open .dashboard-main { margin-left: 276px; }
@@ -229,8 +229,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         /* Mobile Positioning */
-        @media (max-width:767px) {
+        @media (max-width:1023px) {
           .dashboard-main { margin-left:0 !important; }
+          .dashboard-content { padding-left:16px !important; padding-right:16px !important; }
           .dashboard-header { padding-left:16px !important; }
           .desktop-toggle-btn { display:none !important; }
           .app-wrapper:not(.mob-open) .sidebar { transform: translateX(-276px); }
@@ -370,6 +371,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           className="dashboard-main"
           style={{
             flex: 1,
+            minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
             minHeight: '100vh',
@@ -378,7 +380,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }}
         >
           {/* Header */}
-          <header style={{
+          <header className="dashboard-header" style={{
             position: 'sticky', top: 0, zIndex: 30,
             height: 68,
             display: 'flex',
@@ -406,7 +408,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </h1>
           </header>
 
-          <main style={{ flex: 1, padding: '32px', maxWidth: '100%', width: '100%' }}>
+          <main className="dashboard-content" style={{ flex: 1, padding: '32px', maxWidth: '100%', width: '100%' }}>
             {children}
           </main>
         </div>

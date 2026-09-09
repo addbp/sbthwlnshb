@@ -16,9 +16,7 @@ const cormorant = Cormorant_Garamond({
 export const metadata: Metadata = {
   title: 'Sabbath Spa Management System',
   description: 'Digital spa management system for Sabbath Spa & Wellness Hub.',
-  icons: {
-    icon: 'https://sabbathspa.com/wp-content/themes/sabbath/assets/images/favicon.ico',
-  },
+  // Icons come from the file convention: app/favicon.ico
 };
 
 export default function RootLayout({

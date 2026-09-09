@@ -455,7 +455,7 @@ export default function OverviewDashboard() {
   const branchStaff = [{ id: 'unassigned-row', name: 'Unassigned', role: 'Requires Assignment', off_days: [], branch: selectedBranch }, ...staffList.filter(s => s.branch === selectedBranch)];
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <div style={{ backgroundColor: BG, minHeight: '100vh', padding: 'clamp(12px, 3vw, 30px)', fontFamily: BODY, width: '100%', boxSizing: 'border-box', overflow: 'visible' }}>
 
       <style>{`
         @keyframes pulseNew {
@@ -513,7 +513,8 @@ export default function OverviewDashboard() {
 
         {view === 'LIST' && (
           <div style={{ width: '100%', maxWidth: '100%', backgroundColor: WHITE, borderRadius: '0 10px 10px 10px', border: '1px solid rgba(26,26,26,0.08)', boxShadow: '0 4px 15px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11, tableLayout: 'auto' }}>
+            <div style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', minWidth: '680px', borderCollapse: 'collapse', textAlign: 'left', fontSize: 11, tableLayout: 'auto' }}>
               <thead>
                 <tr style={{ backgroundColor: 'rgba(249,244,235,0.5)', borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
                   <th style={{ padding: '12px 8px', color: GOLD, fontWeight: 700, letterSpacing: '0.05em', width: '14%' }}>TIME & CLIENT</th>
@@ -720,7 +721,8 @@ export default function OverviewDashboard() {
                   })
                 )}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         )}
 
