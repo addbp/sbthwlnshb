@@ -53,7 +53,9 @@ const LABEL: React.CSSProperties = {
 interface ServiceItem { id: string; name: string; duration: string; price: number; category: string; description?: string; savings?: string }
 interface Therapist { id: string; name: string; status: string; role: string; off_days?: string[]; branch: string; }
 interface Discount { id: string; name: string; discount_percentage: number; code?: string; category: string }
-interface Membership { id: string; client_name: string; client_mobile: string; client_email: string; membership_tier: string }
+// Only the tier crosses the wire now — /api/membership-lookup matches server-side
+// and never returns client_name, client_mobile or client_email.
+interface Membership { membership_tier: string }
 
 const fmt = (n: number) => '₱' + n.toLocaleString('en-PH')
 
@@ -167,7 +169,6 @@ export default function BookingPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const [dbDiscounts, setDbDiscounts] = useState<Discount[]>([])
-  const [activeMemberships, setActiveMemberships] = useState<Membership[]>([])
   const [detectedMembership, setDetectedMembership] = useState<Membership | null>(null)
 
   const [discountMode, setDiscountMode] = useState<string>('none')
@@ -209,11 +210,10 @@ export default function BookingPage() {
 
     async function loadData() {
       try {
-        const [thRes, svRes, discRes, memRes] = await Promise.all([
+        const [thRes, svRes, discRes] = await Promise.all([
           fetchUnlimited('staff'),
           fetchUnlimited('services'),
-          fetchUnlimited('discounts'),
-          fetchUnlimited('memberships')
+          fetchUnlimited('discounts')
         ])
 
         if (thRes) {
@@ -228,7 +228,6 @@ export default function BookingPage() {
         }
 
         if (discRes) setDbDiscounts(discRes.filter(d => d.active) as Discount[])
-        if (memRes) setActiveMemberships(memRes.filter(m => m.status === 'Active') as Membership[])
 
         const hardcodedWellness = [
           { id: 'ws-1', name: 'PRIVATE WELLNESS SUITE', duration: '120 min', price: 1500, category: 'Wellness Suite', description: 'A complete wellness journey combining sauna, and Jacuzzi access. Perfect for those who want the full Sabbath experience in one rejuvenating session.\n\nIncludes:\n• Private Shower\n• Sauna session (4 pax max)\n• Jacuzzi bath experience (for 2)' },
@@ -317,16 +316,38 @@ export default function BookingPage() {
   }, [supabase, getTodayStr])
 
   useEffect(() => {
-    if (!mobile && !email) {
+    const hasEmail = email.includes('@')
+    const hasMobile = mobile.length >= 10
+    if (!hasEmail && !hasMobile) {
       setDetectedMembership(null);
       return;
     }
-    const found = activeMemberships.find(m =>
-      (email && m.client_email && m.client_email.toLowerCase() === email.toLowerCase()) ||
-      (mobile && m.client_mobile && mobile.length >= 10 && m.client_mobile.includes(mobile))
-    );
-    setDetectedMembership(found || null);
-  }, [mobile, email, activeMemberships])
+
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams()
+        if (hasEmail) qs.set('email', email)
+        if (hasMobile) qs.set('mobile', mobile)
+
+        const res = await fetch(`/api/membership-lookup?${qs.toString()}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`Membership lookup failed: ${res.status}`)
+        const { tier } = await res.json()
+        setDetectedMembership(tier ? { membership_tier: String(tier) } : null)
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+        console.error('Membership lookup error:', err)
+        setDetectedMembership(null)
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [mobile, email])
 
   const isExcluded = (name: string) => {
     const n = name.toUpperCase().trim();
