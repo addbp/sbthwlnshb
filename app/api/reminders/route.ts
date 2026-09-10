@@ -30,12 +30,20 @@ function parseAppointmentDateTime(dateStr: string, timeStr: string): Date | null
 
 export async function GET(request: Request) {
     try {
-        // 1. Security Check: Protect your endpoint from being manually triggered by strangers
-        const { searchParams } = new URL(request.url)
+        // 1. Security Check: Protect your endpoint from being manually triggered by strangers.
+        // Fail closed if the secret is unset or blank — otherwise an empty CRON_SECRET
+        // made `?key=` compare equal to it and skipped the check entirely.
+        const secret = process.env.CRON_SECRET
+        if (!secret) {
+            return new NextResponse('Cron secret not configured', { status: 500 })
+        }
+
         const authHeader = request.headers.get('authorization')
 
-        // Vercel Crons automatically send a special token header to verify the cron call is legitimate
-        if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && searchParams.get('key') !== process.env.CRON_SECRET) {
+        // Vercel Cron sends the secret in the Authorization header. The ?key= query
+        // fallback was removed deliberately: query strings land in access logs,
+        // browser history and referrer headers.
+        if (authHeader !== `Bearer ${secret}`) {
             return new NextResponse('Unauthorized Cron Invocation', { status: 401 })
         }
 

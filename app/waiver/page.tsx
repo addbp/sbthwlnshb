@@ -115,6 +115,9 @@ export default function WaiverPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [allRecords, setAllRecords] = useState<any[]>([])
+  // Exact case-insensitive count of prior visits for the typed name, computed
+  // server-side. Independent of the MAX_RESULTS cap on the returned rows.
+  const [visitCount, setVisitCount] = useState(0)
   const [showDropdown, setShowDropdown] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
 
@@ -131,73 +134,50 @@ export default function WaiverPage() {
   const normalizedInput = currentFullName.toLowerCase()
 
   useEffect(() => {
-    async function fetchAllRecords() {
+    const term = currentFullName.trim()
+
+    if (term.length < 3) {
+      setAllRecords([])
+      setVisitCount(0)
+      setDataLoaded(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
       try {
-        const tables = ['bookings', 'bookings_import', 'client', 'clients'];
-
-        // ─── UNLIMITED 100K+ FETCH ENGINE ───
-        const fetchPaginated = async (tableName: string) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let allTableData: any[] = [];
-          let start = 0;
-          const step = 1000;
-
-          for (; ;) {
-            const { data, error } = await supabase
-              .from(tableName)
-              .select('*')
-              .range(start, start + step - 1);
-
-            if (error || !data || data.length === 0) {
-              break;
-            }
-
-            allTableData.push(...data);
-
-            if (data.length < step) {
-              break;
-            }
-            start += step;
-          }
-          return allTableData;
-        };
-
-        const results = await Promise.allSettled(tables.map(t => fetchPaginated(t)));
+        const res = await fetch(`/api/waiver-lookup?q=${encodeURIComponent(term)}`, {
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`Lookup failed: ${res.status}`)
+        const payload = await res.json()
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const finalPool: any[] = [];
+        const pool = (payload.results ?? []).map((r: any) => ({
+          display_name: r.name,
+          display_date: r.date ? new Date(r.date).toLocaleDateString() : 'Unknown Date',
+          display_service: r.service || 'Spa Service',
+          display_branch: r.branch || '',
+          search_key: String(r.name).trim().toLowerCase(),
+          sort_date: r.date ? new Date(r.date).getTime() : 0,
+        }))
 
-        results.forEach((res) => {
-          if (res.status === 'fulfilled' && res.value) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            res.value.forEach((item: any) => {
-              const rawName = item.client_name || item.full_name || item.name || "";
-              const rawDate = item.created_at || item.booking_date || item.date || item.updated_at;
-              const rawService = item.service_name || item.service || item.treatment || "Spa Service";
-              const rawBranch = item.branch || item.branch_name || ""; // Extract branch if available
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pool.sort((a: any, b: any) => b.sort_date - a.sort_date)
+        setAllRecords(pool)
+        setVisitCount(Number(payload.visitCount ?? 0))
+        setDataLoaded(true)
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return
+        console.error('Waiver lookup error:', err)
+      }
+    }, 300)
 
-              if (rawName) {
-                // EXTREME MEMORY OPTIMIZATION FOR 100K+ SCALABILITY
-                finalPool.push({
-                  display_name: rawName,
-                  display_date: rawDate ? new Date(rawDate).toLocaleDateString() : "Unknown Date",
-                  display_service: rawService,
-                  display_branch: rawBranch,
-                  search_key: rawName.toString().trim().toLowerCase(),
-                  sort_date: rawDate ? new Date(rawDate).getTime() : 0
-                });
-              }
-            });
-          }
-        });
-
-        finalPool.sort((a, b) => b.sort_date - a.sort_date);
-        setAllRecords(finalPool);
-        setDataLoaded(true);
-      } catch (err) { console.error("Database Fetch Error:", err) }
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
     }
-    fetchAllRecords()
-  }, [supabase])
+  }, [currentFullName])
 
   const matchingHistory = useMemo(() => {
     return normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : []
@@ -459,7 +439,7 @@ export default function WaiverPage() {
                     <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: isReturningClient ? GOLD : '#2e7d32', textTransform: 'uppercase' }}>{isReturningClient ? 'Returning Client Found' : 'New Client Registration'}</p>
                     <p style={{ margin: 0, fontSize: 13, color: 'rgba(26,26,26,0.8)' }}>
                       {isReturningClient
-                        ? `Welcome back! Found ${matchingHistory.length} previous visits.`
+                        ? `Welcome back! Found ${visitCount} previous visits.`
                         : matchingHistory.length === 1
                           ? 'First appointment verified. Welcome to Sabbath Spa!'
                           : 'No previous records found.'}
