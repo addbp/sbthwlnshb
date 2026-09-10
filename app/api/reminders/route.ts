@@ -2,12 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 
-// Initialize Resend and Supabase with administrative rights
-const resend = new Resend(process.env.RESEND_API_KEY)
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// Clients are constructed inside the handler, AFTER the CRON_SECRET guard.
+// Module scope runs at import time, which would put them before the guard —
+// and a blank key there crashes `next build` during page-data collection.
 
 // ─── INDESTRUCTIBLE STRING DATETIME PARSER ───
 // Combines '2026-05-31' and '4:30 PM' into a true chronological Javascript Date object
@@ -47,13 +44,34 @@ export async function GET(request: Request) {
             return new NextResponse('Unauthorized Cron Invocation', { status: 401 })
         }
 
+        // 2. Only now — caller authenticated — build the privileged clients.
+        // SUPABASE_SERVICE_ROLE_KEY is server-side only and must never be
+        // NEXT_PUBLIC_. It bypasses RLS, which is why 005_enable_rls.sql can
+        // deny anon UPDATE on bookings without breaking this cron.
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+        if (!supabaseUrl || !serviceRoleKey) {
+            console.error('[reminders] SUPABASE_SERVICE_ROLE_KEY is not configured')
+            return NextResponse.json({ error: 'Reminder service unavailable.' }, { status: 503 })
+        }
+        const supabase = createClient(supabaseUrl, serviceRoleKey, {
+            auth: { persistSession: false },
+        })
+
+        const resendKey = process.env.RESEND_API_KEY
+        if (!resendKey) {
+            console.error('[reminders] RESEND_API_KEY is not configured')
+            return NextResponse.json({ error: 'Reminder service unavailable.' }, { status: 503 })
+        }
+        const resend = new Resend(resendKey)
+
         const now = new Date()
 
         // 2. Fetch all bookings that haven't received a reminder yet
         // We filter out Completed/Cancelled states to avoid ghost alerts
         const { data: pendingBookings, error: dbError } = await supabase
             .from('bookings')
-            .select('id, client_name, client_email, service_name, appointment_date, appointment_time')
+            .select('booking_id, client_name, client_email, service_name, appointment_date, appointment_time')
             .eq('reminder_sent', false)
             .not('status', 'in', '("Completed","Cancelled")')
 
@@ -105,11 +123,17 @@ export async function GET(request: Request) {
           `
                 })
 
-                // 4. Set flag to true in Supabase immediately so the system doesn't duplicate notifications
-                await supabase
+                // 4. Set flag to true in Supabase immediately so the system doesn't duplicate notifications.
+                // bookings is keyed on booking_id, not id. A silent failure here means this
+                // client is emailed again on every subsequent cron run, forever.
+                const { error: flagError } = await supabase
                     .from('bookings')
                     .update({ reminder_sent: true })
-                    .eq('id', booking.id)
+                    .eq('booking_id', booking.booking_id)
+
+                if (flagError) {
+                    console.error('[reminders] reminder_sent update failed', flagError)
+                }
 
                 sentCount++
             }
