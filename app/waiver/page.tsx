@@ -183,9 +183,11 @@ export default function WaiverPage() {
     return normalizedInput ? allRecords.filter(r => r.search_key === normalizedInput) : []
   }, [allRecords, normalizedInput])
 
-  // A returning client strictly has more than 1 booking record. 
+  // A returning client strictly has more than 1 booking record.
   // If they have exactly 1 record, it is their current booking, meaning they are a New Client.
-  const isReturningClient = matchingHistory.length > 1
+  // Uses the exact server-side count, not matchingHistory, which is bounded by the
+  // route's result cap. matchingHistory is still what the history modal renders.
+  const isReturningClient = visitCount > 1
 
   // ─── UPGRADED DROPDOWN SEARCH ENGINE (No Short-Circuiting) ───
   const dropdownOptions = useMemo(() => {
