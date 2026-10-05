@@ -1,0 +1,4 @@
+# Never upload real customer data or local-only files to Vercel.
+*.csv
+.env*
+demo-video/
